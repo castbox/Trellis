@@ -138,7 +138,7 @@ describe("opencode session-start history detection", () => {
   });
 
   it("builds compact startup context with an adaptive one-shot acknowledgment", () => {
-    const context = buildSessionContext({
+    const context = buildSessionContext(Object.assign(new TrellisContext("/tmp/trellis-opencode-test"), {
       directory: "/tmp/trellis-opencode-test",
       getActiveTask: () => ({ taskPath: null, source: "none", stale: false }),
       getContextKey: () => null,
@@ -147,7 +147,7 @@ describe("opencode session-start history detection", () => {
       readProjectFile: () => "",
       resolveTaskDir: () => null,
       runScript: () => "",
-    });
+    }));
 
     expect(context.startsWith("<session-context>")).toBe(true);
     expect(context).toContain("Trellis compact SessionStart context");

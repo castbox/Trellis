@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
 import { collectPiTemplates } from "../../src/configurators/pi.js";
@@ -184,6 +185,64 @@ function createMinimalTrellisRoot(): string {
 }
 
 describe("pi templates", () => {
+  it.each([
+    ".trellis/workflow.md",
+    ".trellis/.runtime/sessions/pi_history.json",
+    ".trellis/tasks/current/task.json",
+    ".trellis/tasks/current/implement.jsonl",
+    ".trellis/tasks/current/prd.md",
+    ".trellis/spec/current.md",
+    ".trellis/config.yaml",
+  ])("rejects historical source aliases through the actual event handler: %s", (relativePath) => {
+    const root = fs.realpathSync(mkdtempSync(join(tmpdir(), "trellis-pi-history-")));
+    try {
+      const files: Record<string, string> = {
+        ".trellis/workflow.md": "[workflow-state:in_progress]\nACTIVE FLOW\n[/workflow-state:in_progress]\n",
+        ".trellis/.runtime/sessions/pi_history.json": JSON.stringify({ current_task: ".trellis/tasks/current" }),
+        ".trellis/tasks/current/task.json": JSON.stringify({ id: "current", status: "in_progress" }),
+        ".trellis/tasks/current/implement.jsonl": JSON.stringify({ file: ".trellis/spec/current.md" }),
+        ".trellis/tasks/current/prd.md": "ACTIVE PRD",
+        ".trellis/spec/current.md": "ACTIVE SPEC",
+        ".trellis/config.yaml": "context_injection:\n  max_file_bytes: 32768\n",
+      };
+      for (const [name, text] of Object.entries(files)) {
+        fs.mkdirSync(dirname(join(root, name)), { recursive: true });
+        writeFileSync(join(root, name), text);
+      }
+      const invoke = (): unknown => {
+        const handlers = new Map<string, (event: unknown, ctx?: unknown) => unknown>();
+        loadExtensionInternals(root, { TRELLIS_CONTEXT_ID: "" }).trellisExtension({
+          on: (event, handler) => handlers.set(event, handler),
+        });
+        return handlers.get("before_agent_start")?.(
+          { type: "before_agent_start", prompt: "work", systemPrompt: "BASE" },
+          { cwd: root, sessionManager: { getSessionId: () => "history" } },
+        );
+      };
+      const file = join(root, relativePath);
+      const original = readFileSync(file, "utf8");
+      const historical = join(root, ".trellis/workspace/source");
+      fs.mkdirSync(join(root, ".trellis/workspace"));
+      writeFileSync(historical, original);
+      fs.unlinkSync(file);
+      fs.symlinkSync(historical, file);
+      const read = vi.spyOn(fs, "readFileSync");
+      invoke();
+      expect(read.mock.calls.filter(([p]) => {
+        try { return realpathSync(p as fs.PathLike) === historical; } catch { return false; }
+      })).toEqual([]);
+      read.mockRestore();
+      expect(readFileSync(historical, "utf8")).toBe(original);
+      fs.unlinkSync(file);
+      writeFileSync(file, original);
+      const active = JSON.stringify(invoke());
+      expect(active).toContain("ACTIVE FLOW");
+      expect(active).toContain("ACTIVE PRD");
+    } finally {
+      vi.restoreAllMocks();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
   it("provides the three Trellis sub-agent definitions", () => {
     const agents = getAllAgents();
     expect(agents.map((agent) => agent.name).sort()).toEqual([

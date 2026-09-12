@@ -49,6 +49,11 @@ interface HookResult {
 function writeFixtureRepo(root: string): void {
   const taskDir = path.join(root, ".trellis", "tasks", "demo-task");
   fs.mkdirSync(path.join(root, ".trellis", "scripts"), { recursive: true });
+  fs.cpSync(
+    path.resolve(path.dirname(HOOK_SCRIPT), "../../trellis/scripts/common"),
+    path.join(root, ".trellis", "scripts", "common"),
+    { recursive: true },
+  );
   fs.mkdirSync(taskDir, { recursive: true });
   fs.mkdirSync(path.join(root, ".trellis", ".runtime", "sessions"), {
     recursive: true,
@@ -119,6 +124,7 @@ function runHook(
   opts: {
     stdin?: string;
     env?: Record<string, string | undefined>;
+    auditHistory?: string;
   } = {},
 ): HookResult {
   if (!PYTHON) {
@@ -134,9 +140,28 @@ function runHook(
     ...opts.env,
   };
 
+  const args = opts.auditHistory ? ["-B", "-c", `
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("hook", ${JSON.stringify(HOOK_SCRIPT)})
+hook = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hook)
+history = os.path.realpath(${JSON.stringify(opts.auditHistory)})
+accesses = []
+def audit(event, args):
+    if event in ("open", "os.listdir", "os.scandir", "os.mkdir", "os.remove", "os.rename"):
+        for value in args[:2]:
+            if isinstance(value, (str, bytes)):
+                actual = os.path.realpath(os.fsdecode(value))
+                if actual == history or actual.startswith(history + os.sep):
+                    accesses.append((event, actual))
+sys.addaudithook(audit)
+sys.argv = [${JSON.stringify(HOOK_SCRIPT)}, ${JSON.stringify(mode)}]
+assert hook.main() == 0
+assert accesses == [], accesses
+`] : ["-X", "utf8", HOOK_SCRIPT, mode];
   const result = spawnSync(
     PYTHON,
-    ["-X", "utf8", HOOK_SCRIPT, mode],
+    args,
     {
       cwd: repo,
       env,
@@ -186,6 +211,35 @@ describe("snow write-trellis-context.py execution", () => {
     writeFixtureRepo(root);
     return root;
   }
+
+  it.skipIf(!PYTHON).each([
+    ".trellis/workflow.md",
+    ".trellis/.runtime/sessions/review.json",
+    ".trellis/tasks/demo-task/prd.md",
+    ".trellis/tasks/demo-task/implement.jsonl",
+    ".trellis/identity.md",
+    ".snow/log/trellis-context.txt",
+  ])("never consumes or mutates historical source aliases: %s", (relativePath) => {
+    const root = makeRepo();
+    const history = path.join(root, ".trellis/workspace");
+    fs.mkdirSync(history);
+    const target = path.join(history, "source");
+    const source = path.join(root, relativePath);
+    const original = relativePath.endsWith(".json")
+      ? '{"marker":"HISTORICAL VALUE"}'
+      : "HISTORICAL VALUE";
+    fs.writeFileSync(target, original);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.rmSync(source, { force: true });
+    fs.symlinkSync(target, source);
+    const result = runHook(root, "session", {
+      stdin: JSON.stringify({ sessionId: "review" }), auditHistory: history,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.payload?.additionalContext).not.toContain("HISTORICAL VALUE");
+    expect(result.payload?.additionalContext).toContain("Trellis context");
+    expect(fs.readFileSync(target, "utf8")).toBe(original);
+  });
 
   it.skipIf(!PYTHON)(
     "session mode emits full inject JSON and writes full log",
