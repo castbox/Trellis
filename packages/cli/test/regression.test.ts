@@ -46,10 +46,8 @@ import {
 import {
   commonInit,
   taskScript,
-  addSessionScript,
   commonCliAdapter,
   commonTaskUtils,
-  commonDeveloper,
   commonConfig,
   commonTrellisConfig,
   commonGitContext,
@@ -65,7 +63,6 @@ import {
 import { setWriteMode } from "../src/utils/file-writer.js";
 import {
   guidesIndexContent,
-  workspaceIndexContent,
 } from "../src/templates/markdown/index.js";
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
@@ -148,353 +145,6 @@ describe("regression: Windows encoding (beta.10, beta.11, beta.16)", () => {
 
   it("[beta.10] task.py imports from common (gets encoding fix via __init__.py)", () => {
     expect(taskScript).toContain("from common");
-  });
-
-  it("[rc.2] add_session.py table separator detection uses regex (not startswith)", () => {
-    // Bug: startswith("|---") breaks when formatters add spaces: "| ---- |"
-    // Fix: use re.match with a character-class pattern to allow optional whitespace/spaces
-    expect(addSessionScript).not.toContain('startswith("|---")');
-    expect(addSessionScript).toContain(
-      String.raw`re.match(r"^\|[-| ]+\|\s*$", line)`,
-    );
-  });
-});
-
-describe("regression: branch context in session records (issue-106)", () => {
-  it("[issue-106] add_session.py accepts --branch CLI arg", () => {
-    expect(addSessionScript).toContain("--branch");
-    expect(addSessionScript).not.toContain("--base-branch");
-  });
-
-  it("[issue-106] add_session.py auto-detects branch via git branch --show-current", () => {
-    expect(addSessionScript).toContain("branch --show-current");
-  });
-
-  it("[issue-106] add_session.py reads branch from task.json when available", () => {
-    expect(addSessionScript).toContain('task_data.raw.get("branch")');
-    expect(addSessionScript).not.toContain('task_data.raw.get("base_branch")');
-  });
-
-  it("[issue-106] add_session.py session content includes **Branch** field only", () => {
-    expect(addSessionScript).toContain("**Branch**");
-    expect(addSessionScript).not.toContain("**Base Branch**");
-  });
-
-  it("[issue-106] add_session.py index table header has 5 columns including Branch", () => {
-    expect(addSessionScript).toContain(
-      "| # | Date | Title | Commits | Branch |",
-    );
-    expect(addSessionScript).not.toContain(
-      "| # | Date | Title | Commits | Branch | Base Branch |",
-    );
-  });
-
-  it("[issue-106] add_session.py migrates old 4/6-column headers to 5-column", () => {
-    expect(addSessionScript).toMatch(
-      /re\.match\(\r?\n\s+r"\^\\\|\\s\*#\\s\*\\\|\\s\*Date\\s\*\\\|\\s\*Title\\s\*\\\|\\s\*Commits\\s\*\\\|\\s\*Branch\\s\*\\\|\\s\*Base Branch\\s\*\\\|\\s\*\$",/,
-    );
-    expect(addSessionScript).toContain(
-      String.raw`re.match(r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*$", line)`,
-    );
-  });
-
-  it("[issue-106] developer.py init template has 5-column session history table", () => {
-    expect(commonDeveloper).toContain(
-      "| # | Date | Title | Commits | Branch |",
-    );
-    expect(commonDeveloper).toContain(
-      "|---|------|-------|---------|--------|",
-    );
-  });
-
-  it("[issue-106] workspace-index.md template documents Branch field only for session records", () => {
-    expect(workspaceIndexContent).toContain(
-      "Branch: Which branch the work was done on",
-    );
-    expect(workspaceIndexContent).toContain("**Branch**: `{branch-name}`");
-    expect(workspaceIndexContent).not.toContain(
-      "**Base Branch**: `{base-branch-name}`",
-    );
-  });
-});
-
-describe("regression: add_session.py runtime branch context (issue-106)", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-session-"));
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  function writeTrellisScripts(): void {
-    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
-    for (const [relativePath, content] of getAllScripts()) {
-      const absPath = path.join(scriptsDir, relativePath);
-      fs.mkdirSync(path.dirname(absPath), { recursive: true });
-      fs.writeFileSync(absPath, content);
-    }
-  }
-
-  function createWorkspaceIndex(
-    headerMode: "legacy4" | "legacy6" | "current5",
-  ): void {
-    let header = "| # | Date | Title | Commits | Branch |";
-    let separator = "|---|------|-------|---------|--------|";
-    if (headerMode === "legacy4") {
-      header = "| # | Date | Title | Commits |";
-      separator = "|---|------|-------|---------|";
-    } else if (headerMode === "legacy6") {
-      header = "| # | Date | Title | Commits | Branch | Base Branch |";
-      separator = "|---|------|-------|---------|--------|-------------|";
-    }
-    const indexContent = `# Workspace Index - test-dev
-
-## Current Status
-
-<!-- @@@auto:current-status -->
-- **Active File**: \`journal-1.md\`
-- **Total Sessions**: 0
-- **Last Active**: -
-<!-- @@@/auto:current-status -->
-
-## Active Documents
-
-<!-- @@@auto:active-documents -->
-| File | Lines | Status |
-|------|-------|--------|
-| \`journal-1.md\` | ~0 | Active |
-<!-- @@@/auto:active-documents -->
-
-## Session History
-
-<!-- @@@auto:session-history -->
-${header}
-${separator}
-<!-- @@@/auto:session-history -->
-`;
-    fs.writeFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      indexContent,
-      "utf-8",
-    );
-  }
-
-  function setupSessionRepo(options?: {
-    gitBranch?: string;
-    headerMode?: "legacy4" | "legacy6" | "current5";
-    taskBranch?: string;
-    taskBaseBranch?: string;
-  }): void {
-    writeTrellisScripts();
-
-    fs.mkdirSync(path.join(tmpDir, ".trellis", "workspace", "test-dev"), {
-      recursive: true,
-    });
-    fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
-      "name=test-dev\ninitialized_at=2026-03-22T00:00:00\n",
-      "utf-8",
-    );
-    fs.writeFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
-      "# Journal - test-dev (Part 1)\n\n---\n",
-      "utf-8",
-    );
-    createWorkspaceIndex(options?.headerMode ?? "current5");
-
-    if (options?.taskBranch || options?.taskBaseBranch) {
-      const taskDir = path.join(tmpDir, ".trellis", "tasks", "issue-106");
-      fs.mkdirSync(taskDir, { recursive: true });
-      fs.mkdirSync(path.join(tmpDir, ".trellis", ".runtime", "sessions"), {
-        recursive: true,
-      });
-      fs.writeFileSync(
-        path.join(tmpDir, ".trellis", ".runtime", "sessions", "session-a.json"),
-        JSON.stringify(
-          {
-            current_task: ".trellis/tasks/issue-106",
-            platform: "test",
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-      fs.writeFileSync(
-        path.join(taskDir, "task.json"),
-        JSON.stringify(
-          {
-            title: "Issue 106 task",
-            status: "in_progress",
-            package: null,
-            branch: options.taskBranch ?? null,
-            base_branch: options.taskBaseBranch ?? null,
-          },
-          null,
-          2,
-        ),
-        "utf-8",
-      );
-    }
-
-    if (options?.gitBranch) {
-      execSync("git init -q", { cwd: tmpDir });
-      execSync(`git branch -m ${JSON.stringify(options.gitBranch)}`, {
-        cwd: tmpDir,
-      });
-    }
-  }
-
-  function runAddSession(title: string, options?: { branch?: string }): void {
-    const command = [
-      "python3",
-      JSON.stringify(
-        path.join(tmpDir, ".trellis", "scripts", "add_session.py"),
-      ),
-      "--title",
-      JSON.stringify(title),
-      "--summary",
-      JSON.stringify("Regression test session"),
-      "--no-commit",
-    ];
-    if (options?.branch) {
-      command.push("--branch", JSON.stringify(options.branch));
-    }
-
-    execSync(command.join(" "), {
-      cwd: tmpDir,
-      encoding: "utf-8",
-      env: { ...process.env, TRELLIS_CONTEXT_ID: "session-a" },
-    });
-  }
-
-  function createLocalBranch(branch: string): void {
-    execSync("git config user.email test@example.com", { cwd: tmpDir });
-    execSync("git config user.name Test", { cwd: tmpDir });
-    execSync("git commit --allow-empty -q -m init", { cwd: tmpDir });
-    execSync(`git branch ${JSON.stringify(branch)}`, { cwd: tmpDir });
-  }
-
-  it("[issue-106] prefers explicit CLI branch over task.json and git", () => {
-    setupSessionRepo({
-      gitBranch: "feature/from-git",
-      taskBranch: "task/from-task",
-      taskBaseBranch: "main",
-    });
-
-    runAddSession("CLI branch wins", { branch: "cli/from-arg" });
-
-    const journal = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
-      "utf-8",
-    );
-    const index = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      "utf-8",
-    );
-
-    expect(journal).toContain("**Branch**: `cli/from-arg`");
-    expect(journal).not.toContain("**Base Branch**:");
-    expect(journal).not.toContain("task/from-task");
-    expect(journal).not.toContain("feature/from-git");
-    expect(index).toContain("`cli/from-arg` |");
-    expect(index).not.toContain("`task/from-task`");
-    expect(index).not.toContain("`feature/from-git`");
-  });
-
-  it("[issue-106] prefers task.json branch over current git branch and ignores task base_branch", () => {
-    setupSessionRepo({
-      gitBranch: "feature/from-git",
-      taskBranch: "task/from-task",
-      taskBaseBranch: "main",
-    });
-    createLocalBranch("task/from-task");
-
-    runAddSession("Task branch wins");
-
-    const journal = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
-      "utf-8",
-    );
-    const index = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      "utf-8",
-    );
-
-    expect(journal).toContain("**Branch**: `task/from-task`");
-    expect(journal).not.toContain("**Base Branch**:");
-    expect(journal).not.toContain("feature/from-git");
-    expect(index).toContain("`task/from-task` |");
-    expect(index).not.toContain("`feature/from-git`");
-  });
-
-  it("[issue-106] falls back to git branch and migrates old 6-column session history", () => {
-    setupSessionRepo({
-      gitBranch: "feature/from-git",
-      headerMode: "legacy6",
-    });
-
-    runAddSession("Git branch fallback");
-
-    const journal = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
-      "utf-8",
-    );
-    const index = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      "utf-8",
-    );
-
-    expect(journal).toContain("**Branch**: `feature/from-git`");
-    expect(journal).not.toContain("**Base Branch**:");
-    expect(index).toContain("| # | Date | Title | Commits | Branch |");
-    expect(index).toContain("|---|------|-------|---------|--------|");
-    expect(index).toContain("`feature/from-git` |");
-    expect(index).not.toContain(
-      "| # | Date | Title | Commits | Branch | Base Branch |\n|---|------|-------|---------|--------|-------------|",
-    );
-  });
-
-  it("[issue-106] migrates old 4-column session history directly to 5 columns", () => {
-    setupSessionRepo({
-      headerMode: "legacy4",
-    });
-
-    runAddSession("Legacy 4-column migration");
-
-    const index = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      "utf-8",
-    );
-
-    expect(index).toContain("| # | Date | Title | Commits | Branch |");
-    expect(index).toContain("|---|------|-------|---------|--------|");
-    expect(index).not.toContain(
-      "| # | Date | Title | Commits |\n|---|------|-------|---------|",
-    );
-  });
-
-  it("[issue-106] records a session even when no branch information is available", () => {
-    setupSessionRepo();
-
-    runAddSession("No branch available");
-
-    const journal = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "journal-1.md"),
-      "utf-8",
-    );
-    const index = fs.readFileSync(
-      path.join(tmpDir, ".trellis", "workspace", "test-dev", "index.md"),
-      "utf-8",
-    );
-
-    expect(journal).not.toContain("**Branch**:");
-    expect(journal).not.toContain("**Base Branch**:");
-    expect(index).toContain("`-` |");
-    expect(index).toContain("- **Total Sessions**: 1");
   });
 });
 
@@ -672,6 +322,7 @@ describe("regression: resolve_task_dir containment chokepoint", () => {
   it("[audit] create --slug with traversal fails and writes nothing outside the tasks dir", () => {
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Evil",
       "--description",
       "regression fixture",
@@ -836,6 +487,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "First",
         "--description",
         "regression fixture",
@@ -858,6 +510,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Second",
       "--description",
       "regression fixture",
@@ -875,6 +528,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "First",
         "--description",
         "regression fixture",
@@ -888,6 +542,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Second",
       "--description",
       "regression fixture",
@@ -908,6 +563,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Kid",
         "--description",
         "regression fixture",
@@ -947,6 +603,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Kid",
         "--description",
         "regression fixture",
@@ -970,6 +627,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
   it("[audit] create --parent on a missing task fails and creates nothing", () => {
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Orphan",
       "--description",
       "regression fixture",
@@ -992,6 +650,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Orphan",
       "--description",
       "regression fixture",
@@ -1010,6 +669,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Mum",
         "--description",
         "regression fixture",
@@ -1023,6 +683,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "Kid",
       "--description",
       "regression fixture",
@@ -1048,6 +709,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Mum",
           "--description",
           "regression fixture",
@@ -1059,6 +721,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Kid",
           "--description",
           "regression fixture",
@@ -1090,6 +753,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Mum",
           "--description",
           "regression fixture",
@@ -1103,6 +767,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Kid",
           "--description",
           "regression fixture",
@@ -1197,6 +862,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Broken",
         "--description",
         "regression fixture",
@@ -1224,6 +890,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Latin",
         "--description",
         "regression fixture",
@@ -1247,6 +914,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Typed",
         "--description",
         "regression fixture",
@@ -1274,6 +942,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Locked",
           "--description",
           "regression fixture",
@@ -1311,6 +980,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Ro",
           "--description",
           "regression fixture",
@@ -1342,6 +1012,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "First",
           "--description",
           "regression fixture",
@@ -1356,6 +1027,7 @@ describe("regression: JSON read/write failure reporting", () => {
       try {
         const r = runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Second",
           "--description",
           "regression fixture",
@@ -1383,6 +1055,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Mum",
           "--description",
           "regression fixture",
@@ -1396,6 +1069,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Kid",
           "--description",
           "regression fixture",
@@ -1423,10 +1097,133 @@ describe("regression: JSON read/write failure reporting", () => {
     },
   );
 
+  it.skipIf(!canProvokePermissionFailure)(
+    "[audit] archive restores the children it already unlinked when a later one fails",
+    () => {
+      const createTask = (
+        title: string,
+        slug: string,
+        parent?: string,
+      ): void => {
+        const args = [
+          "create",
+          title,
+          "--description",
+          "regression fixture",
+          "--creator",
+          "regression-fixture",
+          "--assignee",
+          "regression-fixture",
+          "--slug",
+          slug,
+          "--no-start",
+        ];
+        if (parent) args.push("--parent", parent);
+        expect(runTask(args).status).toBe(0);
+      };
+
+      createTask("Mum", "mum2");
+      const parentName = `${datePrefix}-mum2`;
+      createTask("Kid A", "kid-a", parentName);
+      createTask("Kid B", "kid-b", parentName);
+      const firstChild = `${datePrefix}-kid-a`;
+      const failingChild = `${datePrefix}-kid-b`;
+
+      // Archive walks `children` in order, so pin the order: the failing
+      // child has to come second, after `kid-a` has already lost its link.
+      const parentJson = readTaskJson(parentName);
+      parentJson.children = [firstChild, failingChild];
+      fs.writeFileSync(
+        taskJsonPath(parentName),
+        `${JSON.stringify(parentJson, null, 2)}\n`,
+        "utf-8",
+      );
+
+      // Provoke the write failure through both mechanisms the atomic
+      // writer can hit: a read-only directory fails `mkstemp`, and a
+      // read-only target fails the final replace. Which one a platform
+      // enforces is not the point of this test.
+      fs.chmodSync(taskDir(failingChild), 0o555);
+      fs.chmodSync(taskJsonPath(failingChild), 0o444);
+      try {
+        const r = runTask(["archive", parentName, "--no-commit"]);
+        expect(r.status).not.toBe(0);
+        expect(r.stderr).toContain("Failed to write");
+        expect(r.stderr).toContain(failingChild);
+        expect(r.stderr).toContain("Not archived");
+      } finally {
+        fs.chmodSync(taskJsonPath(failingChild), 0o644);
+        fs.chmodSync(taskDir(failingChild), 0o755);
+      }
+
+      // Stopping before the move is not enough on its own: `kid-a` was
+      // unlinked before the failure, and with its parent still in the
+      // active tree that link is lost for good. It has to come back.
+      expect(fs.existsSync(taskJsonPath(parentName))).toBe(true);
+      expect(readTaskJson(firstChild).parent).toBe(parentName);
+      expect(readTaskJson(failingChild).parent).toBe(parentName);
+    },
+  );
+
+  it.skipIf(!canProvokePermissionFailure)(
+    "[audit] archive restore survives a duplicated child entry",
+    () => {
+      const create = (title: string, slug: string, parent?: string): string => {
+        const args = [
+          "create",
+          title,
+          "--description",
+          "regression fixture",
+          "--creator",
+          "regression-fixture",
+          "--assignee",
+          "regression-fixture",
+          "--slug",
+          slug,
+          "--no-start",
+        ];
+        if (parent) args.push("--parent", parent);
+        expect(runTask(args).status).toBe(0);
+        return `${datePrefix}-${slug}`;
+      };
+
+      const parentName = create("Mum", "mum-dup");
+      const firstChild = create("Kid A", "kid-a-dup", parentName);
+      const failingChild = create("Kid B", "kid-b-dup", parentName);
+
+      // A duplicated entry makes the unlink loop visit `kid-a-dup` twice.
+      // The second visit must not snapshot the already-cleared `null`, or the
+      // restore writes that back over the real link and detaches the child
+      // while its parent is still in the active tree.
+      const parentJson = readTaskJson(parentName);
+      parentJson.children = [firstChild, firstChild, failingChild];
+      fs.writeFileSync(
+        taskJsonPath(parentName),
+        `${JSON.stringify(parentJson, null, 2)}\n`,
+        "utf-8",
+      );
+
+      fs.chmodSync(taskDir(failingChild), 0o555);
+      fs.chmodSync(taskJsonPath(failingChild), 0o444);
+      try {
+        expect(runTask(["archive", parentName, "--no-commit"]).status).not.toBe(
+          0,
+        );
+      } finally {
+        fs.chmodSync(taskJsonPath(failingChild), 0o644);
+        fs.chmodSync(taskDir(failingChild), 0o755);
+      }
+
+      expect(readTaskJson(firstChild).parent).toBe(parentName);
+      expect(readTaskJson(failingChild).parent).toBe(parentName);
+    },
+  );
+
   it("[audit] list warns about a skipped task instead of silently dropping it", () => {
     expect(
       runTask([
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Good",
         "--description",
         "regression fixture",
@@ -1438,6 +1235,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Bad",
         "--description",
         "regression fixture",
@@ -1464,6 +1262,7 @@ describe("regression: JSON read/write failure reporting", () => {
       runTask(
         [
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Rot",
           "--description",
           "regression fixture",
@@ -1492,6 +1291,7 @@ describe("regression: JSON read/write failure reporting", () => {
       runTask(
         [
           "create",
+          "--creator", "fixture-creator", "--assignee", "test-dev",
           "Live",
           "--description",
           "regression fixture",
@@ -1539,6 +1339,7 @@ describe("regression: JSON read/write failure reporting", () => {
         runTask(
           [
             "create",
+            "--creator", "fixture-creator", "--assignee", "test-dev",
             "One",
             "--description",
             "regression fixture",
@@ -1553,6 +1354,7 @@ describe("regression: JSON read/write failure reporting", () => {
         runTask(
           [
             "create",
+            "--creator", "fixture-creator", "--assignee", "test-dev",
             "Two",
             "--description",
             "regression fixture",
@@ -1867,6 +1669,7 @@ describe("regression: task auto-activation failure diagnostics (issue #430)", ()
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "issue-430 probe",
         "--description",
         "regression fixture",
@@ -2154,7 +1957,12 @@ describe("regression: shell to Python migration (beta.0)", () => {
     const registeredKeys = new Set(scripts.keys());
 
     // Known exclusions: files intentionally not in getAllScripts()
-    const excluded = new Set(["hooks/linear_sync.py"]);
+    const excluded = new Set([
+      "hooks/linear_sync.py",
+      "add_session.py",
+      "init_developer.py",
+      "get_developer.py",
+    ]);
 
     for (const file of fsFiles) {
       if (excluded.has(file)) continue;
@@ -2374,8 +2182,6 @@ describe("regression: agent-session Trellis update hint", () => {
     for (const functionName of [
       "get_context_json",
       "output_json",
-      "get_context_record_json",
-      "get_context_text_record",
     ]) {
       expect(
         pythonFunctionBody(commonSessionContext, functionName),
@@ -2494,29 +2300,6 @@ describe("regression: issue #252 polyrepo Git context", () => {
     expect(output).toContain("init module a");
   });
 
-  it("uses the same non-Git root rendering in record mode", () => {
-    writeConfigYaml(
-      [
-        "packages:",
-        "  module_a:",
-        "    path: module-a",
-        "    git: true",
-        "",
-      ].join("\n"),
-    );
-    initChildRepo("module-a", "init module a");
-
-    const output = runSessionContext("record");
-    const rootBlock = output.slice(
-      output.indexOf("## GIT STATUS"),
-      output.indexOf("## GIT STATUS (module_a: module-a)"),
-    );
-
-    expect(rootBlock).toContain("Root is not a Git repository.");
-    expect(rootBlock).not.toContain("Branch: unknown");
-    expect(rootBlock).not.toContain("Working directory: Clean");
-  });
-
   it("discovers unconfigured child Git repos when root is not a Git repo", () => {
     writeConfigYaml("# no packages configured\n");
     initChildRepo("module-a", "init module a");
@@ -2576,7 +2359,7 @@ describe("regression: issue #252 polyrepo Git context", () => {
         "root_calls = []",
         "def fake_git(args, cwd=None, timeout=None):",
         "    root_calls.append({'args': args, 'timeout': timeout})",
-        "    if args == ['status', '--porcelain']:",
+        "    if args[:2] == ['status', '--porcelain']:",
         "        return (1, '', 'timed out')",
         "    return (0, 'true\\n' if args[0] == 'rev-parse' else '', '')",
         "session_context.run_git = fake_git",
@@ -2980,7 +2763,7 @@ describe("regression: current-task path normalization", () => {
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-auto-active" --description "regression fixture" --slug r7-auto --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-auto-active" --description "regression fixture" --slug r7-auto --assignee test-dev`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -3022,6 +2805,7 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "described task",
         "--description",
         "  padded description  ",
@@ -3069,6 +2853,7 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "batch backlog task",
         "--slug",
         "batch-backlog",
@@ -3128,7 +2913,7 @@ describe("regression: current-task path normalization", () => {
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     // sessionEnv() with no overrides drops every session-identity env var.
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-cli-only" --description "regression fixture" --slug r7-cli --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-cli-only" --description "regression fixture" --slug r7-cli --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -3157,7 +2942,7 @@ describe("regression: current-task path normalization", () => {
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-idem" --description "regression fixture" --slug r7-idem --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-idem" --description "regression fixture" --slug r7-idem --assignee test-dev`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -3289,6 +3074,7 @@ describe("regression: current-task path normalization", () => {
     const createArgs = [
       taskScriptPath,
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       "web auth retry",
       "--description",
       "regression fixture",
@@ -3395,6 +3181,7 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Example Task",
         "--description",
         "regression fixture",
@@ -3436,6 +3223,7 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Example Task",
         "--description",
         "regression fixture",
@@ -3471,6 +3259,7 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "Example Task",
         "--description",
         "regression fixture",
@@ -6716,7 +6505,7 @@ print(json.dumps({
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "dummy task" --description "regression fixture" --slug dummy-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "dummy task" --description "regression fixture" --slug dummy-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     // Locate the newly created task dir
@@ -6743,7 +6532,7 @@ print(json.dumps({
     // setupTaskRepo does not create any .{platform}/ dir → agent-less mode
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "plain task" --description "regression fixture" --slug plain-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "plain task" --description "regression fixture" --slug plain-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const tasksDir = path.join(tmpDir, ".trellis", "tasks");
@@ -6762,7 +6551,7 @@ print(json.dumps({
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     const output = execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seeded task" --description "regression fixture" --slug seeded-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seeded task" --description "regression fixture" --slug seeded-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
     expect(output).toBeDefined();
@@ -6791,6 +6580,7 @@ print(json.dumps({
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "curation hint task",
         "--description",
         "regression fixture",
@@ -6812,7 +6602,7 @@ print(json.dumps({
     fs.mkdirSync(path.join(tmpDir, ".grok"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "grok task" --description "regression fixture" --slug grok-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "grok task" --description "regression fixture" --slug grok-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -6835,7 +6625,7 @@ print(json.dumps({
     fs.mkdirSync(path.join(tmpDir, ".kimi-code"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "kimi task" --description "regression fixture" --slug kimi-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "kimi task" --description "regression fixture" --slug kimi-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -6859,7 +6649,7 @@ print(json.dumps({
     writeConfigYaml("codex:\n  dispatch_mode: inline\n");
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex inline task" --description "regression fixture" --slug codex-inline-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex inline task" --description "regression fixture" --slug codex-inline-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -6884,7 +6674,7 @@ print(json.dumps({
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex subagent task" --description "regression fixture" --slug codex-subagent-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex subagent task" --description "regression fixture" --slug codex-subagent-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -6969,7 +6759,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-only" --description "regression fixture" --slug seed-only-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-only" --description "regression fixture" --slug seed-only-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -7240,7 +7030,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-list" --description "regression fixture" --slug seed-list-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-list" --description "regression fixture" --slug seed-list-task --assignee test-dev`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -8341,7 +8131,7 @@ print(len(entries))
 
     // Simulate a bare "origin" remote whose default branch is main, while
     // the local checkout stays on a feature branch (#399 item 1 repro).
-    const remotePath = path.join(tmpDir, "..", "origin-bare.git");
+    const remotePath = path.join(tmpDir, "origin-bare.git");
     execSync(`git init -q --bare ${JSON.stringify(remotePath)}`, {
       cwd: tmpDir,
     });
@@ -8358,7 +8148,7 @@ print(len(entries))
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "base branch test" --description "regression fixture" --slug base-branch-test --assignee test-dev --no-start`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "base branch test" --description "regression fixture" --slug base-branch-test --assignee test-dev --no-start`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -8392,6 +8182,7 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "no remote test",
         "--description",
         "regression fixture",
@@ -8438,6 +8229,7 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
+        "--creator", "fixture-creator", "--assignee", "test-dev",
         "explicit base branch test",
         "--description",
         "regression fixture",
@@ -11100,28 +10892,6 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     execSync('git commit -q -m "init"', { cwd: tmpDir });
   }
 
-  function runAddSession(): { stdout: string; stderr: string } {
-    const scriptPath = path.join(
-      tmpDir,
-      ".trellis",
-      "scripts",
-      "add_session.py",
-    );
-    const result = spawnSync(
-      pyCmd,
-      [scriptPath, "--title", "Test", "--summary", "Test"],
-      {
-        cwd: tmpDir,
-        encoding: "utf-8",
-        env: { ...process.env, TRELLIS_CONTEXT_ID: "session-a" },
-      },
-    );
-    return {
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
-    };
-  }
-
   function listCommittedFiles(): string[] {
     const out = execSync("git ls-tree -r --name-only HEAD", {
       cwd: tmpDir,
@@ -11129,51 +10899,6 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     });
     return out.split("\n").filter((l) => l.length > 0);
   }
-
-  it("[gitignore-trellis] add_session warns and skips when .trellis/ is ignored (default mode)", () => {
-    setupRepo({ gitignoreTrellis: true });
-    const { stderr } = runAddSession();
-
-    // Plain add fails with "ignored by". 0.5.11 must NOT retry with -f.
-    // Instead the script warns and skips the entire auto-commit. So no
-    // "Auto-committed" line, and the warning fires.
-    expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).toContain("ignored by your .gitignore");
-    expect(stderr).toContain("Do NOT use `git add -f .trellis/`");
-    expect(stderr).toContain("session_auto_commit: false");
-
-    // Nothing under .trellis/ should be tracked: the user's .gitignore
-    // intent is preserved.
-    const tracked = listCommittedFiles();
-    for (const tracked_path of tracked) {
-      expect(
-        tracked_path.startsWith(".trellis/"),
-        `should not commit anything under .trellis/ (got: ${tracked_path})`,
-      ).toBe(false);
-    }
-
-    // The journal + index files are still on disk (the script wrote them
-    // before attempting auto-commit) — only git was untouched.
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".trellis/workspace/test-dev/journal-1.md"),
-      ),
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(tmpDir, ".trellis/workspace/test-dev/index.md")),
-    ).toBe(true);
-  });
-
-  it("[gitignore-trellis] add_session works normally when .trellis/ is NOT ignored", () => {
-    // Regression guard: pre-existing behavior must not change for users
-    // whose .gitignore does not exclude .trellis/.
-    setupRepo({ gitignoreTrellis: false });
-    const { stderr } = runAddSession();
-    expect(stderr).toContain("Auto-committed");
-
-    const tracked = listCommittedFiles();
-    expect(tracked).toContain(".trellis/workspace/test-dev/journal-1.md");
-  });
 
   it("[gitignore-trellis] safe_commit module ships and contains the negative warning + new config hint", () => {
     // The warning's exact text matters because AI agents read it.
@@ -11183,11 +10908,10 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     const safeCommit = getAllScripts().get("common/safe_commit.py");
     expect(safeCommit).toBeTruthy();
     expect(safeCommit).toContain("Do NOT use `git add -f .trellis/`");
-    expect(safeCommit).toContain("safe_trellis_paths_to_add");
     expect(safeCommit).toContain("safe_archive_paths_to_add");
     expect(safeCommit).toContain("safe_git_add");
     // 0.5.11: new hint pointing users at the config knob.
-    expect(safeCommit).toContain("session_auto_commit: false");
+    expect(safeCommit).toContain("task_auto_commit: false");
     // 0.5.11: auto -f retry must be gone. The function body should no
     // longer issue `git add -f`.
     expect(safeCommit).not.toMatch(/\["add", "-f", "--",/);
@@ -11250,38 +10974,6 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     writeFile(".trellis/config.yaml", content);
   }
 
-  it("[session_auto_commit=false] add_session skips git entirely (no add, no commit)", () => {
-    // User wants journal/task files written to disk but no auto-staging
-    // and no auto-commit. Issue #245 + screenshot user use case.
-    setupRepo({ gitignoreTrellis: false });
-    writeConfigYaml("session_auto_commit: false\n");
-
-    const { stderr } = runAddSession();
-    expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).toContain("session_auto_commit: false");
-
-    // No new commits beyond the initial "init" commit.
-    const log = execSync("git log --oneline", {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
-    expect(log.trim().split("\n").length).toBe(1);
-
-    // No staged changes either — `git add` was never called.
-    const staged = execSync("git diff --cached --name-only", {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
-    expect(staged.trim()).toBe("");
-
-    // Files were still written to disk.
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".trellis/workspace/test-dev/journal-1.md"),
-      ),
-    ).toBe(true);
-  });
-
   it("[session_auto_commit=false] task.py archive skips git entirely", () => {
     setupRepo({ gitignoreTrellis: false });
     writeConfigYaml("session_auto_commit: false\n");
@@ -11304,7 +10996,7 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     });
     const stderr = result.stderr ?? "";
     expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).toContain("session_auto_commit: false");
+    expect(stderr).toContain("task_auto_commit: false");
 
     const log = execSync("git log --oneline", {
       cwd: tmpDir,
@@ -11323,59 +11015,6 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
         );
       });
     expect(archiveExists).toBe(true);
-  });
-
-  it("[session_auto_commit] inline comment is stripped before parsing", () => {
-    // YAML inline-comment trap: `key: false  # comment` previously broke in
-    // common/config.py because parse_simple_yaml didn't strip ` #`. This
-    // verifies the helper is shared with trellis_config.py's parser.
-    setupRepo({ gitignoreTrellis: false });
-    writeConfigYaml("session_auto_commit: false  # disable for this project\n");
-
-    const { stderr } = runAddSession();
-    expect(stderr).toContain("session_auto_commit: false");
-    expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).not.toContain("invalid session_auto_commit");
-
-    const log = execSync("git log --oneline", {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
-    expect(log.trim().split("\n").length).toBe(1);
-  });
-
-  it("[session_auto_commit] string variants resolve to false", () => {
-    // The helper must accept lowercase / uppercase / synonym forms.
-    // Spot-check `FALSE` (uppercase) and `no` here; `0` and `off` follow
-    // the same code path (the lowercase set in get_session_auto_commit).
-    for (const variant of ["FALSE", "no", "off", "0"]) {
-      setupRepo({ gitignoreTrellis: false });
-      writeConfigYaml(`session_auto_commit: ${variant}\n`);
-
-      const { stderr } = runAddSession();
-      expect(
-        stderr.includes("session_auto_commit: false"),
-        `variant=${variant}`,
-      ).toBe(true);
-
-      // Reset for next iteration.
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-safe-commit-"));
-      execSync("git init -q -b main", { cwd: tmpDir });
-      execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
-      execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
-    }
-  });
-
-  it("[session_auto_commit] invalid value falls back to true with stderr warn", () => {
-    setupRepo({ gitignoreTrellis: false });
-    writeConfigYaml("session_auto_commit: maybe\n");
-
-    const { stderr } = runAddSession();
-    // Warning fires.
-    expect(stderr).toContain("invalid session_auto_commit value");
-    // Falls back to true → auto-commit happens.
-    expect(stderr).toContain("Auto-committed");
   });
 });
 
@@ -11803,6 +11442,7 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
   function create(slug: string, parent?: string): string {
     const args = [
       "create",
+      "--creator", "fixture-creator", "--assignee", "test-dev",
       slug,
       "--description",
       "rename fixture",
@@ -12045,298 +11685,5 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
     expect(
       fs.existsSync(taskDir("archive", yearMonth, target, "task.json")),
     ).toBe(true);
-  });
-});
-
-describe("regression: a linked worktree inherits developer identity", () => {
-  // `.trellis/.developer` is gitignored (it carries a personal identity), so a
-  // fresh `git worktree add` used to start with no identity at all and every
-  // task.py command failed with "No developer set" until init_developer.py was
-  // re-run per worktree — which blocks worktree-per-worker parallel runs.
-  const pyCmd = process.platform === "win32" ? "python" : "python3";
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  const now = new Date();
-  const datePrefix = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  let tmpDir: string;
-  let mainDir: string;
-  let worktreeDir: string;
-
-  function git(cwd: string, ...args: string[]): void {
-    const proc = spawnSync("git", args, { cwd, encoding: "utf-8" });
-    if (proc.status !== 0) {
-      throw new Error(`git ${args.join(" ")} failed: ${proc.stderr}`);
-    }
-  }
-
-  function writeScripts(root: string): void {
-    for (const [rel, content] of getAllScripts()) {
-      const abs = path.join(root, ".trellis", "scripts", rel);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, content, "utf-8");
-    }
-  }
-
-  /** A committed repo at `mainDir` plus a linked worktree at `worktreeDir`. */
-  function buildRepo(developerName: string | null): void {
-    writeScripts(mainDir);
-    fs.writeFileSync(
-      path.join(mainDir, ".gitignore"),
-      ".trellis/.developer\n",
-      "utf-8",
-    );
-    if (developerName !== null) {
-      fs.writeFileSync(
-        path.join(mainDir, ".trellis", ".developer"),
-        `name=${developerName}\ninitialized_at=2026-08-09T00:00:00\n`,
-        "utf-8",
-      );
-    }
-    git(mainDir, "init", "-q", "-b", "main", ".");
-    git(mainDir, "config", "user.email", "test@example.com");
-    git(mainDir, "config", "user.name", "test");
-    git(mainDir, "add", "-A");
-    git(mainDir, "commit", "-qm", "init");
-    git(mainDir, "worktree", "add", "-q", worktreeDir, "-b", "wt");
-  }
-
-  function runTask(
-    cwd: string,
-    args: string[],
-    envOverrides: NodeJS.ProcessEnv = {},
-  ): { status: number | null; stdout: string; stderr: string } {
-    const env = { ...process.env, ...envOverrides };
-    // Inherited identity must come from the repo, never from the environment
-    // of the machine running the suite.
-    if (envOverrides.TRELLIS_DEVELOPER === undefined) {
-      delete env.TRELLIS_DEVELOPER;
-    }
-    const proc = spawnSync(
-      pyCmd,
-      [path.join(cwd, ".trellis", "scripts", "task.py"), ...args],
-      { cwd, encoding: "utf-8", env },
-    );
-    return {
-      status: proc.status,
-      stdout: proc.stdout ?? "",
-      stderr: proc.stderr ?? "",
-    };
-  }
-
-  function createTask(
-    cwd: string,
-    slug: string,
-    extraArgs: string[] = [],
-    envOverrides: NodeJS.ProcessEnv = {},
-  ): { status: number | null; stdout: string; stderr: string } {
-    return runTask(
-      cwd,
-      [
-        "create",
-        slug,
-        "--description",
-        "worktree identity fixture",
-        "--slug",
-        slug,
-        "--no-start",
-        ...extraArgs,
-      ],
-      envOverrides,
-    );
-  }
-
-  function assigneeOf(cwd: string, slug: string): unknown {
-    const taskJson = path.join(
-      cwd,
-      ".trellis",
-      "tasks",
-      `${datePrefix}-${slug}`,
-      "task.json",
-    );
-    return (
-      JSON.parse(fs.readFileSync(taskJson, "utf-8")) as Record<string, unknown>
-    ).assignee;
-  }
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-wt-identity-"));
-    mainDir = path.join(tmpDir, "main");
-    worktreeDir = path.join(tmpDir, "linked");
-    fs.mkdirSync(mainDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("[worktree-identity] create/list/start work in a fresh worktree with no manual setup", () => {
-    buildRepo("main-dev");
-
-    // The premise: git did not carry the gitignored identity file across.
-    expect(
-      fs.existsSync(path.join(worktreeDir, ".trellis", ".developer")),
-    ).toBe(false);
-
-    const created = createTask(worktreeDir, "inherited");
-    expect(created.status, created.stderr).toBe(0);
-    expect(assigneeOf(worktreeDir, "inherited")).toBe("main-dev");
-
-    const listed = runTask(worktreeDir, ["list", "--json", "--mine"]);
-    expect(listed.status, listed.stderr).toBe(0);
-    const tasks = (
-      JSON.parse(listed.stdout) as { tasks: { id: string; assignee: string }[] }
-    ).tasks;
-    expect(tasks.map((t) => [t.id, t.assignee])).toEqual([
-      ["inherited", "main-dev"],
-    ]);
-
-    const started = runTask(worktreeDir, ["start", `${datePrefix}-inherited`]);
-    expect(started.status, started.stderr).toBe(0);
-
-    // Inheritance is read-only: copying the file in would go stale and shadow
-    // later changes made in the main checkout.
-    expect(
-      fs.existsSync(path.join(worktreeDir, ".trellis", ".developer")),
-    ).toBe(false);
-  });
-
-  it("[worktree-identity] a later main-checkout change is picked up, because nothing was copied", () => {
-    buildRepo("main-dev");
-    expect(createTask(worktreeDir, "first").status).toBe(0);
-    expect(assigneeOf(worktreeDir, "first")).toBe("main-dev");
-
-    fs.writeFileSync(
-      path.join(mainDir, ".trellis", ".developer"),
-      "name=renamed-dev\ninitialized_at=2026-08-09T00:00:00\n",
-      "utf-8",
-    );
-
-    expect(createTask(worktreeDir, "second").status).toBe(0);
-    expect(assigneeOf(worktreeDir, "second")).toBe("renamed-dev");
-  });
-
-  it("[worktree-identity] precedence: --assignee > TRELLIS_DEVELOPER > local file > main checkout", () => {
-    buildRepo("main-dev");
-
-    // 4. main checkout, in the worktree that has no file of its own
-    expect(createTask(worktreeDir, "inherit").status).toBe(0);
-    expect(assigneeOf(worktreeDir, "inherit")).toBe("main-dev");
-
-    // 3. a local file in the worktree wins over the main checkout
-    fs.writeFileSync(
-      path.join(worktreeDir, ".trellis", ".developer"),
-      "name=local-dev\ninitialized_at=2026-08-09T00:00:00\n",
-      "utf-8",
-    );
-    expect(createTask(worktreeDir, "local").status).toBe(0);
-    expect(assigneeOf(worktreeDir, "local")).toBe("local-dev");
-
-    // 2. the env var wins over both files
-    expect(
-      createTask(worktreeDir, "env", [], { TRELLIS_DEVELOPER: "env-dev" })
-        .status,
-    ).toBe(0);
-    expect(assigneeOf(worktreeDir, "env")).toBe("env-dev");
-
-    // 1. --assignee wins over everything
-    expect(
-      createTask(worktreeDir, "flag", ["--assignee", "flag-dev"], {
-        TRELLIS_DEVELOPER: "env-dev",
-      }).status,
-    ).toBe(0);
-    expect(assigneeOf(worktreeDir, "flag")).toBe("flag-dev");
-  });
-
-  it("[worktree-identity] the env var alone is enough in the main checkout too", () => {
-    buildRepo(null);
-    expect(
-      createTask(mainDir, "envonly", [], { TRELLIS_DEVELOPER: "env-dev" })
-        .status,
-    ).toBe(0);
-    expect(assigneeOf(mainDir, "envonly")).toBe("env-dev");
-  });
-
-  it("[worktree-identity] a whitespace-only env var does not count as an identity", () => {
-    buildRepo("main-dev");
-    expect(
-      createTask(worktreeDir, "blank", [], { TRELLIS_DEVELOPER: "   " }).status,
-    ).toBe(0);
-    expect(assigneeOf(worktreeDir, "blank")).toBe("main-dev");
-  });
-
-  it("[worktree-identity] with no identity anywhere, the error names all three sources", () => {
-    buildRepo(null);
-
-    for (const cwd of [mainDir, worktreeDir]) {
-      const created = createTask(cwd, "nobody");
-      expect(created.status).not.toBe(0);
-      expect(created.stderr).toContain("No developer set");
-      expect(created.stderr).toContain("init_developer.py");
-      expect(created.stderr).toContain("TRELLIS_DEVELOPER");
-      expect(created.stderr).toContain("linked git worktree");
-
-      const listed = runTask(cwd, ["list", "--json", "--mine"]);
-      expect(listed.status).not.toBe(0);
-      const payload = JSON.parse(listed.stderr) as {
-        error: string;
-        hint: string;
-      };
-      expect(payload.error).toBe("No developer set");
-      expect(payload.hint).toContain("TRELLIS_DEVELOPER");
-      expect(payload.hint).toContain("linked git worktree");
-    }
-  });
-
-  it("[worktree-identity] a linked worktree of a bare repo inherits nothing", () => {
-    buildRepo("main-dev");
-    const bareDir = path.join(tmpDir, "bare.git");
-    const bareWt = path.join(tmpDir, "bare-wt");
-    git(tmpDir, "clone", "-q", "--bare", mainDir, bareDir);
-    git(bareDir, "worktree", "add", "-q", bareWt, "wt");
-    writeScripts(bareWt);
-
-    const created = createTask(bareWt, "nobody");
-    expect(created.status).toBe(1);
-    expect(created.stderr).toContain("No developer set");
-    expect(created.stderr).not.toContain("Traceback");
-  });
-
-  it("[worktree-identity] a bare repo nested inside an unrelated checkout does not leak that checkout's identity", () => {
-    // Deriving the main root as the parent of `--git-common-dir` picks up
-    // `outer/` here — a real checkout with a real `.developer` — so the wrong
-    // answer looks exactly like a right one. git must name the main worktree.
-    buildRepo("main-dev");
-    const outerDir = path.join(tmpDir, "outer");
-    fs.mkdirSync(path.join(outerDir, ".trellis"), { recursive: true });
-    fs.writeFileSync(
-      path.join(outerDir, ".trellis", ".developer"),
-      "name=unrelated-stranger\ninitialized_at=2026-08-09T00:00:00\n",
-      "utf-8",
-    );
-    fs.writeFileSync(path.join(outerDir, "README.md"), "outer\n", "utf-8");
-    git(outerDir, "init", "-q", "-b", "main", ".");
-    git(outerDir, "config", "user.email", "test@example.com");
-    git(outerDir, "config", "user.name", "test");
-    git(outerDir, "add", "README.md");
-    git(outerDir, "commit", "-qm", "outer");
-
-    const nestedBare = path.join(outerDir, "nested.git");
-    const nestedWt = path.join(tmpDir, "nested-wt");
-    git(tmpDir, "clone", "-q", "--bare", mainDir, nestedBare);
-    git(nestedBare, "worktree", "add", "-q", nestedWt, "wt");
-    writeScripts(nestedWt);
-
-    const created = createTask(nestedWt, "leak");
-    expect(created.status).toBe(1);
-    expect(created.stderr).not.toContain("unrelated-stranger");
-    expect(created.stderr).toContain("No developer set");
-  });
-
-  it("[worktree-identity] a directory that is not a git repo fails normally, never crashes", () => {
-    writeScripts(mainDir);
-
-    const created = createTask(mainDir, "nogit");
-    expect(created.status).toBe(1);
-    expect(created.stderr).toContain("No developer set");
-    expect(created.stderr).not.toContain("Traceback");
   });
 });
