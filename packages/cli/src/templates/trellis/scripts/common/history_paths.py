@@ -40,8 +40,10 @@ def require_active_path(path: Path, repo_root: Path) -> None:
     if lexical_history(absolute):
         raise RetiredDataPathError(f"refusing historical Trellis path: {path}")
     try:
-        workflow_root = (repo_root / DIR_WORKFLOW).resolve()
-        resolved = absolute.resolve()
+        # realpath resolves only directory-entry metadata and avoids Python
+        # 3.9 Path.resolve() probing the historical target with Path.stat().
+        workflow_root = Path(os.path.realpath(repo_root / DIR_WORKFLOW))
+        resolved = Path(os.path.realpath(absolute))
         relative = resolved.relative_to(workflow_root) if resolved.is_relative_to(workflow_root) else None
     except (OSError, RuntimeError) as exc:
         raise RetiredDataPathError(f"cannot classify active path: {path}") from exc
