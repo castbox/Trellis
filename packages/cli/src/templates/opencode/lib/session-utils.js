@@ -3,7 +3,7 @@ import { existsSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import { execFileSync } from "child_process"
 import { platform } from "os"
-import { debugLog } from "./trellis-context.js"
+import { TrellisContext, debugLog } from "./trellis-context.js"
 
 const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
@@ -42,6 +42,7 @@ function hasCuratedJsonlEntry(ctx, jsonlPath) {
 
 function getTaskStatus(ctx, platformInput = null) {
   const active = ctx.getActiveTask(platformInput)
+  if (active.error || active.stale) return `Status: TASK ERROR\nError: ${active.error || "stale binding"}\nSource: ${active.source}`
   const taskRef = active.taskPath
   if (!taskRef) {
     return (
@@ -52,7 +53,8 @@ function getTaskStatus(ctx, platformInput = null) {
     )
   }
 
-  const taskDir = ctx.resolveTaskDir(taskRef)
+  const taskDir = active.resolvedTaskPath
+  ctx = new TrellisContext(active.taskWorkspaceRoot)
 
   if (active.stale || !taskDir || !existsSync(taskDir)) {
     return `Status: STALE POINTER\nTask: ${taskRef}\nNext-Action: Task directory not found. Run: python3 ./.trellis/scripts/task.py finish`
@@ -304,18 +306,22 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
   lines.push(`Git: branch ${branch}; ${dirtyCount === 0 ? "clean" : `dirty ${dirtyCount} paths`}.`)
 
   const active = ctx.getActiveTask(platformInput)
-  if (active.taskPath) {
-    const taskDir = ctx.resolveTaskDir(active.taskPath)
+  if (active.error || active.stale) {
+    lines.push(`Current task: ERROR (${active.error || "stale binding"}); source=${active.source}.`)
+  } else if (active.taskPath) {
+    const taskDir = active.resolvedTaskPath
+    const taskCtx = new TrellisContext(active.taskWorkspaceRoot)
     let status = "unknown"
     if (taskDir) {
       try {
-        const data = JSON.parse(ctx.readFile(join(taskDir, "task.json")) || "{}")
+        const data = JSON.parse(taskCtx.readFile(join(taskDir, "task.json")) || "{}")
         status = data.status || "unknown"
       } catch {
         // Ignore parse errors
       }
     }
     lines.push(`Current task: ${active.taskPath}; status=${status}.`)
+    lines.push(`Task workspace: ${active.taskWorkspaceRoot}; caller workspace: ${directory}.`)
   } else {
     lines.push("Current task: none.")
   }
@@ -341,6 +347,9 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
 }
 
 export function buildSessionContext(ctx, platformInput = null) {
+  const callerCtx = ctx
+  const active = ctx.getActiveTask(platformInput)
+  if (active.taskWorkspaceRoot && !active.error) ctx = new TrellisContext(active.taskWorkspaceRoot)
   const directory = ctx.directory
   const contextKey = typeof ctx.getContextKey === "function"
     ? ctx.getContextKey(platformInput)
@@ -363,7 +372,7 @@ Trellis compact SessionStart context. Use it to orient the session; load details
   }
 
   parts.push("<current-state>")
-  parts.push(buildCompactCurrentState(ctx, platformInput, paths))
+  parts.push(buildCompactCurrentState(callerCtx, platformInput, paths))
   parts.push("</current-state>")
 
   const workflowContent = ctx.readProjectFile(".trellis/workflow.md")

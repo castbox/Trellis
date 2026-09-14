@@ -46,7 +46,7 @@ interface HookResult {
   payload: { additionalContext?: string; display?: string } | null;
 }
 
-function writeFixtureRepo(root: string): void {
+function writeFixtureRepo(root: string, contextKey: string): void {
   const taskDir = path.join(root, ".trellis", "tasks", "demo-task");
   fs.mkdirSync(path.join(root, ".trellis", "scripts"), { recursive: true });
   fs.cpSync(
@@ -59,22 +59,17 @@ function writeFixtureRepo(root: string): void {
     recursive: true,
   });
 
-  // Minimal task.py: always reports the fixture active task.
-  fs.writeFileSync(
+  // Use the shipped runtime and an exact binding, never a task.py stub.
+  fs.copyFileSync(
+    path.resolve(path.dirname(HOOK_SCRIPT), "../../trellis/scripts/task.py"),
     path.join(root, ".trellis", "scripts", "task.py"),
-    [
-      "#!/usr/bin/env python3",
-      "import sys",
-      "if \"current\" in sys.argv:",
-      "    print(\"Current task: .trellis/tasks/demo-task\")",
-      "    print(\"Source: session\")",
-      "    raise SystemExit(0)",
-      "print(\"unknown\")",
-      "raise SystemExit(1)",
-      "",
-    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(taskDir, "task.json"),
+    JSON.stringify({ id: "demo-task", title: "Demo task", status: "in_progress" }),
     "utf-8",
   );
+  writeSessionBinding(root, contextKey);
 
   fs.writeFileSync(
     path.join(taskDir, "prd.md"),
@@ -118,6 +113,14 @@ function writeFixtureRepo(root: string): void {
   );
 }
 
+function writeSessionBinding(root: string, contextKey: string): void {
+  fs.writeFileSync(
+    path.join(rootSessions(root), `${contextKey}.json`),
+    JSON.stringify({ platform: "snow", current_task: ".trellis/tasks/demo-task", current_run: null }),
+    "utf-8",
+  );
+}
+
 function runHook(
   repo: string,
   mode: "session" | "user" | "subagent",
@@ -137,6 +140,7 @@ function runHook(
     // Avoid leaking host Trellis session identity into fixture runs.
     TRELLIS_CONTEXT_ID: "",
     SNOW_SESSION_ID: opts.env?.SNOW_SESSION_ID ?? "",
+    PYTHONDONTWRITEBYTECODE: "1",
     ...opts.env,
   };
 
@@ -205,16 +209,17 @@ describe("snow write-trellis-context.py execution", () => {
     }
   });
 
-  function makeRepo(): string {
+  function makeRepo(contextKey = "snow_review"): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-snow-hook-"));
     tmpRoots.push(root);
-    writeFixtureRepo(root);
+    writeFixtureRepo(root, contextKey);
     return root;
   }
 
   it.skipIf(!PYTHON).each([
     ".trellis/workflow.md",
-    ".trellis/.runtime/sessions/review.json",
+    ".trellis/.runtime/sessions/snow_review.json",
+    ".trellis/tasks/demo-task/task.json",
     ".trellis/tasks/demo-task/prd.md",
     ".trellis/tasks/demo-task/implement.jsonl",
     ".trellis/identity.md",
@@ -238,13 +243,20 @@ describe("snow write-trellis-context.py execution", () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.payload?.additionalContext).not.toContain("HISTORICAL VALUE");
     expect(result.payload?.additionalContext).toContain("Trellis context");
+    if (relativePath === ".trellis/.runtime/sessions/snow_review.json") {
+      expect(result.payload?.additionalContext).toContain("Trellis context unavailable (hook error)");
+      expect(result.payload?.additionalContext).not.toContain("Source: none");
+    } else if (relativePath === ".trellis/tasks/demo-task/task.json") {
+      expect(result.payload?.additionalContext).toContain("Task binding error:");
+      expect(result.payload?.additionalContext).not.toContain("Source: none");
+    }
     expect(fs.readFileSync(target, "utf8")).toBe(original);
   });
 
   it.skipIf(!PYTHON)(
     "session mode emits full inject JSON and writes full log",
     () => {
-      const repo = makeRepo();
+      const repo = makeRepo("snow_sess-session-1");
       const res = runHook(repo, "session", {
         stdin: JSON.stringify({
           sessionId: "sess-session-1",
@@ -277,7 +289,7 @@ describe("snow write-trellis-context.py execution", () => {
   it.skipIf(!PYTHON)(
     "user mode injects compact context but preserves full log snapshot",
     () => {
-      const repo = makeRepo();
+      const repo = makeRepo("snow_sess-user-1");
       const res = runHook(repo, "user", {
         stdin: JSON.stringify({
           sessionId: "sess-user-1",
@@ -309,7 +321,9 @@ describe("snow write-trellis-context.py execution", () => {
   it.skipIf(!PYTHON)(
     "subagent mode tailors checklist by agent kind",
     () => {
-      const repo = makeRepo();
+      const repo = makeRepo("snow_sess-sub-1");
+      writeSessionBinding(repo, "snow_sess-sub-2");
+      writeSessionBinding(repo, "snow_sess-sub-3");
 
       const implement = runHook(repo, "subagent", {
         stdin: JSON.stringify({
@@ -373,7 +387,7 @@ describe("snow write-trellis-context.py execution", () => {
   it.skipIf(!PYTHON)(
     "does not pick another session runtime file by mtime",
     () => {
-      const repo = makeRepo();
+      const repo = makeRepo("snow-mine-session");
       const sessionsDir = rootSessions(repo);
       // Newer foreign session should NOT be selected when current id is known.
       fs.writeFileSync(
@@ -388,12 +402,6 @@ describe("snow write-trellis-context.py execution", () => {
         future / 1000,
         future / 1000,
       );
-      fs.writeFileSync(
-        path.join(sessionsDir, "mine-session.json"),
-        JSON.stringify({ owner: "me", note: "current-session-marker" }),
-        "utf-8",
-      );
-
       const res = runHook(repo, "session", {
         stdin: JSON.stringify({
           sessionId: "mine-session",
@@ -408,11 +416,36 @@ describe("snow write-trellis-context.py execution", () => {
 
       expect(res.status).toBe(0);
       const body = res.payload?.additionalContext ?? "";
-      expect(body).toContain("current-session-marker");
+      expect(body).toContain("Current task: .trellis/tasks/demo-task");
+      expect(body).toContain("Demo PRD");
       expect(body).not.toContain("DO-NOT-LEAK");
-      expect(body).toContain("runtime session (mine-session.json)");
+      expect(body).toContain("runtime session (snow-mine-session)");
     },
   );
+
+  it.skipIf(!PYTHON)("does not borrow a binding when an explicit context key misses", () => {
+    const repo = makeRepo("snow_review");
+    const res = runHook(repo, "session", {
+      stdin: JSON.stringify({ sessionId: "review", cwd: repo }),
+      env: { TRELLIS_CONTEXT_ID: "missing" },
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.payload?.additionalContext).toContain("## Current session task\n(none)");
+    expect(res.payload?.additionalContext).not.toContain("Demo PRD");
+    expect(res.payload?.additionalContext).not.toContain("runtime session (snow_review)");
+  });
+
+  it.skipIf(!PYTHON)("reports invalid task metadata explicitly", () => {
+    const repo = makeRepo();
+    fs.writeFileSync(path.join(repo, ".trellis/tasks/demo-task/task.json"), "{}");
+    const res = runHook(repo, "session", {
+      stdin: JSON.stringify({ sessionId: "review", cwd: repo }),
+    });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.payload?.additionalContext).toContain("Task binding error:");
+    expect(res.payload?.additionalContext).not.toContain("Demo PRD");
+    expect(res.payload?.additionalContext).not.toContain("## Current session task\n(none)");
+  });
 
   it.skipIf(!PYTHON)("enforces _truncate limits in UTF-8 bytes", () => {
     if (!PYTHON) return;

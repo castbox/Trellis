@@ -412,20 +412,16 @@ def _current_session_ids(stdin_ctx: dict[str, Any] | None = None) -> list[str]:
     return ids
 
 
-def _resolve_runtime_session_file(
+def _resolve_active_task(
     repo: Path,
     stdin_ctx: dict[str, Any] | None = None,
-) -> Path | None:
-    # Resolve only the current session runtime file; never pick by mtime.
-    sessions_dir = repo / ".trellis" / ".runtime" / "sessions"
-    if not _is_active_path(repo, sessions_dir) or not sessions_dir.is_dir():
-        return None
-    for sid in _current_session_ids(stdin_ctx):
-        for name in (f"{sid}.json", sid):
-            candidate = sessions_dir / name
-            if _is_active_path(repo, candidate) and candidate.is_file():
-                return candidate
-    return None
+):
+    scripts_dir = repo / ".trellis" / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    from common.active_task import resolve_active_task  # type: ignore[import-not-found]
+
+    return resolve_active_task(repo, stdin_ctx or {}, platform="snow")
 
 
 def _workflow_phase_summary(
@@ -446,17 +442,16 @@ def _workflow_phase_summary(
         if body:
             lines.extend(["## .trellis/session/current.md", body, ""])
     else:
-        current_session = _resolve_runtime_session_file(repo, stdin_ctx)
-        if current_session is not None:
-            body = _read_text(current_session, repo, 900)
-            if body:
-                lines.extend(
-                    [
-                        f"## runtime session ({current_session.name})",
-                        body,
-                        "",
-                    ]
-                )
+        active = _resolve_active_task(repo, stdin_ctx)
+        if active.error or active.stale:
+            lines.append(f"Task binding error: {active.error or 'stale binding'}")
+        elif active.task_path:
+            lines.extend([
+                f"## runtime session ({active.context_key})",
+                f"Current task: {active.task_path}",
+                f"Task workspace: {active.task_workspace_root}",
+                "",
+            ])
     return lines
 
 
@@ -494,17 +489,16 @@ def build_context(
             lines.append(f"Dispatch prompt (truncated): {p}")
         lines.append("")
 
-    task_py = repo / ".trellis" / "scripts" / "task.py"
-    current = ""
-    task_dir: Path | None = None
-    if _is_active_path(repo, task_py) and task_py.is_file():
-        py = sys.executable or "python3"
-        current = _run([py, "-X", "utf8", str(task_py), "current", "--source"], repo)
-        lines.extend(["## task.py current --source", "```", current, "```", ""])
-        task_dir = _parse_active_task_path(current, repo)
-    else:
-        lines.append("(no .trellis/scripts/task.py — run trellis init first)")
-        lines.append("")
+    active = _resolve_active_task(repo, stdin_ctx)
+    if active.error or active.stale:
+        lines.append(f"Task binding error: {active.error or 'stale binding'}")
+        return "\n".join(lines)
+    task_dir = active.resolved_task_path
+    current = active.task_path or ""
+    lines.extend(["## Current session task", current or "(none)", f"Source: {active.source}", ""])
+    if active.task_workspace_root:
+        lines.append(f"Caller workspace: {repo}; task workspace: {active.task_workspace_root}")
+        repo = active.task_workspace_root
 
     if task_dir and _is_active_path(repo, task_dir) and task_dir.exists():
         lines.extend(

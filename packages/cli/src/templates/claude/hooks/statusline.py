@@ -121,22 +121,22 @@ def _get_current_task_for_input(trellis_dir: Path, cc_data: dict) -> dict | None
     try:
         from common.active_task import resolve_active_task  # type: ignore[import-not-found]
         active = resolve_active_task(trellis_dir.parent, cc_data, platform="claude")
-    except Exception:
-        return None
+    except Exception as error:
+        return {"title": f"Task error: {error}", "status": "task_error", "priority": "P?", "source": "error"}
 
-    if not active.task_path:
-        return None
-
-    task_path = _resolve_task_dir(trellis_dir, active.task_path)
-    if active.stale:
+    if getattr(active, "error", None) or getattr(active, "stale", False):
         return {
-            "title": task_path.name,
-            "status": "stale",
+            "title": f"Task error: {getattr(active, 'error', None) or 'stale binding'}",
+            "status": "task_error",
             "priority": "P?",
             "source": active.source,
         }
 
-    task_data = _read_json(task_path / "task.json", trellis_dir.parent)
+    if not active.task_path:
+        return None
+    task_path = active.resolved_task_path
+
+    task_data = _read_json(task_path / "task.json", active.task_workspace_root)
     if not task_data:
         return None
 
