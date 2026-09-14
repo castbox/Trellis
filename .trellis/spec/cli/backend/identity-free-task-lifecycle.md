@@ -246,7 +246,68 @@ authorization for implicit downgrades, and does not generate a migration task.
   and tracked/untracked history. Normalize timestamps/fixture roots only. Compare
   exits, selected task, owners, context, scoped dirty status and finish decisions.
 
-## 7. Wrong vs Correct
+## 7. Cross-Worktree Session Contract
+
+### Scope / Trigger
+
+Session resolution, lifecycle and context readers distinguish invocation checkout
+from task workspace. Git worktrees are not the retired workspace mechanism.
+
+### Signatures and Storage
+
+`resolve_active_task` returns `ActiveTask` retaining `task_path`, `source_type`,
+`context_key`, `stale`, plus `invocation_root`, `repository_common_dir`,
+`task_workspace_root`, `resolved_task_path` and `error`. Consumers use validated
+absolute paths, not caller-root joins. Git storage is
+`<git-common-dir>/trellis/sessions/<key>.json`, schema version 1, containing
+`repository_common_dir`, `task_workspace_root` and relative `current_task`.
+Non-Git projects keep checkout-local storage.
+
+### Contracts
+
+Live Git common-dir and registered-worktree checks establish membership; stored
+claims and remote URLs do not. Task containment uses the effective task root
+and preserves existing nonhistorical symlink rules. Missing new records may
+read one valid legacy match for the same key in live registered worktrees.
+Reads do not promote. A known key miss/error cannot select another session.
+Identity-less compatibility never becomes repository-wide task inference.
+
+Finish clears the session including legacy state that could resurrect it.
+Archive clears every binding to the exact workspace-qualified task. Rename
+repoints them. Equal relative refs in different worktrees are distinct tasks.
+Preflight storage before moves; run lifecycle hooks in task workspace and report
+partial cleanup/repoint failures explicitly.
+
+### Validation and Error Matrix
+
+| State | Result |
+| --- | --- |
+| No identity or binding | No active task, no inference |
+| One valid common/legacy binding | Validated workspace and absolute task path |
+| Malformed binding or unreadable/missing task.json | Explicit error/stale, nonzero CLI |
+| Wrong common-dir or unregistered worktree | Explicit error/stale, no task mutation |
+| Multiple legacy matches | Conflict, no selection |
+| Valid new plus legacy records | New binding wins |
+| Outside tasks root or retired target | Rejected, no historical consumption |
+
+### Good / Base / Bad Cases
+
+Good: linked start, primary resolve. Base: non-Git local binding. Bad: caller
+root joined with task ref, newest legacy record selection, corrupt JSON as {}.
+
+### Required Tests
+
+Use real Git/worktrees for CLI and actual hook entrypoints, multiple sessions
+and repositories, equal task names, lifecycle, legacy conflicts, corruption,
+unregistration, non-Git and installation/update. Text snapshots are insufficient.
+
+### Wrong vs Correct
+
+Wrong: `task_dir = invocation_root / active.task_path`.
+Correct: reject error/stale, use `active.resolved_task_path` and
+`active.task_workspace_root` for task reads.
+
+## 8. Identity-Free Usage Examples
 
 ```sh
 # Wrong: implicit personal selection and removed recording workflow.

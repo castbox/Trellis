@@ -42,10 +42,12 @@ history.parent.mkdir()
 historical = json.dumps({"id":"HISTORICAL-ID", "title":"HISTORICAL-TITLE", "status":"completed", "package":"HISTORICAL-PACKAGE"})
 history.write_text(historical)
 metadata = task / "task.json"
-metadata.symlink_to(history)
+metadata.write_text(json.dumps({"id":"ACTIVE-ID", "title":"ACTIVE TASK", "status":"in_progress"}))
 data = {"session_id":"review", "cwd":str(root)}
 os.environ["TRELLIS_CONTEXT_ID"] = "review"
 assert set_active_task(".trellis/tasks/current", root, data)
+metadata.unlink()
+metadata.symlink_to(history)
 accesses = []
 enabled = True
 def audit(event, args):

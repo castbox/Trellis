@@ -12,7 +12,7 @@
  * 5. Platform Registry (beta.9, beta.13, beta.16)
  */
 
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1256,7 +1256,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(r.stderr).toContain("not valid JSON");
   });
 
-  it("[audit] start still activates a task with a corrupt task.json but says why status and branch stayed", () => {
+  it("[audit] start refuses corrupt task metadata without writing a session binding", () => {
     const env = { TRELLIS_CONTEXT_ID: "json-io-start" };
     expect(
       runTask(
@@ -1277,12 +1277,11 @@ describe("regression: JSON read/write failure reporting", () => {
     fs.writeFileSync(taskJsonPath(name), "{ not json");
 
     const r = runTask(["start", name], env);
-    // Tolerant: the session pointer is the point of the command.
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Current task set to");
-    // Observable: without this the absent status line reads as "not in planning".
-    expect(r.stderr).toContain("not valid JSON");
-    expect(r.stderr).toContain("task.json not updated");
+    expect(r.status).toBe(1);
+    expect(r.stdout).not.toContain("Current task set to");
+    expect(r.stderr).toContain("task_metadata_invalid");
+    expect(fs.readFileSync(taskJsonPath(name), "utf8")).toBe("{ not json");
+    expect(fs.existsSync(path.join(tmpDir, ".trellis/.runtime/sessions/json-io-start.json"))).toBe(false);
   });
 
   it("[audit] current --json carries a read-failure signal and stays silent when healthy", () => {
@@ -1313,22 +1312,28 @@ describe("regression: JSON read/write failure reporting", () => {
     >;
     expect(Object.keys(healthyPayload).sort()).toEqual([
       "current_task",
+      "invocation_root",
+      "repository_common_dir",
+      "resolved_task_path",
       "source",
       "stale",
+      "task_workspace_root",
     ]);
 
     fs.writeFileSync(taskJsonPath(name), "{ not json");
     const broken = runTask(["current", "--json"], env);
     const brokenPayload = JSON.parse(broken.stdout) as {
       current_task: Record<string, unknown> | null;
-      error?: { file: string; reason: string; message: string };
+      error?: string;
+      stale: boolean;
+      resolved_task_path: string | null;
     };
-    // All-null fields are still emitted, but no longer indistinguishable
-    // from a task whose fields really are null.
-    expect(brokenPayload.current_task?.status).toBeNull();
-    expect(brokenPayload.error?.reason).toBe("invalid");
-    expect(brokenPayload.error?.file).toContain("task.json");
-    expect(brokenPayload.error?.message).toContain("not valid JSON");
+    expect(broken.status).toBe(1);
+    expect(brokenPayload.current_task).toBeNull();
+    expect(brokenPayload.resolved_task_path).toBeNull();
+    expect(brokenPayload.stale).toBe(true);
+    expect(brokenPayload.error).toContain("task_metadata_invalid");
+    expect(brokenPayload.error).toContain("task.json");
   });
 
   it.skipIf(!canProvokePermissionFailure)(
@@ -1378,7 +1383,7 @@ describe("regression: JSON read/write failure reporting", () => {
       try {
         const r = runTask(["start", `${datePrefix}-two`], env);
         expect(r.status).not.toBe(0);
-        expect(r.stdout + r.stderr).toContain("Failed to set current task");
+        expect(r.stdout + r.stderr).toContain("binding_write_failed");
       } finally {
         fs.chmodSync(sessionsDir, 0o755);
       }
@@ -2529,6 +2534,17 @@ describe("regression: current-task path normalization", () => {
       }
     }
     return { ...env, ...overrides };
+  }
+
+  function initializeHookGitRepo(): void {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+      ["PATH", "Path", "SYSTEMROOT", "SystemRoot", "WINDIR", "PATHEXT"].includes(key),
+    ));
+    execFileSync("git", ["init", "-q", "--template="], {
+      cwd: tmpDir,
+      env: { ...env, HOME: tmpDir, USERPROFILE: tmpDir, GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: path.join(tmpDir, "absent-gitconfig") },
+    });
   }
 
   function setupTaskRepo(): void {
@@ -3967,19 +3983,16 @@ print(json.dumps({
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
 
-    const output = execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} current --source`,
-      {
-        cwd: tmpDir,
-        encoding: "utf-8",
-        env: sessionEnv({ TRELLIS_CONTEXT_ID: "session-b" }),
-      },
-    );
-
-    expect(output).toContain("Current task: .trellis/tasks/missing-task");
-    expect(output).toContain("Source: session:session-b");
-    expect(output).toContain("State: stale");
-    expect(output).not.toContain("issue-106");
+    const result = spawnSync(pythonCmd, [taskScriptPath, "current", "--json"], {
+      cwd: tmpDir, encoding: "utf-8",
+      env: sessionEnv({ TRELLIS_CONTEXT_ID: "session-b" }),
+    });
+    expect(result.status).toBe(1);
+    const output = JSON.parse(result.stdout) as { current_task: unknown; stale: boolean; error: string };
+    expect(output.current_task).toBeNull();
+    expect(output.stale).toBe(true);
+    expect(output.error).toContain("missing-task");
+    expect(result.stdout).not.toContain("issue-106");
   });
 
   it("[session-current-task] Claude statusline uses session-scoped task when session_id is present", () => {
@@ -4950,7 +4963,7 @@ print(json.dumps({
 
   it("[session-current-task] Cursor preToolUse injects context for custom Task subagents", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     const injectSubagentContextScript = getSharedHookScripts().find(
       (hook) => hook.name === "inject-subagent-context.py",
     )?.content;
@@ -5013,7 +5026,7 @@ print(json.dumps({
     // CodeBuddy's Task tool names its sub-agent parameter `subagent_name`
     // (not `subagent_type`). The shared hook must accept both spellings.
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     const injectSubagentContextScript = getSharedHookScripts().find(
       (hook) => hook.name === "inject-subagent-context.py",
     )?.content;
@@ -5097,7 +5110,7 @@ print(json.dumps({
 
   it("[session-current-task] Cursor generic subagents do not receive Trellis jsonl injection", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     const injectSubagentContextScript = getSharedHookScripts().find(
       (hook) => hook.name === "inject-subagent-context.py",
     )?.content;
@@ -5141,7 +5154,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] SubagentStart injects a marker and the valid parent task", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
       '{"file":"src/implement-context.md","reason":"implement contract"}\n',
@@ -5197,7 +5210,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] implement and check preserve curated context before task artifacts", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
       '{"file":"src/implement-order.md","reason":"implement ordering"}\n',
@@ -5266,7 +5279,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] research gets its task path without implement or check manifests", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
       '{"file":"src/implement-private.md","reason":"must stay isolated"}\n',
@@ -5314,7 +5327,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] unknown or malformed parents never borrow a sole session task", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeSessionContext("codex_unrelated", ".trellis/tasks/issue-106");
     const injectSubagentContextScript = getSharedHookScripts().find(
       (hook) => hook.name === "inject-subagent-context.py",
@@ -5344,7 +5357,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] parent session isolates concurrent tasks and ignores inherited context", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeProjectFile(
       path.join(".trellis", "tasks", "issue-106", "implement.jsonl"),
       '{"file":"src/session-a.md","reason":"session A only"}\n',
@@ -5411,7 +5424,7 @@ print(json.dumps({
 
   it("[codex-native-subagents] non-Trellis SubagentStart agents stay silent", () => {
     setupTaskRepo();
-    writeProjectFile(path.join(".git", "HEAD"), "ref: refs/heads/main\n");
+    initializeHookGitRepo();
     writeSessionContext("codex_parent-a", ".trellis/tasks/issue-106");
     const injectSubagentContextScript = getSharedHookScripts().find(
       (hook) => hook.name === "inject-subagent-context.py",
@@ -5515,13 +5528,10 @@ print(json.dumps({
     );
 
     const ctx = new TrellisContext(tmpDir);
-    // With no input, legacy `.current-task` MUST still be ignored. Issue #264
-    // adds a single-session fallback that mirrors Python's
-    // `_resolve_single_session_fallback` — with exactly one session file
-    // present, the resolver picks it up (NOT the legacy file).
+    // A main session without identity cannot adopt another session's binding.
     const none = ctx.getActiveTask();
-    expect(none.taskPath).toBe(".trellis/tasks/opencode-task");
-    expect(none.source).toBe("session-fallback:opencode_oc-a");
+    expect(none.taskPath).toBeNull();
+    expect(none.source).toBe("none");
     expect(none.stale).toBe(false);
 
     const active = ctx.getActiveTask({
@@ -6035,16 +6045,13 @@ print(json.dumps({
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     const sessionsDir = path.join(tmpDir, ".trellis", ".runtime", "sessions");
 
-    const output = execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} finish`,
-      {
-        cwd: tmpDir,
-        encoding: "utf-8",
-        env: sessionEnv({ CODEX_THREAD_ID: "malformed" }),
-      },
-    );
-
-    expect(output).toContain("No current task set");
+    const output = spawnSync(pythonCmd, [taskScriptPath, "finish"], {
+      cwd: tmpDir, encoding: "utf-8",
+      env: sessionEnv({ CODEX_THREAD_ID: "malformed" }),
+    });
+    expect(output.status).toBe(1);
+    expect(output.stderr).toContain("binding_invalid");
+    expect(output.stdout).not.toContain("No current task set");
     expect(fs.existsSync(path.join(sessionsDir, "codex_malformed.json"))).toBe(
       true,
     );
@@ -6053,11 +6060,7 @@ print(json.dumps({
     );
   });
 
-  it("[audit] a non-UTF-8 session file degrades to no active task", () => {
-    // The tolerant `read_json` caught FileNotFoundError / JSONDecodeError /
-    // OSError. UnicodeDecodeError is none of those, so a session file that is
-    // not UTF-8 raised straight out of a read whose whole contract is to
-    // return None, and the hook path failed instead of degrading.
+  it("[audit] a non-UTF-8 session file fails explicitly without a traceback", () => {
     setupTaskRepo();
     const sessionsDir = path.join(tmpDir, ".trellis", ".runtime", "sessions");
     fs.mkdirSync(sessionsDir, { recursive: true });
@@ -6074,8 +6077,12 @@ print(json.dumps({
     });
 
     expect(proc.stderr ?? "").not.toContain("UnicodeDecodeError");
-    expect(proc.status).toBe(0);
-    expect(proc.stdout).toContain("No current task set");
+    expect(proc.status).toBe(1);
+    expect(proc.stderr).toContain("binding_undecodable");
+    expect(proc.stdout).not.toContain("No current task set");
+    expect(fs.readFileSync(path.join(sessionsDir, "codex_binary.json"))).toEqual(
+      Buffer.from([0x7b, 0x22, 0xff, 0x22, 0x7d]),
+    );
   });
 
   // ------------------------------------------------------------
@@ -10877,7 +10884,11 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     );
     writeFile(
       ".trellis/.runtime/sessions/should-not-be-committed.json",
-      "{}\n",
+      JSON.stringify({ current_task: ".trellis/tasks/unrelated-fixture", platform: "fixture" }) + "\n",
+    );
+    writeFile(
+      ".trellis/tasks/unrelated-fixture/task.json",
+      JSON.stringify({ id: "unrelated-fixture", title: "Unrelated fixture", status: "planning" }) + "\n",
     );
 
     if (options?.gitignoreTrellis) {
@@ -11681,7 +11692,7 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
       "renamed",
     );
     expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("is not an active task under");
+    expect(r.stderr).toContain("invalid_task_path: not an active task");
     expect(
       fs.existsSync(taskDir("archive", yearMonth, target, "task.json")),
     ).toBe(true);

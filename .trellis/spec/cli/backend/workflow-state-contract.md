@@ -1,5 +1,14 @@
 # Workflow-State Breadcrumb Contract
 
+## Cross-Worktree Resolution
+
+Resolve the session before reading task-specific workflow state. Task metadata,
+workflow blocks, manifest files and relative context references belong to the
+validated task workspace, not necessarily the invocation checkout. Invalid
+bindings produce explicit error/stale breadcrumbs, never normal no_task.
+See identity-free-task-lifecycle.md, Cross-Worktree Session Contract, for storage,
+live Git membership, legacy precedence and lifecycle rules.
+
 > Runtime contract for the per-turn `<workflow-state>` breadcrumb that
 > `inject-workflow-state.py` / `inject-workflow-state.js` inject into
 > every UserPromptSubmit.
