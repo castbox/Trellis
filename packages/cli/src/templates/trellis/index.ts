@@ -53,6 +53,9 @@ export const commonTaskContext = readTemplate("scripts/common/task_context.py");
 export const commonHistoryPaths = readTemplate(
   "scripts/common/history_paths.py",
 );
+export const commonContinuationContract = readTemplate(
+  "scripts/common/continuation_contract.py",
+);
 export const commonTaskStore = readTemplate("scripts/common/task_store.py");
 export const commonSessionContext = readTemplate(
   "scripts/common/session_context.py",
@@ -110,6 +113,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/tasks.py", commonTasks);
   scripts.set("common/task_context.py", commonTaskContext);
   scripts.set("common/history_paths.py", commonHistoryPaths);
+  scripts.set("common/continuation_contract.py", commonContinuationContract);
   scripts.set("common/task_store.py", commonTaskStore);
   scripts.set("common/session_context.py", commonSessionContext);
   scripts.set("common/packages_context.py", commonPackagesContext);

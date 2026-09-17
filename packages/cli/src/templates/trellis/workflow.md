@@ -184,6 +184,7 @@ Preserve existing task fields and artifacts. If the correct status cannot be det
 <!-- Per-turn breadcrumb: shown throughout Phase 1 (status='planning') -->
 
 [workflow-state:planning]
+Lifecycle breadcrumb only. Before selecting the next owner, load the current `[trellis-continuation]` contract.
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
@@ -197,6 +198,7 @@ Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research mani
      into a sub-agent. -->
 
 [workflow-state:planning-inline]
+Lifecycle breadcrumb only. Before selecting the next owner, load the current `[trellis-continuation]` contract.
 Load `trellis-brainstorm`; stay in planning.
 Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
 Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
@@ -217,6 +219,7 @@ Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-bef
 Sub-agent dispatch protocol applies to all platforms and all sub-agents, including native Codex `SubagentStart` context injection with child-side pull fallback, class-2 Gemini/Qoder/Copilot/Reasonix/Trae/Grok/Kimi Code, hook-backed ZCode/Snow, and `trellis-research`: every dispatch prompt starts with `Active task: <task path from task.py current>` before role-specific instructions. On Grok Build, use `spawn_subagent` with `subagent_type` set to the Trellis agent name (e.g. `trellis-implement`). On Kimi Code, dispatch the built-in `coder` / `explore` sub-agent with the matching `.kimi-code/skills/trellis-<role>/SKILL.md` instructions.
 
 [workflow-state:in_progress]
+Lifecycle breadcrumb only. Before selecting the next owner or recovery path, load the current `[trellis-continuation]` contract.
 Tools: `trellis-implement` / `trellis-research` are sub-agent types only (Task/Agent tool, NOT Skill; there is no skill by these names). `trellis-update-spec` is a skill. `trellis-check` exists as both; prefer the Agent form when verifying after code changes.
 Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
@@ -229,6 +232,7 @@ Dispatch prompt starts with `Active task: <task path from task.py current>`. Rea
      instead of dispatching sub-agents. -->
 
 [workflow-state:in_progress-inline]
+Lifecycle breadcrumb only. Before selecting the next owner or recovery path, load the current `[trellis-continuation]` contract.
 Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
 Do not dispatch implement/check sub-agents in inline mode.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
@@ -251,6 +255,7 @@ Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, p
      channel as the live blocks. -->
 
 [workflow-state:completed]
+Lifecycle breadcrumb only. Load the current `[trellis-continuation]` contract before choosing any completion recovery.
 Code committed. Run `/trellis:finish-work`; if dirty, return to Phase 3.4 first.
 [/workflow-state:completed]
 
@@ -702,3 +707,29 @@ For the workflow state machine's runtime contract, the locations of all status w
 
 - `.trellis/spec/cli/backend/workflow-state-contract.md` — runtime contract + writer table + test invariants
 - `.trellis/scripts/inject-workflow-state.py` — actual parser (reads workflow.md only, no embedded text)
+
+## Continuation Contract
+
+[trellis-continuation]
+### Native workflow continuation
+
+Use only the exact current-session binding supplied by the active-task resolver. The binding's task identity, task workspace, and repository identity are authoritative. Project inventory, task counts, assignee, invocation checkout, artifact names, and previous conversation text must not select or replace the current task.
+
+Re-read the bound task and the current repository before every decision. `task.json.status` is a broad lifecycle hint, not proof that implementation, checking, spec update, commit, or finish has completed. Choose the first unmet required owner from live evidence and the ordered workflow steps.
+
+Named legacy-route fixtures:
+
+- `native.planning.missing_prd` -> owner `trellis-brainstorm`, Phase 1.1; create or repair the requirement contract.
+- `native.planning.lightweight_prd_ready` -> owner main session, Phase 1.4; ask for artifact review and implementation approval before `task.py start`.
+- `native.planning.complex_artifacts_missing` -> owner `trellis-brainstorm`, Phase 1.1; complete `design.md` and `implement.md`.
+- `native.planning.context_missing` -> owner main session, Phase 1.3; curate `implement.jsonl` and `check.jsonl` for sub-agent mode.
+- `native.planning.ready` -> owner main session, Phase 1.4; present the reviewed artifacts and wait for start authorization.
+- `native.in_progress.implementation_required` -> owner `trellis-implement` in sub-agent mode or `trellis-before-dev` in inline mode, Phase 2.1.
+- `native.in_progress.check_required` -> owner `trellis-check`, Phase 2.2.
+- `native.in_progress.finish_required` -> owner main session, Phase 3.3 then Phase 3.4; update durable specs when needed and obtain commit authorization.
+- `native.completed.wrap_up` -> owner `trellis-finish-work`, Phase 3.5, only after the working tree and commit facts satisfy that command's contract.
+
+The current public DTO is the latest live output produced by the owner immediately before its declared consumer. If that DTO is missing, stale, tied to a different task/workspace/repository, or its content/authority no longer matches live facts, return to the original producer and perform a fresh same-owner semantic rerun. Do not reconstruct the conclusion from Git history, artifact presence, or old prose.
+
+Stop fail-closed when resolver identity is stale, conflicting, corrupt, or ambiguous; when required user authorization is absent; or when no workflow owner can establish the next transition from live facts. Report the blocking fact instead of falling back to a native route guess.
+[/trellis-continuation]
