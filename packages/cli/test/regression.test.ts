@@ -7373,6 +7373,19 @@ print(len(entries))
     expect(fs.readdirSync(path.join(tmpDir, ".trellis"))).toEqual(entriesBefore);
   });
 
+  it("[issue-6] continuation preserves unrelated standalone Markdown tags", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      "[trellis-continuation]\n[Codex]\nroute text\n[/Codex]\n[/trellis-continuation]\n",
+    );
+
+    const result = runContinuation();
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe("[Codex]\nroute text\n[/Codex]\n");
+  });
+
   it.each([
     ["missing", "# Workflow\n", "missing_block"],
     [

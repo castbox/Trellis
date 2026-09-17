@@ -149,6 +149,11 @@ history, project inventory, or conversation text to select a semantic route.
 It must remain in the invocation repository instead of changing to the bound
 task workspace.
 
+Mismatch detection is limited to Trellis marker-like lines. Unrelated Markdown
+inside the body, including standalone platform blocks such as
+`[Codex]...[/Codex]`, is returned verbatim rather than interpreted as protocol
+structure.
+
 Regression coverage must exercise every subtype, exact successful bytes,
 read-only behavior, and linked-worktree invocation-root ownership. The existing
 whole-tree parity test keeps the dogfood and shipped Python copies identical.

@@ -11,7 +11,7 @@ _CLOSE_MARKER = "[/trellis-continuation]"
 _CONTINUATION_MARKER_RE = re.compile(
     r"^\[/?trellis-continuation[^\]]*\]$"
 )
-_CLOSING_MARKER_RE = re.compile(r"^\[/[A-Za-z0-9_-]+\]$")
+_TRELLIS_MARKER_RE = re.compile(r"^\[/?trellis-[A-Za-z0-9_-]+\]$")
 
 
 class ContinuationContractError(ValueError):
@@ -68,9 +68,9 @@ def extract_continuation_contract(workflow_path: Path) -> str:
             in_block = False
             continue
 
-        if _CONTINUATION_MARKER_RE.fullmatch(marker) or (
-            in_block and _CLOSING_MARKER_RE.fullmatch(marker)
-        ):
+        if _CONTINUATION_MARKER_RE.fullmatch(
+            marker
+        ) or _TRELLIS_MARKER_RE.fullmatch(marker):
             raise ContinuationContractError("mismatched_marker", workflow_path)
 
         if in_block:
