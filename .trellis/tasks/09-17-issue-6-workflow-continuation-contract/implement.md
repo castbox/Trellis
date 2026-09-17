@@ -6,8 +6,8 @@ Implementation starts only after the user approves this planning summary and
 ## 1. Load implementation context
 
 - Load `trellis-before-dev`/injected sub-agent context.
-- Re-read Issue #6 and verify the live contract version is still
-  `2026-09-17-r2` before code changes.
+- Re-read Issue #6 and record the approved scope correction before code
+  changes; do not claim marketplace migration as delivered.
 - Confirm the checkout/branch target and preserve unrelated worktree changes.
 - Run the focused baseline tests for workflow templates, runtime phase parsing,
   workflow command integration, and cross-worktree session behavior.
@@ -29,16 +29,16 @@ pnpm --filter @mindfoldhq/trellis test -- regression.test.ts
 diff -rq .trellis/scripts packages/cli/src/templates/trellis/scripts -x __pycache__
 ```
 
-## 3. Migrate official workflows
+## 3. Migrate root native workflows
 
 - Add one native continuation contract to the bundled and dogfood workflows.
-- Keep `marketplace/workflows/native/workflow.md` byte-identical to bundled
-  native.
-- Add workflow-specific contracts to TDD and channel-driven workflows.
 - Replace active-task breadcrumb route details with a requirement to load the
   continuation contract while retaining broad lifecycle guidance.
-- Add registry/template assertions for exactly one valid non-empty block per
-  official workflow.
+- Add template assertions for exactly one valid non-empty block in bundled and
+  dogfood native and for the named native continuation routes.
+- Restore the `marketplace` gitlink to
+  `7d5298d16e07c328c09493eed1f0652571744b17`; do not modify or release
+  marketplace workflow content.
 
 ## 4. Thin the canonical entries
 
@@ -57,11 +57,14 @@ diff -rq .trellis/scripts packages/cli/src/templates/trellis/scripts -x __pycach
 - Prove fresh init, native update, non-native switch, immediate re-read,
   modified-file `.new`, and `.new` exclusion.
 - Do not add a production TypeScript semantic route table or content cache.
+- Preserve the existing fixture/mock workflow switch tests; they prove the
+  general protocol without making external marketplace content part of this
+  candidate.
 
 ## 6. Cover task authority and recovery boundaries
 
-- Add named fixtures for each legacy entry route case and map it to the owning
-  official workflow's continuation text.
+- Assert each named legacy native route against both root-owned native workflow
+  copies.
 - Extend no-binding tests so project inventory cannot select a task.
 - Extend stale/conflict/ambiguous cases so continuation is not executed.
 - Extend linked-worktree coverage so task facts come from the bound workspace
@@ -109,10 +112,14 @@ Report exact pass/fail counts and any environment-related skips separately.
 - Present the final diff and validation evidence before any commit/push/PR
   action; those side effects require separate authorization.
 
+The final report must state that marketplace workflow migration remains outside
+this candidate and that it does not block `castbox/guru-trellis#419`, whose
+preset consumes no marketplace workflow components.
+
 ## Rollback points
 
-- Steps 2-4 form one protocol unit; do not ship only the extractor, only entry
-  thinning, or only workflow blocks.
+- Steps 2-4 form one root-native protocol unit; do not ship only the extractor,
+  only entry thinning, or only native workflow blocks.
 - Test/doc refinements can be reverted independently if they do not weaken the
   protocol gate.
 - No persisted schema or user data requires migration rollback.

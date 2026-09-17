@@ -92,20 +92,25 @@ The common templates remain the only semantic source for platform projections.
 Update skill/command descriptions in `configurators/shared.ts` so auto-trigger
 metadata no longer promises status/artifact routing.
 
-## 5. Workflow migration
+## 5. Root native migration
 
-Add exactly one continuation block to each official workflow:
+Add exactly one continuation block to the root-owned native workflows:
 
 - `packages/cli/src/templates/trellis/workflow.md` and dogfood
-  `.trellis/workflow.md` for native;
-- `marketplace/workflows/native/workflow.md` as a byte-identical mirror;
-- `marketplace/workflows/tdd/workflow.md`;
-- `marketplace/workflows/channel-driven-subagent-dispatch/workflow.md`.
+  `.trellis/workflow.md` for native.
 
 Move the effective cases currently described by entry route tables into the
-owning workflow. The contract may reference workflow steps, skills, agents,
+native workflow. The contract may reference workflow steps, skills, agents,
 typed exits, live-fact checks, and recovery owners because it is Markdown
-executed by the current AI, not a general-purpose code route graph.
+executed by the current AI, not a general-purpose code route graph. Preserve
+each legacy native case as a named `native.*` route.
+
+The fixed marker protocol applies to every active workflow, but marketplace and
+custom workflow authors own migration of their content. This candidate restores
+the `marketplace` gitlink to the base revision and does not make marketplace
+migration a root release dependency. The Guru Trellis preset in
+`castbox/guru-trellis#419` consumes no marketplace workflow components, so that
+external migration does not block its continuation work.
 
 Active-task `[workflow-state:planning*]`, `[workflow-state:in_progress*]`, and
 other relevant breadcrumbs become broad prompts to load the continuation block.
@@ -115,9 +120,9 @@ They must not duplicate the detailed route table.
 
 Do not add a second production validator in TypeScript. Runtime structural
 validation remains in the Python extractor, avoiding two parsers that can
-drift. Registry tests validate every official workflow with the same fixture
-rules, while integration tests install/switch workflows and invoke the shipped
-extractor against the resulting active file.
+drift. Root template tests validate bundled and dogfood native content, while
+existing fixture-based integration tests install/switch mock workflows and
+invoke the shipped extractor against the resulting active file.
 
 Existing whole-file ownership remains unchanged:
 
@@ -147,10 +152,10 @@ Generate every affected platform entry from the registry and assert:
 
 ### Legacy route fixtures
 
-Create named fixture cases for each pre-migration route row. Rather than coding
-the decision graph in a helper, feed the workflow-owned continuation Markdown
-and assert the expected named owner/step text remains present. The fixtures
-document parity without creating a second executable authority.
+Assert each named native route from the pre-migration route table against both
+the bundled and dogfood native continuation Markdown. This documents native
+parity without creating a second executable authority or depending on external
+marketplace workflow content.
 
 ### Cross-worktree and resolver outcomes
 
@@ -179,7 +184,8 @@ all possible English terms from user-authored Markdown.
 
 Update the existing specs rather than creating an unrelated subsystem:
 
-- `commands-workflow.md`: official workflow validity and switch/runtime rules.
+- `commands-workflow.md`: general workflow validity, root-native ownership, and
+  switch/runtime rules.
 - `workflow-state-contract.md`: breadcrumb versus continuation ownership.
 - `platform-integration.md`: canonical entry projection invariant.
 - `script-conventions.md`: continuation extractor/error behavior if needed.
@@ -190,8 +196,11 @@ Update the existing specs rather than creating an unrelated subsystem:
 
 - **Parser accepts malformed nesting.** Use a line-oriented state machine and
   exact negative fixtures rather than a single DOTALL regex.
-- **Python template/dogfood drift.** Run byte-diff validation and keep both
-  copies changed in the same patch.
+- **Python template/dogfood drift.** Run byte-diff validation for the Python
+  runtime twins. Separately assert that the bundled and dogfood workflow
+  continuation bodies match without claiming unrelated workflow text parity.
+- **External workflow is not migrated.** Fail closed at runtime and leave the
+  migration to that workflow's author; do not mask it with a native fallback.
 - **Platform entry drift.** Test generated maps across the platform registry,
   not a hand-picked path list.
 - **Workflow switch appears stale.** Invoke the extractor after each switch in
@@ -204,7 +213,7 @@ Update the existing specs rather than creating an unrelated subsystem:
 ## 10. Rollback
 
 The change is template/runtime compatible and does not add persisted state.
-Rollback consists of reverting the parser mode, entry templates, workflow
-blocks, documentation, and tests together. No data migration or cleanup is
-required. A partial rollback is unsafe because old entry route tables and new
-workflow contracts would reintroduce dual authority.
+Rollback consists of reverting the parser mode, entry templates, root-native
+workflow blocks, documentation, and tests together. No data migration or
+marketplace cleanup is required. A partial rollback is unsafe because old entry
+route tables and new workflow contracts would reintroduce dual authority.

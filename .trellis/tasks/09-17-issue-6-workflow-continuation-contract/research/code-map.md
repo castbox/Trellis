@@ -34,22 +34,26 @@ state. This is a navigation aid, not a replacement for the source files.
 - Template/dogfood Python byte identity is enforced near
   `packages/cli/test/regression.test.ts:11291`.
 
-## Workflow registry and lifecycle
+## Root-native workflow and external registry boundary
 
 - Bundled native workflow source:
   `packages/cli/src/templates/trellis/workflow.md`.
 - Dogfood native workflow: `.trellis/workflow.md`.
-- Official marketplace workflows:
-  `marketplace/workflows/native/workflow.md`,
-  `marketplace/workflows/tdd/workflow.md`, and
-  `marketplace/workflows/channel-driven-subagent-dispatch/workflow.md`.
-- Registry entries are in `marketplace/index.json`.
+- The root `marketplace` gitlink baseline is
+  `7d5298d16e07c328c09493eed1f0652571744b17`. Marketplace workflow content is
+  not owned or migrated by this candidate.
+- External marketplace/custom workflow authors must add a valid continuation
+  block before active-task resume. Runtime extraction fails closed when they do
+  not.
 - `packages/cli/src/utils/workflow-resolver.ts` resolves bundled and marketplace
   workflows but should not gain workflow-semantic routing.
 - `packages/cli/test/commands/workflow.integration.test.ts` covers native init,
   marketplace init/switch, update preservation, and `.new` conflict behavior.
-- `packages/cli/test/templates/trellis.test.ts` covers workflow template
-  invariants and is the right place for official-workflow structural checks.
+- `packages/cli/test/templates/trellis.test.ts` covers root template invariants
+  and is the right place for bundled/dogfood native structural and named-route
+  checks.
+- `castbox/guru-trellis#419` is not blocked by marketplace workflow migration:
+  its preset consumes no marketplace workflow components.
 
 ## Session binding and linked worktrees
 
@@ -81,5 +85,6 @@ state. This is a navigation aid, not a replacement for the source files.
 4. Stale/conflict/ambiguous binding stops continuation.
 5. Linked task facts plus invocation-workflow continuation.
 6. Immediate workflow-switch behavior with no cache or `.new` fallback.
-7. Native template, marketplace mirror, dogfood runtime, and Python script twin
-   parity.
+7. Bundled/dogfood native workflow parity and Python script twin parity.
+8. Existing fixture/mock workflow switch coverage remains intact without
+   reading real marketplace workflow files.

@@ -166,30 +166,28 @@ describe("trellis template constants", () => {
     }
   });
 
-  it("[issue-6] every official workflow has one continuation contract", () => {
-    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+  it("[issue-6] bundled and dogfood native workflows have one continuation contract", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), ".trellis"))
       ? process.cwd()
       : path.resolve(process.cwd(), "../..");
     const workflows = new Map<string, string>([
       ["bundled native", workflowMdTemplate],
       ["dogfood native", fs.readFileSync(path.join(repoRoot, ".trellis/workflow.md"), "utf-8")],
-      ["marketplace native", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/native/workflow.md"), "utf-8")],
-      ["marketplace tdd", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/tdd/workflow.md"), "utf-8")],
-      ["marketplace channel", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/channel-driven-subagent-dispatch/workflow.md"), "utf-8")],
     ]);
 
-    for (const [label, content] of workflows) continuationBody(content, label);
-    expect(workflows.get("marketplace native")).toBe(workflowMdTemplate);
+    const bodies = new Map(
+      [...workflows].map(([label, content]) => [label, continuationBody(content, label)]),
+    );
+    expect(bodies.get("dogfood native")).toBe(bodies.get("bundled native"));
   });
 
-  it("[issue-6] official continuation contracts retain named legacy routes", () => {
-    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+  it("[issue-6] native continuation contracts retain named legacy routes", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), ".trellis"))
       ? process.cwd()
       : path.resolve(process.cwd(), "../..");
     const workflows = new Map<string, string>([
-      ["native", workflowMdTemplate],
-      ["tdd", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/tdd/workflow.md"), "utf-8")],
-      ["channel", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/channel-driven-subagent-dispatch/workflow.md"), "utf-8")],
+      ["bundled native", workflowMdTemplate],
+      ["dogfood native", fs.readFileSync(path.join(repoRoot, ".trellis/workflow.md"), "utf-8")],
     ]);
     const commonRoutes: [string, string, string][] = [
       ["planning.missing_prd", "owner `trellis-brainstorm`", "Phase 1.1"],
@@ -200,36 +198,26 @@ describe("trellis template constants", () => {
       ["in_progress.finish_required", "owner main session", "Phase 3.3 then Phase 3.4"],
       ["completed.wrap_up", "owner `trellis-finish-work`", "Phase 3.5"],
     ];
-    const workflowRoutes: Record<string, [string, string][]> = {
-      native: [
-        ["in_progress.implementation_required", "owner `trellis-implement`"],
-        ["in_progress.check_required", "owner `trellis-check`"],
-      ],
-      tdd: [
-        ["in_progress.implementation_required", "owner `trellis-implement`"],
-        ["in_progress.check_required", "owner `trellis-check`"],
-      ],
-      channel: [
-        ["in_progress.implementation_required", "owner channel worker `implement`"],
-        ["in_progress.check_required", "owner channel worker `check`"],
-      ],
-    };
+    const nativeRoutes: [string, string][] = [
+      ["in_progress.implementation_required", "owner `trellis-implement`"],
+      ["in_progress.check_required", "owner `trellis-check`"],
+    ];
 
-    for (const [prefix, workflow] of workflows) {
-      const body = continuationBody(workflow, prefix);
+    for (const [label, workflow] of workflows) {
+      const body = continuationBody(workflow, label);
       for (const [route, owner, step] of commonRoutes) {
         const line = body.split("\n").find((candidate) =>
-          candidate.includes(`\`${prefix}.${route}\``),
+          candidate.includes(`\`native.${route}\``),
         );
-        expect(line, `${prefix}.${route} must exist`).toContain(owner);
-        expect(line, `${prefix}.${route} must identify its phase`).toContain(step);
+        expect(line, `${label} native.${route} must exist`).toContain(owner);
+        expect(line, `${label} native.${route} must identify its phase`).toContain(step);
       }
-      for (const [route, owner] of workflowRoutes[prefix] ?? []) {
+      for (const [route, owner] of nativeRoutes) {
         const line = body.split("\n").find((candidate) =>
-          candidate.includes(`\`${prefix}.${route}\``),
+          candidate.includes(`\`native.${route}\``),
         );
-        expect(line, `${prefix}.${route} must exist`).toContain(owner);
-        expect(line, `${prefix}.${route} must identify its phase`).toContain(
+        expect(line, `${label} native.${route} must exist`).toContain(owner);
+        expect(line, `${label} native.${route} must identify its phase`).toContain(
           route.endsWith("implementation_required") ? "Phase 2.1" : "Phase 2.2",
         );
       }

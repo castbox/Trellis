@@ -120,7 +120,8 @@ Runtime parser contract:
 - Every workflow template must keep `## Phase Index`, `## Phase 1: Plan`,
   `#### X.Y` step headings, platform marker syntax, and all required
   `[workflow-state:*]` blocks.
-- Every workflow template must contain exactly one non-empty
+- Every active workflow, whether bundled or supplied by an external author,
+  must contain exactly one non-empty
   `[trellis-continuation]...[/trellis-continuation]` block. The current AI
   owns semantic execution of that block; `get_context.py --mode continuation`
   performs only deterministic structural extraction.
@@ -137,9 +138,13 @@ Runtime parser contract:
 Native source-of-truth contract:
 
 - `packages/cli/src/templates/trellis/workflow.md` is the source of truth for
-  native workflow.
-- If `marketplace/workflows/native/workflow.md` exists, tests must enforce byte
-  identity with the bundled native template.
+  the root repository's native workflow.
+- `.trellis/workflow.md` is the dogfood native workflow. Its continuation body
+  must match the bundled native continuation body; unrelated dogfood workflow
+  guidance remains independently managed.
+- Marketplace and custom workflow repositories own migration of their workflow
+  content to the structural protocol. This root repository must not advance a
+  marketplace gitlink merely to make those external workflows valid.
 
 ### 4. Validation & Error Matrix
 
@@ -194,8 +199,8 @@ Integration tests:
 - Real `marketplace/workflows/tdd/workflow.md` planning breadcrumbs include the
   TDD gates: observable behavior slices, public interface under test, and mock
   boundaries.
-- Fresh native init and every official marketplace workflow contain one valid
-  continuation block.
+- Fresh native init and the dogfood native workflow contain one valid
+  continuation block and retain the named native continuation routes.
 - Switching to a custom workflow whose continuation differs from native changes
   the next extraction immediately.
 - `--create-new` and update conflict files do not affect runtime extraction;

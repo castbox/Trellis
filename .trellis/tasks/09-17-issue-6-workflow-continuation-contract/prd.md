@@ -1,7 +1,7 @@
 # Issue #6: workflow-owned continuation contract
 
 Source: https://github.com/castbox/Trellis/issues/6
-Contract version: `2026-09-17-r2`
+Contract version: `2026-09-17-r3-scope-correction`
 Planning date: 2026-09-17
 
 ## Goal
@@ -31,9 +31,12 @@ resume behavior without requiring synchronized edits to every platform entry.
 - Active-task resolution already owns session/task/workspace/repository
   identity. This issue must consume that result without changing the resolver
   algorithm.
-- The official workflow registry currently contains `native`, `tdd`, and
-  `channel-driven-subagent-dispatch`. The native marketplace mirror is expected
-  to match the bundled native workflow.
+- The root repository owns the bundled native workflow and its dogfood copy.
+  Marketplace and custom workflows are external content selected through the
+  existing workflow resolver; their authors own protocol migration.
+- The Guru Trellis preset tracked by `castbox/guru-trellis#419` consumes no
+  marketplace workflow components, so marketplace workflow migration is not a
+  prerequisite for that issue.
 - `trellis update` treats `.trellis/workflow.md` as a whole managed template;
   locally modified conflicts produce `.new` instead of partial block merging.
 - The task is one coherent cross-cutting contract change. Splitting it into
@@ -44,8 +47,8 @@ resume behavior without requiring synchronized edits to every platform entry.
 
 ### R1. Fixed continuation block
 
-Every official workflow must contain exactly one non-empty block with these
-literal markers:
+Every workflow that participates in active-task resume must contain exactly one
+non-empty block with these literal markers:
 
 ```text
 [trellis-continuation]
@@ -114,15 +117,18 @@ fail-closed stops.
 breadcrumb text must direct the AI to load the continuation contract and must
 not reproduce its route table.
 
-### R7. Official workflow migration
+### R7. Root native migration and external author boundary
 
-The native, TDD, and channel-driven official workflows must each define their
-own valid continuation contract. Every legacy start/continue route case must be
-represented by a named fixture and map to the same effective next owner after
-migration.
+The bundled native workflow and dogfood native workflow must each define the
+same valid continuation contract. Every legacy native start/continue route case
+must be represented by a named route and map to the same effective next owner
+after migration.
 
-The fixture/custom workflow used in tests must intentionally differ from the
-native continuation contract so workflow switching proves live ownership.
+External marketplace and custom workflow authors remain responsible for adding
+a valid continuation block before their workflow can resume an active task.
+The fixture/custom workflow used in switch tests must intentionally differ from
+native so live workflow ownership is still proven without modifying the
+marketplace repository.
 
 ### R8. Init, update, and workflow-switch compatibility
 
@@ -166,17 +172,20 @@ extraction only while the current AI executes semantic continuation.
       continuation.
 - [ ] A linked-worktree binding supplies task/workspace facts while extraction
       reads the invocation repository's current `.trellis/workflow.md`.
-- [ ] Every official workflow has exactly one valid continuation block.
-- [ ] Named legacy-route fixtures preserve effective routing under the owning
-      official workflow.
+- [ ] Bundled and dogfood native workflows each have one valid continuation
+      block and their extracted native continuation bodies match.
+- [ ] Named native routes preserve the effective legacy native routing.
 - [ ] Switching to a fixture workflow immediately changes both entry results.
 - [ ] Init, update, workflow switch, modified-file conflict, and `.new`
       exclusion are integration-tested.
 - [ ] Generated platform projections share the canonical entry source and do
       not contain legacy route rows.
-- [ ] Native bundled and marketplace workflow copies remain byte-identical.
 - [ ] `trellis-meta` documents workflow-only ownership of continuation logic.
 - [ ] Python template/dogfood twins match and all repository quality gates pass.
+
+This candidate intentionally does not claim full compliance with the original
+Issue wording that required migrating every marketplace workflow. It delivers
+the root-native implementation and the general structural protocol only.
 
 ## Out of Scope
 
@@ -189,6 +198,8 @@ extraction only while the current AI executes semantic continuation.
   hooks, or entry templates.
 - Defining the continuation graph for arbitrary third-party workflows beyond
   the fixed structural protocol and fail-closed runtime behavior.
+- Migrating or releasing `mindfold-ai/marketplace` workflows, including native,
+  TDD, and channel-driven variants.
 - Changing implementation, check, commit, review, publication, or finish
   business contracts outside their workflow-owned continuation text.
 
