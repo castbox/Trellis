@@ -90,6 +90,17 @@ describe("trellis template constants", () => {
     return match[0];
   }
 
+  function continuationBody(content: string, label: string): string {
+    const marker = /^\s*\[\/?trellis-continuation\]\s*$/gm;
+    expect(content.match(marker), `${label} must have one marker pair`).toHaveLength(2);
+    const match = /\[trellis-continuation\]\s*\n([\s\S]*?)\n\s*\[\/trellis-continuation\]/.exec(
+      content,
+    );
+    expect(match, `${label} continuation block must be valid`).not.toBeNull();
+    expect(match?.[1].trim(), `${label} continuation body must be non-empty`).not.toBe("");
+    return match?.[1] ?? "";
+  }
+
   it("all templates are non-empty strings", () => {
     for (const [name, content] of Object.entries(allTemplates)) {
       expect(content.length, `${name} should be non-empty`).toBeGreaterThan(0);
@@ -152,6 +163,104 @@ describe("trellis template constants", () => {
       expect(block).toContain("observable behavior slices");
       expect(block).toContain("public interface under test");
       expect(block).toContain("mock boundaries");
+    }
+  });
+
+  it("[issue-6] every official workflow has one continuation contract", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+      ? process.cwd()
+      : path.resolve(process.cwd(), "../..");
+    const workflows = new Map<string, string>([
+      ["bundled native", workflowMdTemplate],
+      ["dogfood native", fs.readFileSync(path.join(repoRoot, ".trellis/workflow.md"), "utf-8")],
+      ["marketplace native", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/native/workflow.md"), "utf-8")],
+      ["marketplace tdd", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/tdd/workflow.md"), "utf-8")],
+      ["marketplace channel", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/channel-driven-subagent-dispatch/workflow.md"), "utf-8")],
+    ]);
+
+    for (const [label, content] of workflows) continuationBody(content, label);
+    expect(workflows.get("marketplace native")).toBe(workflowMdTemplate);
+  });
+
+  it("[issue-6] official continuation contracts retain named legacy routes", () => {
+    const repoRoot = fs.existsSync(path.join(process.cwd(), "marketplace"))
+      ? process.cwd()
+      : path.resolve(process.cwd(), "../..");
+    const workflows = new Map<string, string>([
+      ["native", workflowMdTemplate],
+      ["tdd", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/tdd/workflow.md"), "utf-8")],
+      ["channel", fs.readFileSync(path.join(repoRoot, "marketplace/workflows/channel-driven-subagent-dispatch/workflow.md"), "utf-8")],
+    ]);
+    const commonRoutes: [string, string, string][] = [
+      ["planning.missing_prd", "owner `trellis-brainstorm`", "Phase 1.1"],
+      ["planning.lightweight_prd_ready", "owner main session", "Phase 1.4"],
+      ["planning.complex_artifacts_missing", "owner `trellis-brainstorm`", "Phase 1.1"],
+      ["planning.context_missing", "owner main session", "Phase 1.3"],
+      ["planning.ready", "owner main session", "Phase 1.4"],
+      ["in_progress.finish_required", "owner main session", "Phase 3.3 then Phase 3.4"],
+      ["completed.wrap_up", "owner `trellis-finish-work`", "Phase 3.5"],
+    ];
+    const workflowRoutes: Record<string, [string, string][]> = {
+      native: [
+        ["in_progress.implementation_required", "owner `trellis-implement`"],
+        ["in_progress.check_required", "owner `trellis-check`"],
+      ],
+      tdd: [
+        ["in_progress.implementation_required", "owner `trellis-implement`"],
+        ["in_progress.check_required", "owner `trellis-check`"],
+      ],
+      channel: [
+        ["in_progress.implementation_required", "owner channel worker `implement`"],
+        ["in_progress.check_required", "owner channel worker `check`"],
+      ],
+    };
+
+    for (const [prefix, workflow] of workflows) {
+      const body = continuationBody(workflow, prefix);
+      for (const [route, owner, step] of commonRoutes) {
+        const line = body.split("\n").find((candidate) =>
+          candidate.includes(`\`${prefix}.${route}\``),
+        );
+        expect(line, `${prefix}.${route} must exist`).toContain(owner);
+        expect(line, `${prefix}.${route} must identify its phase`).toContain(step);
+      }
+      for (const [route, owner] of workflowRoutes[prefix] ?? []) {
+        const line = body.split("\n").find((candidate) =>
+          candidate.includes(`\`${prefix}.${route}\``),
+        );
+        expect(line, `${prefix}.${route} must exist`).toContain(owner);
+        expect(line, `${prefix}.${route} must identify its phase`).toContain(
+          route.endsWith("implementation_required") ? "Phase 2.1" : "Phase 2.2",
+        );
+      }
+    }
+  });
+
+  it("[issue-6] generated start and continue entries are workflow-neutral projections", () => {
+    const startBodies = new Set<string>();
+    const continueBodies = new Set<string>();
+    for (const platform of PLATFORM_IDS) {
+      for (const content of collectPlatformTemplates(platform)?.values() ?? []) {
+        const start = content.indexOf("# Start Session");
+        const resume = content.indexOf("# Continue Current Task");
+        if (start >= 0) startBodies.add(content.slice(start));
+        if (resume >= 0) continueBodies.add(content.slice(resume));
+      }
+    }
+
+    expect(startBodies.size).toBe(1);
+    expect(continueBodies.size).toBeGreaterThan(0);
+    const start = [...startBodies][0];
+    for (const body of [start, ...continueBodies]) {
+      expect(body).toContain("--mode continuation");
+      expect(body).not.toContain("Route by `status` + artifact presence");
+      expect(body).not.toContain("`status=planning` + no `prd.md`");
+      expect(body).not.toContain("--mode phase --step <X.X>");
+    }
+    expect(start).toContain("`## PROJECT TASKS` is display-only");
+    for (const resume of continueBodies) {
+      expect(resume).toContain("return `no_current_task` and stop");
+      expect(resume).toContain("Ignore `## PROJECT TASKS` for selection");
     }
   });
 

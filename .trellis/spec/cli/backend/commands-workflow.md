@@ -120,9 +120,19 @@ Runtime parser contract:
 - Every workflow template must keep `## Phase Index`, `## Phase 1: Plan`,
   `#### X.Y` step headings, platform marker syntax, and all required
   `[workflow-state:*]` blocks.
+- Every workflow template must contain exactly one non-empty
+  `[trellis-continuation]...[/trellis-continuation]` block. The current AI
+  owns semantic execution of that block; `get_context.py --mode continuation`
+  performs only deterministic structural extraction.
 - SessionStart, per-turn workflow-state hooks, `trellis-start`, and
   `get_context.py --mode phase` read the current `.trellis/workflow.md`; do not
   duplicate variant-specific behavior in hook scripts or skills.
+- `trellis-start` and `trellis-continue` read the active workflow's
+  continuation block on every invocation. Workflow switching therefore takes
+  effect immediately, and `.trellis/workflow.md.new` is never a runtime input.
+- A missing, duplicated, empty, nested, unclosed, or mismatched continuation
+  block fails closed as `invalid_continuation_contract`; there is no native,
+  legacy-route, or project-inventory fallback.
 
 Native source-of-truth contract:
 
@@ -184,6 +194,13 @@ Integration tests:
 - Real `marketplace/workflows/tdd/workflow.md` planning breadcrumbs include the
   TDD gates: observable behavior slices, public interface under test, and mock
   boundaries.
+- Fresh native init and every official marketplace workflow contain one valid
+  continuation block.
+- Switching to a custom workflow whose continuation differs from native changes
+  the next extraction immediately.
+- `--create-new` and update conflict files do not affect runtime extraction;
+  only `.trellis/workflow.md` is read.
+- Invalid active workflow contracts fail without native or inventory fallback.
 
 Runtime parsing validation:
 

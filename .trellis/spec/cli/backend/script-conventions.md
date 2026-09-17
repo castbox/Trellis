@@ -124,6 +124,35 @@ diff -rq .trellis/scripts packages/cli/src/templates/trellis/scripts -x __pycach
 
 ## Script Types
 
+### Workflow continuation extraction
+
+`common/continuation_contract.py` owns structural extraction of the workflow's
+single `[trellis-continuation]` block. Its public function accepts a
+`pathlib.Path`, preserves body order and line endings, and raises
+`ContinuationContractError` with a stable structural subtype:
+
+- `workflow_not_found`
+- `workflow_read_error`
+- `missing_block`
+- `duplicate_block`
+- `empty_body`
+- `missing_close`
+- `missing_open`
+- `mismatched_marker`
+- `nested_block`
+
+`common/git_context.py` exposes this through `--mode continuation` and maps all
+structural failures to the external prefix
+`invalid_continuation_contract: <subtype>: <workflow-path>` with a non-zero
+exit. The mode is read-only and must not inspect task status, artifacts, Git
+history, project inventory, or conversation text to select a semantic route.
+It must remain in the invocation repository instead of changing to the bound
+task workspace.
+
+Regression coverage must exercise every subtype, exact successful bytes,
+read-only behavior, and linked-worktree invocation-root ownership. The existing
+whole-tree parity test keeps the dogfood and shipped Python copies identical.
+
 ### Library Modules (`common/*.py`)
 
 Shared utilities imported by other scripts. **Never run directly.**

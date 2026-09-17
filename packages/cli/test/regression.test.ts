@@ -7336,6 +7336,81 @@ print(len(entries))
     }
   });
 
+  function runContinuation() {
+    return spawnSync(
+      pythonCmd,
+      [
+        "-B",
+        path.join(tmpDir, ".trellis", "scripts", "get_context.py"),
+        "--mode",
+        "continuation",
+      ],
+      { cwd: tmpDir, encoding: "utf-8" },
+    );
+  }
+
+  it("[issue-6] continuation extraction preserves CRLF body bytes and writes nothing", () => {
+    writeTrellisScripts();
+    const workflowPath = path.join(
+      fs.realpathSync(tmpDir),
+      ".trellis",
+      "workflow.md",
+    );
+    fs.writeFileSync(
+      workflowPath,
+      "before\r\n[trellis-continuation]\r\nfirst\r\nliteral pass finding typed_exit readiness completion authorization\r\n[/trellis-continuation]\r\nafter\r\n",
+    );
+    const before = fs.readFileSync(workflowPath);
+    const entriesBefore = fs.readdirSync(path.join(tmpDir, ".trellis"));
+
+    const result = runContinuation();
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe(
+      "first\r\nliteral pass finding typed_exit readiness completion authorization\r\n",
+    );
+    expect(fs.readFileSync(workflowPath).equals(before)).toBe(true);
+    expect(fs.readdirSync(path.join(tmpDir, ".trellis"))).toEqual(entriesBefore);
+  });
+
+  it.each([
+    ["missing", "# Workflow\n", "missing_block"],
+    [
+      "duplicate",
+      "[trellis-continuation]\none\n[/trellis-continuation]\n[trellis-continuation]\ntwo\n[/trellis-continuation]\n",
+      "duplicate_block",
+    ],
+    ["empty", "[trellis-continuation]\n \t\n[/trellis-continuation]\n", "empty_body"],
+    ["unclosed", "[trellis-continuation]\nbody\n", "missing_close"],
+    ["missing-open", "[/trellis-continuation]\n", "missing_open"],
+    [
+      "mismatched",
+      "[trellis-continuation]\nbody\n[/trellis-resume]\n",
+      "mismatched_marker",
+    ],
+    [
+      "nested",
+      "[trellis-continuation]\nouter\n[trellis-continuation]\ninner\n[/trellis-continuation]\n[/trellis-continuation]\n",
+      "nested_block",
+    ],
+  ])("[issue-6] continuation rejects %s structure", (_name, workflow, subtype) => {
+    writeTrellisScripts();
+    const workflowPath = path.join(
+      fs.realpathSync(tmpDir),
+      ".trellis",
+      "workflow.md",
+    );
+    writeProjectFile(path.join(".trellis", "workflow.md"), workflow);
+
+    const result = runContinuation();
+
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      `invalid_continuation_contract: ${subtype}: ${workflowPath}\n`,
+    );
+  });
+
   it("[workflow-v2] get_context.py --mode phase returns compact Phase Index only", () => {
     writeTrellisScripts();
     writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");

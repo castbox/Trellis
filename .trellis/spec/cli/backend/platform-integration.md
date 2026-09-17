@@ -162,6 +162,25 @@ Per-platform skill directories (`.claude/skills/`, `.cursor/skills/`, `.qoder/sk
 
 **Command-as-skill fallback files under `.agents/skills/`** (currently `trellis-start/SKILL.md`, `trellis-continue/SKILL.md`, and `trellis-finish-work/SKILL.md`, written via `resolveAllAsSkillsNeutral()` by Codex) may use per-platform `{{CLI_FLAG}}` / `{{PYTHON_CMD}}` because they are user-invoked fallback entrypoints. They still go through the neutral helper to keep `{{CMD_REF}}` neutralized for consistency with the surrounding shared skills. Platforms with their own private command and skill roots should not write `.agents/skills/`; for example, ZCode writes workflow/bundled skills under `.zcode/skills/` and keeps slash commands under `.zcode/commands/trellis/*.md`.
 
+### Canonical start/continue projection
+
+`src/templates/common/commands/start.md` and `continue.md` are the only
+semantic sources for generated platform entry files. Every projection must:
+
+- use the active-task resolver's exact current-session binding as current-task
+  authority and treat project inventory as display-only;
+- invoke `get_context.py --mode continuation` for an exact active task;
+- keep workflow-specific lifecycle/status/artifact/owner routes out of the
+  entry text;
+- make `trellis-continue` return `no_current_task` when no exact binding exists;
+- stop on resolver or `invalid_continuation_contract` diagnostics without
+  native, legacy-route, or inventory-based fallback.
+
+The extractor reads the invocation repository's current
+`.trellis/workflow.md`, even when the bound task and task facts live in a linked
+worktree. Platform projections must not cache continuation text, so a workflow
+switch changes both entries immediately.
+
 **Wrong**:
 
 ```typescript

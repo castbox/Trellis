@@ -58,7 +58,7 @@ beforeEach(() => {
   ]) {
     write(primary, destination, fs.readFileSync(path.join(templates, source), "utf8"));
   }
-  write(primary, ".trellis/workflow.md", "# Workflow\n## Phase Index\nPrimary-only workflow\n## Phase 1: Plan\n[workflow-state:in_progress]\nPRIMARY-WORKFLOW\n[/workflow-state:in_progress]\n[workflow-state:no_task]\nNO-TASK\n[/workflow-state:no_task]\n");
+  write(primary, ".trellis/workflow.md", "# Workflow\n## Phase Index\nPrimary-only workflow\n## Phase 1: Plan\n[workflow-state:in_progress]\nPRIMARY-WORKFLOW\n[/workflow-state:in_progress]\n[workflow-state:no_task]\nNO-TASK\n[/workflow-state:no_task]\n[trellis-continuation]\nPRIMARY-CONTINUATION\n[/trellis-continuation]\n");
   git("init", "-q");
   git("add", ".");
   git("commit", "-qm", "Fixture runtime");
@@ -66,7 +66,7 @@ beforeEach(() => {
   const absent = run("python3", ["-B", ".trellis/scripts/task.py", "current", "--json"]);
   expect(absent.status).toBe(1);
   git("worktree", "add", "--detach", linked, "HEAD");
-  write(linked, ".trellis/workflow.md", "# Workflow\n## Phase Index\nLinked-only workflow\n## Phase 1: Plan\n[workflow-state:in_progress]\nLINKED-WORKFLOW\n[/workflow-state:in_progress]\n");
+  write(linked, ".trellis/workflow.md", "# Workflow\n## Phase Index\nLinked-only workflow\n## Phase 1: Plan\n[workflow-state:in_progress]\nLINKED-WORKFLOW\n[/workflow-state:in_progress]\n[trellis-continuation]\nLINKED-CONTINUATION\n[/trellis-continuation]\n");
   write(linked, ".trellis/tasks/cross/task.json", JSON.stringify({ id: "cross", name: "cross", title: "Linked task title", description: "Fixture", status: "planning", creator: "fixture", assignee: "fixture" }));
   write(linked, ".trellis/tasks/cross/prd.md", "Linked task requirements\n");
   for (const name of ["implement", "check"]) {
@@ -89,6 +89,24 @@ describe("cross-worktree installed hook entrypoints", () => {
     expect(text).not.toContain("Primary-only workflow");
   });
 
+  it("continuation uses linked task facts and the invocation workflow", () => {
+    const facts = run("python3", ["-B", ".trellis/scripts/get_context.py", "--json"]);
+    expect(facts.status, facts.stderr).toBe(0);
+    const current = JSON.parse(facts.stdout) as {
+      currentTask: { path: string; taskWorkspaceRoot: string; resolvedTaskPath: string };
+    };
+    expect(current.currentTask.path).toBe(".trellis/tasks/cross");
+    expect(current.currentTask.taskWorkspaceRoot).toBe(linked);
+    expect(current.currentTask.resolvedTaskPath).toBe(path.join(linked, ".trellis/tasks/cross"));
+
+    const continuation = run("python3", [
+      "-B", ".trellis/scripts/get_context.py", "--mode", "continuation",
+    ]);
+    expect(continuation.status, continuation.stderr).toBe(0);
+    expect(continuation.stdout).toBe("PRIMARY-CONTINUATION\n");
+    expect(continuation.stdout).not.toContain("LINKED-CONTINUATION");
+  });
+
   it("UserPromptSubmit resolves linked workflow and reports corrupt binding explicitly", () => {
     const text = hook(".codex/hooks/inject-workflow-state.py");
     expect(text).toContain("in_progress");
@@ -98,6 +116,11 @@ describe("cross-worktree installed hook entrypoints", () => {
     const invalid = hook(".codex/hooks/inject-workflow-state.py");
     expect(invalid).toMatch(/error|stale|invalid/i);
     expect(invalid).not.toContain("Status: no_task");
+    const continuation = run("python3", [
+      "-B", ".trellis/scripts/get_context.py", "--mode", "continuation",
+    ]);
+    expect(continuation.status).not.toBe(0);
+    expect(continuation.stdout).not.toContain("PRIMARY-CONTINUATION");
   });
 
   it.each([".claude/hooks/session-start.py", ".github/hooks/session-start.py"])(

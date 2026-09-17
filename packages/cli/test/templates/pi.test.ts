@@ -535,9 +535,9 @@ describe("pi templates", () => {
     expect(templates.get(".pi/prompts/trellis-start.md")).toContain(
       "# Start Session",
     );
-    expect(templates.get(".pi/prompts/trellis-continue.md")).toContain(
-      "get_context.py --mode phase",
-    );
+    const continuePrompt = templates.get(".pi/prompts/trellis-continue.md");
+    expect(continuePrompt).toContain("get_context.py --mode continuation");
+    expect(continuePrompt).not.toContain("get_context.py --mode phase");
     expect(templates.get(".pi/prompts/trellis-finish-work.md")).toContain(
       "finish-work",
     );

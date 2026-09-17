@@ -238,9 +238,9 @@ export function resolvePlaceholdersNeutral(
 /** Skill description registry — maps template name to auto-trigger description. */
 const SKILL_DESCRIPTIONS: Record<string, string> = {
   start:
-    "Initializes an AI development session by reading workflow guides, git status, active tasks, and project guidelines from .trellis/. Classifies incoming tasks and routes to brainstorm, direct edit, or task workflow. Use when beginning a new coding session, resuming work, starting a new task, or re-establishing project context.",
+    "Initializes an AI development session by loading exact current-task facts, the workflow Phase Index, and the current workflow-owned continuation contract when a task is bound. Use when beginning a new coding session or re-establishing project context.",
   continue:
-    "Resume work on the current task. Loads the workflow Phase Index, figures out which phase/step to pick up at, then pulls the step-level detail via get_context.py --mode phase. Use when coming back to an in-progress task and you need to know what to do next.",
+    "Resume the exact current-session task by loading the current workflow-owned continuation contract. Returns no_current_task when no exact binding exists and never selects from project inventory.",
   "finish-work":
     "Wrap up the current session: verify quality gate passed, remind user to commit, archive selected completed tasks, and report their status. Use when done coding and ready to end the session.",
   "before-dev":
@@ -279,8 +279,8 @@ export function wrapWithSkillFrontmatter(
  * SKILL_DESCRIPTIONS, which is long prose aimed at the skill matcher.
  */
 const COMMAND_DESCRIPTIONS: Record<string, string> = {
-  start: "Initialize a Trellis development session.",
-  continue: "Resume work on the current task at the correct phase.",
+  start: "Initialize from exact task facts and the current workflow contract.",
+  continue: "Resume the exact bound task through the current workflow contract.",
   "finish-work":
     "Wrap up the current session: quality gate, commit reminder, selected task archive.",
 };

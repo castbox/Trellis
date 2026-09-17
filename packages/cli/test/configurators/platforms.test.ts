@@ -1054,7 +1054,7 @@ describe("configurePlatform", () => {
         path.join(tmpDir, ".dsh", "skills", "trellis-start", "SKILL.md"),
         "utf-8",
       ),
-    ).toContain("--platform dsh");
+    ).toContain("get_context.py --mode continuation");
 
     // Shared workflow skills land in .agents/skills/, entry skills stay private
     expect(

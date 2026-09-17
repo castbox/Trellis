@@ -38,7 +38,7 @@ def git(root, *args):
 def install(root):
     shutil.copytree(templates, root / '.trellis/scripts')
     (root / '.trellis/config.yaml').write_text('task_auto_commit: false\\n')
-    (root / '.trellis/workflow.md').write_text('# Workflow\\n')
+    (root / '.trellis/workflow.md').write_text('# Workflow\\n[trellis-continuation]\\nCONTINUATION-' + root.name + '\\n[/trellis-continuation]\\n')
 def repository(name):
     root = base / name
     root.mkdir()
@@ -91,6 +91,7 @@ describe("repository-scoped session task bindings", () => {
 assert resolve_context_key(dict(session_id='one'), platform='codex') == 'codex_one'
 assert resolve(primary).task_path is None
 linked = worktree(primary, 'linked space')
+(linked / '.trellis/workflow.md').write_text('# Linked workflow\\n[trellis-continuation]\\nLINKED-CONTINUATION\\n[/trellis-continuation]\\n')
 directory = task(linked, title='Linked workspace task')
 start(linked, 'one', directory)
 active = resolve(primary)
@@ -116,6 +117,11 @@ assert json.loads(p.stdout)['current_task']['title'] == 'Linked workspace task'
 p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--json'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
 assert p.returncode == 0, p.stderr
 assert json.loads(p.stdout)['currentTask']['path'] == '.trellis/tasks/same'
+assert json.loads(p.stdout)['currentTask']['taskWorkspaceRoot'] == str(linked)
+p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--mode', 'continuation'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
+assert p.returncode == 0, (p.stdout, p.stderr)
+assert p.stdout == 'CONTINUATION-primary space\\n', p.stdout
+assert 'LINKED-CONTINUATION' not in p.stdout
 from common.paths import get_current_task_abs
 assert get_current_task_abs(primary, dict(session_id='one'), 'codex') == directory
 `);
@@ -195,6 +201,9 @@ legacy(primary, 'one', local)
 active = resolve(primary)
 assert active.error and active.stale, active
 assert current(primary, 'one').returncode != 0
+p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--mode', 'continuation'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
+assert p.returncode != 0, (p.stdout, p.stderr)
+assert 'CONTINUATION-primary space' not in p.stdout
 start(linked, 'one', directory)
 assert resolve(primary).resolved_task_path == directory
 p = command(primary, 'one', 'finish')
@@ -246,6 +255,9 @@ active = resolve(primary)
 assert active.error and active.stale, active
 p = current(primary, 'one')
 assert p.returncode != 0 and json.loads(p.stdout).get('error'), (p.stdout, p.stderr)
+p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--mode', 'continuation'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
+assert p.returncode != 0, (failure, p.stdout, p.stderr)
+assert 'CONTINUATION-primary space' not in p.stdout
 `);
     },
   );

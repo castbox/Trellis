@@ -236,6 +236,34 @@ an obvious bug they can fix, rather than being silently masked.
 To customize breadcrumb wording, edit the `[workflow-state:STATUS]` block in
 `.trellis/workflow.md`. No script change required.
 
+## Continuation boundary
+
+`[workflow-state:STATUS]` remains a broad lifecycle breadcrumb. It may remind
+the AI to load the active workflow's continuation contract, but it must not
+duplicate the detailed status/artifact/owner route graph.
+
+For an exact current-session task binding, active-task resume semantics live in
+one separate workflow block:
+
+```text
+[trellis-continuation]
+<workflow-owned continuation rules>
+[/trellis-continuation]
+```
+
+The continuation block owns lifecycle interpretation, next-owner selection,
+public DTO consumers, producer-owned recovery, fresh semantic reruns, drift
+handling, and fail-closed stops. `task.json.status` remains only a broad
+lifecycle fact; it cannot by itself prove implementation, check, commit,
+review, publication, or finish completion.
+
+`get_context.py --mode continuation` reads the invocation repository's current
+`.trellis/workflow.md`, validates exactly one non-empty block, and returns its
+body verbatim. It does not select a task or workflow step and does not generate
+semantic pass, finding, typed-exit, readiness, completion, or authorization
+conclusions. The active-task resolver remains the sole authority for task,
+workspace, and repository identity.
+
 ### Update boundary
 
 The `[workflow-state:STATUS]` blocks are not the only runtime-sensitive
@@ -379,6 +407,8 @@ nested Trellis sub-agents.
 - When adding a `[required · once]` step to the workflow walkthrough, add a
   matching enforcement line to that phase's breadcrumb tag block in the
   same commit.
+- Keep active-task breadcrumbs broad and route detailed recovery through the
+  single `[trellis-continuation]` block.
 
 ## DON'T
 
@@ -396,6 +426,8 @@ nested Trellis sub-agents.
 - Don't rely on sub-agents not seeing the breadcrumb. If guidance is sub-agent
   relevant, propagate it via the appropriate channel above and keep the
   breadcrumb wording self-exempting.
+- Don't copy the continuation route graph into `[workflow-state:*]`, platform
+  start/continue entries, hooks, or scripts.
 
 ---
 
@@ -408,6 +440,7 @@ nested Trellis sub-agents.
 - New `task.json.status` writer (any path that mutates the field)
 - Breadcrumb body that changes the contract (e.g. removing a `[required ·
   once]` enforcement line — flag in PR description)
+- Continuation marker syntax, ownership, or its breadcrumb handoff wording
 - New lifecycle event added to `run_task_hooks`
 - Reachability changes (e.g. wiring a new status transition that makes
   `completed` reachable)
