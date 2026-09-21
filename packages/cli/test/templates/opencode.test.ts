@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -729,7 +730,7 @@ function setupTrellisProject(): string {
   const taskDir = join(dir, ".trellis", "tasks", "demo-task");
   mkdirSync(taskDir, { recursive: true });
   mkdirSync(join(dir, ".trellis", ".runtime", "sessions"), { recursive: true });
-  writeFileSync(join(taskDir, "task.json"), JSON.stringify({ id: "demo-task", title: "Demo task", status: "in_progress" }));
+  writeFileSync(join(taskDir, "task.json"), JSON.stringify({ id: "demo-task", name: "demo-task", lifecycle_generation: 0, title: "Demo task", status: "in_progress" }));
   writeFileSync(join(taskDir, "prd.md"), "# Demo PRD\n\nGoal: verify injection.");
   writeFileSync(join(taskDir, "implement.jsonl"), "");
   writeFileSync(join(taskDir, "check.jsonl"), "");
@@ -749,7 +750,8 @@ function setupTrellisProject(): string {
 
 function writeSessionFile(dir: string, key: string, taskRef: string): void {
   const file = join(dir, ".trellis", ".runtime", "sessions", `${key}.json`);
-  writeFileSync(file, JSON.stringify({ current_task: taskRef }, null, 2));
+  const taskId = taskRef.split(/[\\/]/).filter(Boolean).at(-1) ?? taskRef;
+  writeFileSync(file, JSON.stringify({ schema_version: 2, task_id: taskId, lifecycle_generation: 0 }, null, 2));
 }
 
 describe("opencode subagent helper", () => {
@@ -828,7 +830,88 @@ describe("opencode TrellisContext session isolation", () => {
     expect(active.taskPath).toBeNull();
     expect(active.source).toBe("session:opencode_exact");
     expect(active.stale).toBe(true);
-    expect(active.error).toBe("empty_task_metadata");
+    expect(active.error).toContain("invalid_task_id");
+  });
+
+  it("treats schema v1, invalid generation, and extra fields as stale", () => {
+    const file = join(dir, ".trellis", ".runtime", "sessions", "opencode_exact.json");
+    const ctx = new TrellisContext(dir);
+    for (const record of [
+      { schema_version: 1, current_task: ".trellis/tasks/demo-task" },
+      { schema_version: 2, task_id: "demo-task", lifecycle_generation: true },
+      { schema_version: 2, task_id: "demo-task", lifecycle_generation: 0, current_task: "demo-task" },
+    ]) {
+      writeFileSync(file, JSON.stringify(record));
+      const active = ctx.getActiveTask({ sessionID: "exact" });
+      expect(active.taskPath).toBeNull();
+      expect(active.stale).toBe(true);
+      expect(active.error).toBeTruthy();
+    }
+  });
+
+  it("reports checkout-local legacy bindings unsupported in Git worktrees", () => {
+    const root = mkdtempSync(join(tmpdir(), "trellis-opencode-worktrees-"));
+    const primary = join(root, "primary");
+    const linked = join(root, "linked");
+    const git = (cwd: string, ...args: string[]): string => execFileSync(
+      "git", ["-C", cwd, ...args], { encoding: "utf8" },
+    ).trim();
+    try {
+      mkdirSync(primary);
+      git(primary, "init");
+      git(primary, "config", "user.email", "test@example.com");
+      git(primary, "config", "user.name", "Test");
+      mkdirSync(join(primary, ".trellis"), { recursive: true });
+      writeFileSync(join(primary, ".trellis/workflow.md"), "# workflow\n");
+      git(primary, "add", ".");
+      git(primary, "commit", "-m", "seed");
+      git(primary, "worktree", "add", "-b", "linked", linked);
+      mkdirSync(join(linked, ".trellis/.runtime/sessions"), { recursive: true });
+      writeFileSync(
+        join(linked, ".trellis/.runtime/sessions/opencode_exact.json"),
+        JSON.stringify({ current_task: ".trellis/tasks/legacy" }),
+      );
+
+      const active = new TrellisContext(primary).getActiveTask({ sessionID: "exact" });
+      expect(active.taskPath).toBeNull();
+      expect(active.stale).toBe(true);
+      expect(active.error).toContain("unsupported_binding_schema");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects generation mismatches and Unicode case-fold collisions", () => {
+    writeSessionFile(dir, "opencode_exact", ".trellis/tasks/demo-task");
+    const taskFile = join(dir, ".trellis/tasks/demo-task/task.json");
+    writeFileSync(taskFile, JSON.stringify({ id: "demo-task", lifecycle_generation: 1 }));
+    let active = new TrellisContext(dir).getActiveTask({ sessionID: "exact" });
+    expect(active.error).toContain("stale_lifecycle_generation");
+
+    writeFileSync(taskFile, JSON.stringify({ id: "Straße", lifecycle_generation: 0 }));
+    writeFileSync(
+      join(dir, ".trellis/.runtime/sessions/opencode_exact.json"),
+      JSON.stringify({ schema_version: 2, task_id: "STRASSE", lifecycle_generation: 0 }),
+    );
+    active = new TrellisContext(dir).getActiveTask({ sessionID: "exact" });
+    expect(active.error).toContain("task_id_casefold_collision");
+
+    writeFileSync(taskFile, JSON.stringify({ id: "μ", lifecycle_generation: 0 }));
+    writeFileSync(
+      join(dir, ".trellis/.runtime/sessions/opencode_exact.json"),
+      JSON.stringify({ schema_version: 2, task_id: "µ", lifecycle_generation: 0 }),
+    );
+    active = new TrellisContext(dir).getActiveTask({ sessionID: "exact" });
+    expect(active.error).toContain("task_id_casefold_collision");
+
+    writeFileSync(taskFile, JSON.stringify({ id: "Ａ", lifecycle_generation: 0 }));
+    writeFileSync(
+      join(dir, ".trellis/.runtime/sessions/opencode_exact.json"),
+      JSON.stringify({ schema_version: 2, task_id: "A", lifecycle_generation: 0 }),
+    );
+    active = new TrellisContext(dir).getActiveTask({ sessionID: "exact" });
+    expect(active.error).toContain("stale_task_identity");
+    expect(active.error).not.toContain("casefold_collision");
   });
 });
 

@@ -85,8 +85,7 @@ with patch.dict(os.environ, {"TRELLIS_CONTEXT_ID":"review"}):
             assert status == 1 and "historical" in error, (args, status, error)
         for operation in (
             lambda: active_task.resolve_active_task(root, allow_single_session_fallback=True, allow_environment_context=False),
-            lambda: active_task.clear_task_from_sessions(".trellis/tasks/one", root),
-            lambda: active_task.repoint_task_in_sessions(".trellis/tasks/one", ".trellis/tasks/new", root),
+            lambda: active_task.clear_task_from_sessions("one", 0, root),
         ):
             try:
                 operation()

@@ -259,47 +259,59 @@ from task workspace. Git worktrees are not the retired workspace mechanism.
 `context_key`, `stale`, plus `invocation_root`, `repository_common_dir`,
 `task_workspace_root`, `resolved_task_path` and `error`. Consumers use validated
 absolute paths, not caller-root joins. Git storage is
-`<git-common-dir>/trellis/sessions/<key>.json`, schema version 1, containing
-`repository_common_dir`, `task_workspace_root` and relative `current_task`.
-Non-Git projects keep checkout-local storage.
+`<git-common-dir>/trellis/sessions/<key>.json`, schema version 2, containing
+exactly `schema_version`, stable `task_id`, and `lifecycle_generation`.
+Non-Git projects keep checkout-local storage with the same schema.
 
 ### Contracts
 
-Live Git common-dir and registered-worktree checks establish membership; stored
-claims and remote URLs do not. Task containment uses the effective task root
-and preserves existing nonhistorical symlink rules. Missing new records may
-read one valid legacy match for the same key in live registered worktrees.
-Reads do not promote. A known key miss/error cannot select another session.
-Identity-less compatibility never becomes repository-wide task inference.
+`task.json.id` is immutable across rename and archive. A missing
+`lifecycle_generation` is generation 0 in memory; a present value must be a
+non-negative integer and booleans are invalid. Create and lifecycle mutations
+reject exact or Unicode case-fold TaskId collisions across active and archived
+tasks. Collision scans are targeted: malformed unrelated history is skipped,
+while malformed visible candidates fail closed.
 
-Finish clears the session including legacy state that could resurrect it.
-Archive clears every binding to the exact workspace-qualified task. Rename
-repoints them. Equal relative refs in different worktrees are distinct tasks.
-Preflight storage before moves; run lifecycle hooks in task workspace and report
-partial cleanup/repoint failures explicitly.
+Live Git common-dir and registered-worktree checks establish membership; stored
+paths, Git claims and remote URLs do not. Resolution scans active tasks in the
+currently registered worktrees and requires one exact TaskId/generation match
+with no case-fold conflict. Task containment uses the effective task root and
+preserves existing nonhistorical symlink rules. Schema-v1 and unversioned
+path-bearing records are explicitly unsupported/stale and require `task.py
+start`; reads never promote or rewrite them. A known key miss/error cannot
+select another session. Non-Git resolution is invocation-local.
+
+Finish clears the exact selected session. Archive clears schema-2 bindings that
+match the archived TaskId and generation. Rename changes only the directory,
+mutable `name`, TaskRef-bearing JSONL/back-references and leaves session bytes,
+TaskId and generation unchanged; the next read resolves the new TaskRef from
+live metadata. Preflight storage before moves and run lifecycle hooks in the
+task workspace.
 
 ### Validation and Error Matrix
 
 | State | Result |
 | --- | --- |
 | No identity or binding | No active task, no inference |
-| One valid common/legacy binding | Validated workspace and absolute task path |
+| One valid schema-2 binding with one live identity match | Validated workspace and absolute task path |
 | Malformed binding or unreadable/missing task.json | Explicit error/stale, nonzero CLI |
-| Wrong common-dir or unregistered worktree | Explicit error/stale, no task mutation |
-| Multiple legacy matches | Conflict, no selection |
-| Valid new plus legacy records | New binding wins |
-| Outside tasks root or retired target | Rejected, no historical consumption |
+| Schema-v1 or unversioned path-bearing binding | Unsupported/stale; explicit rebind required |
+| Matching task exists only in an unregistered worktree | Stale, no task mutation |
+| Multiple exact matches or Unicode case-fold conflict | Conflict, no selection |
+| Generation mismatch | Stale lifecycle error, no selection |
 
 ### Good / Base / Bad Cases
 
-Good: linked start, primary resolve. Base: non-Git local binding. Bad: caller
-root joined with task ref, newest legacy record selection, corrupt JSON as {}.
+Good: linked start writes one path-free identity record and primary resolves it
+through registered worktrees. Base: non-Git local binding. Bad: caller-root joins,
+legacy path fallback, newest-record selection, or corrupt JSON treated as `{}`.
 
 ### Required Tests
 
 Use real Git/worktrees for CLI and actual hook entrypoints, multiple sessions
-and repositories, equal task names, lifecycle, legacy conflicts, corruption,
-unregistration, non-Git and installation/update. Text snapshots are insufficient.
+and repositories, rename/archive lifecycle, strict generation values, exact and
+Unicode case-fold collisions, stale legacy schemas, corruption, unregistration,
+non-Git and installation/update. Text snapshots are insufficient.
 
 ### Wrong vs Correct
 

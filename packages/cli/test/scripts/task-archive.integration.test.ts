@@ -74,6 +74,7 @@ function makeTask(repo: string, name: string, prdBody: string): void {
     JSON.stringify({
       id: name,
       name,
+      lifecycle_generation: 0,
       title: name,
       status: "in_progress",
       priority: "P2",
@@ -238,6 +239,26 @@ describe.skipIf(!hasPython())(
       },
       30_000, // python startup + 100-file ops can be slow
     );
+
+    it("preflights session storage before changing task metadata", () => {
+      makeTask(tmp, "task-a", "task A prd\n");
+      const taskJson = path.join(tmp, ".trellis/tasks/task-a/task.json");
+      const before = fs.readFileSync(taskJson, "utf8");
+      const session = path.join(tmp, ".git/trellis/sessions/broken.json");
+      fs.mkdirSync(path.dirname(session), { recursive: true });
+      fs.writeFileSync(session, "{broken");
+
+      const result = spawnSync(
+        "python3",
+        [".trellis/scripts/task.py", "archive", "task-a", "--no-commit"],
+        { cwd: tmp, encoding: "utf-8" },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("the task was not modified or archived");
+      expect(fs.readFileSync(taskJson, "utf8")).toBe(before);
+      expect(fs.readFileSync(session, "utf8")).toBe("{broken");
+    });
 
     it("refuses to archive a mistyped name that resolves to a real source dir", () => {
       makeTask(tmp, "real-task", "# real task\n");

@@ -93,11 +93,11 @@ workflow = root / ".trellis"
 task = workflow / "tasks/current"
 task.mkdir(parents=True)
 (workflow / "scripts").symlink_to(scripts, target_is_directory=True)
-metadata = '{"id":"current","title":"ACTIVE TITLE","status":"in_progress","children":null}'
+metadata = '{"id":"current","lifecycle_generation":0,"title":"ACTIVE TITLE","status":"in_progress","children":null}'
 (task / "task.json").write_text(metadata)
 sessions = workflow / ".runtime/sessions"
 sessions.mkdir(parents=True)
-record = '{"current_task":".trellis/tasks/current"}'
+record = '{"schema_version":2,"task_id":"current","lifecycle_generation":0}'
 (sessions / "review.json").write_text(record)
 history = workflow / "workspace"
 history.mkdir()

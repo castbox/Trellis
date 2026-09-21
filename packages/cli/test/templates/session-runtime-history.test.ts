@@ -44,7 +44,7 @@ describe("OpenCode runtime history isolation", () => {
     probe(`
 for(const name of ["one","two"]){
  const task=path.join(root,".trellis/tasks",name);fs.mkdirSync(task,{recursive:true});
- fs.writeFileSync(path.join(task,"task.json"),JSON.stringify({title:name,status:"in_progress"}));
+ fs.writeFileSync(path.join(task,"task.json"),JSON.stringify({id:name,lifecycle_generation:0,title:name,status:"in_progress"}));
 }
 const runtime=path.join(root,".trellis/.runtime"), sessions=path.join(runtime,"sessions");
 const mode=${JSON.stringify(mode)};
@@ -58,7 +58,7 @@ if(mode==="runtime"){
  fs.mkdirSync(sessions,{recursive:true});file=path.join(history,"old.json");alias=path.join(sessions,"review.json");fs.symlinkSync(file,alias);
 }
 for(const name of [null,"one","two"]){
- audit=false;if(name)fs.writeFileSync(file,JSON.stringify({current_task:".trellis/tasks/"+name}));
+ audit=false;if(name)fs.writeFileSync(file,JSON.stringify({schema_version:2,task_id:name,lifecycle_generation:0}));
  audit=true;
  assert.equal(ctx.getActiveTask().taskPath,null);
  assert.equal(ctx._resolveSingleSessionFallback(),null);
@@ -66,7 +66,7 @@ for(const name of [null,"one","two"]){
 }
 audit=false;const original=fs.readFileSync(file,"utf8");
 fs.unlinkSync(alias);fs.mkdirSync(sessions,{recursive:true});
-fs.writeFileSync(path.join(sessions,"review.json"),JSON.stringify({current_task:".trellis/tasks/one"}));
+fs.writeFileSync(path.join(sessions,"review.json"),JSON.stringify({schema_version:2,task_id:"one",lifecycle_generation:0}));
 audit=true;assert.equal(ctx.getActiveTask().taskPath,".trellis/tasks/one");
 delete process.env.TRELLIS_CONTEXT_ID;
 assert.equal(ctx.getActiveTask().taskPath,null);
@@ -74,7 +74,7 @@ process.env.TRELLIS_CONTEXT_ID="missing";
 assert.equal(ctx.getActiveTask().taskPath,null);
 process.env.TRELLIS_CONTEXT_ID="review";
 assert.equal(ctx.getActiveTask().source,"session:review");
-audit=false;fs.writeFileSync(path.join(sessions,"second.json"),JSON.stringify({current_task:".trellis/tasks/two"}));
+audit=false;fs.writeFileSync(path.join(sessions,"second.json"),JSON.stringify({schema_version:2,task_id:"two",lifecycle_generation:0}));
 audit=true;assert.equal(ctx.getActiveTask().taskPath,".trellis/tasks/one");assert.deepEqual(accesses,[]);
 audit=false;assert.equal(fs.readFileSync(file,"utf8"),original);
 `);
