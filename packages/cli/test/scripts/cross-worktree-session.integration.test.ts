@@ -51,10 +51,12 @@ def worktree(root, name):
     target = base / name
     git(root, 'worktree', 'add', '--detach', str(target), 'HEAD')
     return target
-def task(root, name='same', title=None):
+def task(root, name='same', title=None, task_id=None, generation=None):
     directory = root / '.trellis/tasks' / name
     directory.mkdir(parents=True)
-    (directory / 'task.json').write_text(json.dumps(dict(id=name, name=name, title=title or name, description='Fixture task', status='planning', creator='fixture', assignee='fixture', children=[], parent=None)))
+    data = dict(id=task_id or name, name=name, title=title or name, description='Fixture task', status='planning', creator='fixture', assignee='fixture', children=[], parent=None)
+    if generation is not None: data['lifecycle_generation'] = generation
+    (directory / 'task.json').write_text(json.dumps(data))
     (directory / 'prd.md').write_text('Fixture requirement\\n')
     for manifest in ('implement.jsonl', 'check.jsonl'):
         (directory / manifest).write_text(json.dumps(dict(file=str(directory.relative_to(root) / 'prd.md'), reason='Fixture requirement')) + '\\n')
@@ -102,10 +104,8 @@ assert active.resolved_task_path == directory
 common = Path(git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
 assert active.repository_common_dir == common
 record = json.loads((common / 'trellis/sessions/codex_one.json').read_text())
-assert record['schema_version'] == 1
-assert Path(record['task_workspace_root']) == linked
-assert record['current_task'] == '.trellis/tasks/same'
-task(primary, title='Same name in wrong workspace')
+assert record == dict(schema_version=2, task_id='same', lifecycle_generation=0)
+task(primary, title='Same name in wrong workspace', task_id='different-id')
 p = command(primary, 'one', 'current')
 assert p.returncode == 0 and p.stdout.strip() == str(directory), (p.stdout, p.stderr)
 p = command(primary, 'one', 'current', '--source')
@@ -132,45 +132,48 @@ assert get_current_task_abs(primary, dict(session_id='one'), 'codex') == directo
 left = worktree(primary, 'left')
 right = worktree(primary, 'right')
 third = worktree(primary, 'third')
-left_task, right_task = task(left, title='Left'), task(right, title='Right')
+left_task = task(left, title='Left', task_id='left-id')
+right_task = task(right, title='Right', task_id='right-id')
 start(left, 'one', left_task)
 start(left, 'same-task-peer', left_task)
 start(right, 'two', right_task)
-old = legacy(left, 'one', left_task)
 p = command(primary, 'one', 'finish')
 assert p.returncode == 0, (p.stdout, p.stderr)
 assert_absent(third, 'one')
-assert not old.exists()
 assert resolve(primary, 'same-task-peer').resolved_task_path == left_task
 assert resolve(primary, 'two').resolved_task_path == right_task
 start(left, 'archive-peer', left_task)
-legacy(left, 'legacy-archive-peer', left_task)
 p = command(third, 'same-task-peer', 'archive', '.trellis/tasks/same', '--no-commit', '--skip-branch-validation')
 assert p.returncode == 0, (p.stdout, p.stderr)
 assert not left_task.exists() and right_task.is_dir()
-for session in ('same-task-peer', 'archive-peer', 'legacy-archive-peer'):
+for session in ('same-task-peer', 'archive-peer'):
     assert_absent(primary, session)
 assert resolve(primary, 'two').resolved_task_path == right_task
 assert len(list((left / '.trellis/tasks/archive').glob('*/same/task.json'))) == 1
 `);
   });
 
-  it("A2 repoints new and legacy bindings after rename from another checkout", () => {
+  it("A2 preserves schema-2 session bytes and resolves a renamed task by TaskId", () => {
     probe(`
 linked = worktree(primary, 'linked')
 directory = task(linked)
 other = worktree(primary, 'other')
-other_task = task(other)
+other_task = task(other, task_id='other-id')
 start(other, 'other-session', other_task)
 start(linked, 'one', directory)
-old = legacy(linked, 'peer', directory)
+start(linked, 'peer', directory)
+common = Path(git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+peer = common / 'trellis/sessions/codex_peer.json'
+before = peer.read_bytes()
 p = command(primary, 'one', 'rename', '.trellis/tasks/same', 'renamed')
 assert p.returncode == 0, (p.stdout, p.stderr)
 assert not directory.exists()
 renamed = resolve(primary).resolved_task_path
 assert renamed is not None and renamed.name.endswith('renamed')
 assert resolve(primary, 'peer').resolved_task_path == renamed
-assert json.loads(old.read_text())['current_task'] == renamed.relative_to(linked).as_posix()
+assert peer.read_bytes() == before
+metadata = json.loads((renamed / 'task.json').read_text())
+assert metadata['id'] == 'same' and metadata['name'] == 'renamed'
 assert other_task.is_dir() and resolve(primary, 'other-session').resolved_task_path == other_task
 `);
   });
@@ -187,32 +190,37 @@ assert resolve(other).resolved_task_path == second
 `);
   });
 
-  it("A5 reads unique legacy binding, refuses ambiguity and prefers new binding", () => {
+  it("A5 reports schema-v1 and unversioned bindings stale until explicit rebind", () => {
     probe(`
 linked = worktree(primary, 'linked')
 directory = task(linked)
 old = legacy(linked, 'one', directory)
-before = old.read_bytes()
-assert resolve(primary).resolved_task_path == directory
-assert old.read_bytes() == before
-assert resolve(primary).resolved_task_path == directory
-local = task(primary)
-legacy(primary, 'one', local)
 active = resolve(primary)
-assert active.error and active.stale, active
+assert active.task_path is None and active.error and active.stale, active
+assert 'unsupported_binding_schema' in active.error, active
+common = Path(git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir')).resolve()
+binding = common / 'trellis/sessions/codex_one.json'
+binding.parent.mkdir(parents=True, exist_ok=True)
+binding.write_text(json.dumps(dict(schema_version=1, repository_common_dir=str(common), task_workspace_root=str(linked), current_task='.trellis/tasks/same')))
+active = resolve(primary)
+assert active.error and active.stale and 'unsupported_binding_schema' in active.error, active
 assert current(primary, 'one').returncode != 0
 p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--mode', 'continuation'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
 assert p.returncode != 0, (p.stdout, p.stderr)
 assert 'CONTINUATION-primary space' not in p.stdout
 start(linked, 'one', directory)
 assert resolve(primary).resolved_task_path == directory
+assert json.loads(binding.read_text()) == dict(schema_version=2, task_id='same', lifecycle_generation=0)
 p = command(primary, 'one', 'finish')
 assert p.returncode == 0, (p.stdout, p.stderr)
-assert_absent(primary)
+active = resolve(primary)
+assert active.task_path is None and active.error and active.stale, active
+assert 'unsupported_binding_schema' in active.error, active
+assert old.is_file()
 `);
   });
 
-  it.each(["missing-task", "unreadable-task", "corrupt-task", "corrupt-binding", "unknown-schema", "wrong-common", "unregistered", "outside-tasks"])(
+  it.each(["missing-task", "unreadable-task", "corrupt-task", "corrupt-binding", "unknown-schema", "extra-fields", "invalid-generation-bool", "invalid-generation-string", "invalid-generation-float", "invalid-generation-negative", "invalid-generation-null", "generation-mismatch", "unregistered"])(
     "A6 fails explicitly for %s", (failure) => {
       probe(`
 linked = worktree(primary, 'linked')
@@ -232,9 +240,36 @@ elif failure == 'corrupt-binding':
     legacy(linked, 'one', directory)
     binding.write_text('{broken')
 elif failure == 'unknown-schema':
-    legacy(linked, 'one', directory)
     record = json.loads(binding.read_text())
     record['schema_version'] = 99
+    binding.write_text(json.dumps(record))
+elif failure == 'extra-fields':
+    record = json.loads(binding.read_text())
+    record['current_task'] = '.trellis/tasks/same'
+    binding.write_text(json.dumps(record))
+elif failure == 'invalid-generation-bool':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = True
+    binding.write_text(json.dumps(record))
+elif failure == 'invalid-generation-string':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = '0'
+    binding.write_text(json.dumps(record))
+elif failure == 'invalid-generation-float':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = 0.5
+    binding.write_text(json.dumps(record))
+elif failure == 'invalid-generation-negative':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = -1
+    binding.write_text(json.dumps(record))
+elif failure == 'invalid-generation-null':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = None
+    binding.write_text(json.dumps(record))
+elif failure == 'generation-mismatch':
+    record = json.loads(binding.read_text())
+    record['lifecycle_generation'] = 1
     binding.write_text(json.dumps(record))
 elif failure == 'unregistered':
     saved = (directory / 'task.json').read_text()
@@ -242,15 +277,6 @@ elif failure == 'unregistered':
     directory.mkdir(parents=True)
     (directory / 'task.json').write_text(saved)
     assert json.loads((directory / 'task.json').read_text())['id'] == 'same'
-else:
-    record = json.loads(binding.read_text())
-    if failure == 'wrong-common':
-        record['repository_common_dir'] = str(base / 'different.git')
-    else:
-        record['current_task'] = 'outside'
-        (linked / 'outside').mkdir()
-        (linked / 'outside/task.json').write_text('{}')
-    binding.write_text(json.dumps(record))
 active = resolve(primary)
 assert active.error and active.stale, active
 p = current(primary, 'one')
@@ -298,14 +324,15 @@ assert not (primary / 'finish-cwd.txt').exists()
 `);
   });
 
-  it("A5 rejects a corrupt legacy-only candidate rather than treating it as absence", () => {
+  it("A5 reports checkout-local legacy files unsupported without reading them", () => {
     probe(`
 linked = worktree(primary, 'linked')
 directory = task(linked)
 old = legacy(linked, 'one', directory)
 old.write_text('{broken')
 active = resolve(primary)
-assert active.error and active.stale, active
+assert active.task_path is None and active.error and active.stale, active
+assert 'unsupported_binding_schema' in active.error, active
 `);
   });
 

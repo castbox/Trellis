@@ -187,6 +187,7 @@ function prepareLinkedTask(fixture: Fixture): void {
   ]);
   write(fixture.linked, `${taskRef}/task.json`, JSON.stringify({
     id: "installed-binding",
+    lifecycle_generation: 0,
     title: taskTitle,
     description: "Installed runtime resolves this linked-worktree task from primary",
     status: "planning",
@@ -258,6 +259,16 @@ describe("installed CLI cross-worktree update smoke", () => {
         fs.unlinkSync(path.join(fixture.primary, ".git/trellis/sessions", `${contextKey}.json`));
         legacyBytes = fs.readFileSync(legacyFile, "utf8");
         expect(JSON.parse(legacyBytes)).toMatchObject({ current_task: taskRef });
+        const unsupported = JSON.parse(script(fixture, fixture.primary,
+          ".trellis/scripts/task.py", ["current", "--json"], { status: 1 })) as CurrentTaskOutput;
+        expect(unsupported).toMatchObject({
+          current_task: null,
+          stale: true,
+          source: `session:${contextKey}`,
+        });
+        expect(String(unsupported.error)).toContain("unsupported_binding_schema");
+        expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
+        script(fixture, fixture.linked, ".trellis/scripts/task.py", ["start", taskRef]);
       }
       assertPrimaryConsumers(fixture);
 
@@ -279,10 +290,14 @@ describe("installed CLI cross-worktree update smoke", () => {
         expect(fs.readFileSync(path.join(fixture.linked, taskRef, "task.json"), "utf8"))
           .toBe(taskBefore);
         if (legacyBytes !== undefined) {
-          // Upgrade and hook reads must not lazily promote or rewrite legacy ownership.
+          // Upgrade and hook reads must not rewrite the checkout-local legacy file.
           expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
-          expect(fs.existsSync(path.join(fixture.primary,
-            ".git/trellis/sessions", `${contextKey}.json`))).toBe(false);
+          expect(JSON.parse(fs.readFileSync(path.join(fixture.primary,
+            ".git/trellis/sessions", `${contextKey}.json`), "utf8"))).toEqual({
+            schema_version: 2,
+            task_id: "installed-binding",
+            lifecycle_generation: 0,
+          });
         }
       }
       script(fixture, fixture.primary, ".trellis/scripts/task.py", ["finish"]);
@@ -291,12 +306,20 @@ describe("installed CLI cross-worktree update smoke", () => {
           const cleared = JSON.parse(script(fixture, root,
             ".trellis/scripts/task.py", ["current", "--json"], { status: 1 })) as CurrentTaskOutput;
           expect(cleared.current_task).toBeNull();
-          expect(cleared.stale).toBe(false);
-          expect(cleared.error).toBeUndefined();
-          expect(cleared.source).toBe("none");
+          if (legacyBytes === undefined) {
+            expect(cleared.stale).toBe(false);
+            expect(cleared.error).toBeUndefined();
+            expect(cleared.source).toBe("none");
+          } else {
+            expect(cleared.stale).toBe(true);
+            expect(String(cleared.error)).toContain("unsupported_binding_schema");
+            expect(cleared.source).toBe(`session:${contextKey}`);
+          }
         }
       }
-      if (mode === "legacy") expect(fs.existsSync(legacyFile)).toBe(false);
+      if (legacyBytes !== undefined) {
+        expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
+      }
       for (const [index, file] of packagePaths.entries()) {
         expect(fs.readFileSync(path.join(repository, file), "utf8")).toBe(versions[index].contents);
       }

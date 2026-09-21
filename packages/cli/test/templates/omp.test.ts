@@ -73,10 +73,15 @@ function makeOmpProject(): { root: string; taskDir: string; sessionId: string } 
   const sessionId = "context_limits";
   fs.mkdirSync(path.join(root, ".trellis", ".runtime", "sessions"), { recursive: true });
   fs.mkdirSync(taskDir, { recursive: true });
-  fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({ status: "in_progress", title: "Context limits" }));
+  fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({
+    id: "08-13-context-limits",
+    lifecycle_generation: 0,
+    status: "in_progress",
+    title: "Context limits",
+  }));
   fs.writeFileSync(
     path.join(root, ".trellis", ".runtime", "sessions", "omp_context_limits.json"),
-    JSON.stringify({ current_task: ".trellis/tasks/08-13-context-limits" }),
+    JSON.stringify({ schema_version: 2, task_id: "08-13-context-limits", lifecycle_generation: 0 }),
   );
   return { root, taskDir, sessionId };
 }
@@ -160,7 +165,11 @@ describe("omp cross-worktree callbacks", () => {
       installTaskRuntime(workspace);
       const task = path.join(workspace, ".trellis/tasks/same-name");
       fs.mkdirSync(task, { recursive: true });
-      fs.writeFileSync(path.join(task, "task.json"), JSON.stringify({ id: "same-name", status: "in_progress" }));
+      fs.writeFileSync(path.join(task, "task.json"), JSON.stringify({
+        id: `${label.toLowerCase()}-task`,
+        lifecycle_generation: 0,
+        status: "in_progress",
+      }));
       fs.writeFileSync(path.join(task, "prd.md"), `${label} PRD`);
       fs.writeFileSync(path.join(task, "implement.jsonl"), JSON.stringify({ file: label === "PRIMARY" ? "primary-only.md" : "context.md" }));
       fs.writeFileSync(path.join(workspace, "context.md"), `${label} SPEC`);
@@ -171,7 +180,11 @@ describe("omp cross-worktree callbacks", () => {
     const bind = (workspace: string, key = "omp_binding"): string => {
       const file = path.join(common, "trellis/sessions", `${key}.json`);
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify({ schema_version: 1, repository_common_dir: common, task_workspace_root: workspace, current_task: ".trellis/tasks/same-name" }));
+      fs.writeFileSync(file, JSON.stringify({
+        schema_version: 2,
+        task_id: workspace === primary ? "primary-task" : "linked-task",
+        lifecycle_generation: 0,
+      }));
       return file;
     };
     const legacy = (workspace: string): string => {
@@ -207,19 +220,19 @@ describe("omp cross-worktree callbacks", () => {
     }
   });
 
-  it("#2 resolves unique legacy bindings read-only and rejects ambiguous or invalid matches", async () => {
+  it("#2 rejects legacy bindings read-only without promoting them", async () => {
     const f = await fixture();
     try {
       const legacy = f.legacy(f.linked);
       const bytes = fs.readFileSync(legacy);
-      expect(await invoke(f.primary)).toContain("LINKED SPEC");
-      expect(await invoke(f.primary)).toContain("LINKED SPEC");
+      expect(await invoke(f.primary)).toContain("invalid_task");
+      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
       expect(fs.readFileSync(legacy)).toEqual(bytes);
       expect(fs.existsSync(path.join(f.common, "trellis/sessions/omp_binding.json"))).toBe(false);
       f.legacy(f.primary);
-      expect(await invoke(f.primary)).toContain("invalid_task");
+      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
       fs.writeFileSync(legacy, "{");
-      expect(await invoke(f.primary)).toContain("invalid_task");
+      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
     } finally {
       fs.rmSync(f.root, { recursive: true, force: true });
     }
@@ -238,7 +251,11 @@ describe("omp cross-worktree callbacks", () => {
     const f = await fixture();
     try {
       f.bind(f.linked);
-      fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({ id: "same-name", status }));
+      fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        id: "linked-task",
+        lifecycle_generation: 0,
+        status,
+      }));
       const output = await invoke(f.primary);
       expect(output).toContain("invalid_task");
       expect(output).toContain("Invalid task status");
@@ -255,7 +272,11 @@ describe("omp cross-worktree callbacks", () => {
     const f = await fixture();
     try {
       f.bind(f.linked);
-      fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({ id: "same-name", status: "in-review" }));
+      fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        id: "linked-task",
+        lifecycle_generation: 0,
+        status: "in-review",
+      }));
       fs.writeFileSync(path.join(f.linked, ".trellis/workflow.md"), "[workflow-state:in-review]\nLINKED CUSTOM FLOW\n[/workflow-state:in-review]\n");
       const output = await invoke(f.primary);
       expect(output).toContain("workflow-state:in-review");
@@ -335,7 +356,7 @@ describe("omp cross-worktree callbacks", () => {
         f.legacy(f.primary);
         const data = JSON.parse(fs.readFileSync(binding, "utf8")) as Record<string, unknown>;
         if (failure === "malformed") fs.writeFileSync(binding, "{");
-        if (failure === "schema") fs.writeFileSync(binding, JSON.stringify({ ...data, schema_version: 2 }));
+        if (failure === "schema") fs.writeFileSync(binding, JSON.stringify({ ...data, schema_version: 1 }));
         if (failure === "common") fs.writeFileSync(binding, JSON.stringify({ ...data, repository_common_dir: f.linked }));
         if (failure === "unregistered") f.git(f.primary, "worktree", "remove", "--force", f.linked);
         if (failure === "metadata") fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), "[]");
@@ -473,7 +494,12 @@ describe("omp templates", () => {
       })).toEqual([]);
       reads.mockRestore();
       fs.unlinkSync(metadata);
-      fs.writeFileSync(metadata, JSON.stringify({ title: "ACTIVE TASK", status: "in_progress" }));
+      fs.writeFileSync(metadata, JSON.stringify({
+        id: "08-13-context-limits",
+        lifecycle_generation: 0,
+        title: "ACTIVE TASK",
+        status: "in_progress",
+      }));
       expect(await runSessionStart(project.root, project.sessionId)).toContain("ACTIVE TASK");
       expect(fs.readFileSync(history, "utf8")).toBe(original);
     } finally {
@@ -691,7 +717,6 @@ describe("omp templates", () => {
     const sharedFile = path.join(projectRoot, "docs", "shared.md");
     const checkOnlyFile = path.join(projectRoot, "docs", "check-only.md");
     const contextKey = "omp_session_dedupe";
-    const taskRef = ".trellis/tasks/demo-task";
     const messages: { customType?: string; content?: string }[] = [];
 
     try {
@@ -702,6 +727,8 @@ describe("omp templates", () => {
       fs.writeFileSync(
         path.join(taskDir, "task.json"),
         JSON.stringify({
+          id: "demo-task",
+          lifecycle_generation: 0,
           title: "OMP context dedupe",
           status: "in_progress",
         }),
@@ -718,7 +745,7 @@ describe("omp templates", () => {
       );
       fs.writeFileSync(
         path.join(sessionDir, `${contextKey}.json`),
-        JSON.stringify({ current_task: taskRef }),
+        JSON.stringify({ schema_version: 2, task_id: "demo-task", lifecycle_generation: 0 }),
       );
 
       const handlers = new Map<string, OmpEventHandler>();
@@ -766,7 +793,11 @@ describe("omp templates", () => {
       fs.mkdirSync(taskDir, { recursive: true });
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.dirname(referencedFile), { recursive: true });
-      fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({ status: "in_progress" }));
+      fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({
+        id: "demo-task",
+        lifecycle_generation: 0,
+        status: "in_progress",
+      }));
       fs.writeFileSync(referencedFile, "old context body");
       fs.writeFileSync(
         path.join(taskDir, "implement.jsonl"),
@@ -774,7 +805,7 @@ describe("omp templates", () => {
       );
       fs.writeFileSync(
         path.join(sessionsDir, "omp_session_refresh.json"),
-        JSON.stringify({ current_task: ".trellis/tasks/demo-task" }),
+        JSON.stringify({ schema_version: 2, task_id: "demo-task", lifecycle_generation: 0 }),
       );
 
       const handlers = new Map<string, OmpEventHandler>();

@@ -66,7 +66,12 @@ function writeFixtureRepo(root: string, contextKey: string): void {
   );
   fs.writeFileSync(
     path.join(taskDir, "task.json"),
-    JSON.stringify({ id: "demo-task", title: "Demo task", status: "in_progress" }),
+    JSON.stringify({
+      id: "demo-task",
+      lifecycle_generation: 0,
+      title: "Demo task",
+      status: "in_progress",
+    }),
     "utf-8",
   );
   writeSessionBinding(root, contextKey);
@@ -116,7 +121,7 @@ function writeFixtureRepo(root: string, contextKey: string): void {
 function writeSessionBinding(root: string, contextKey: string): void {
   fs.writeFileSync(
     path.join(rootSessions(root), `${contextKey}.json`),
-    JSON.stringify({ platform: "snow", current_task: ".trellis/tasks/demo-task", current_run: null }),
+    JSON.stringify({ schema_version: 2, task_id: "demo-task", lifecycle_generation: 0 }),
     "utf-8",
   );
 }
