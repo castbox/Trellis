@@ -120,8 +120,8 @@ assert json.loads(p.stdout)['currentTask']['path'] == '.trellis/tasks/same'
 assert json.loads(p.stdout)['currentTask']['taskWorkspaceRoot'] == str(linked)
 p = subprocess.run([sys.executable, '-B', str(primary / '.trellis/scripts/get_context.py'), '--mode', 'continuation'], cwd=primary, env=dict(os.environ, CODEX_THREAD_ID='one'), text=True, capture_output=True)
 assert p.returncode == 0, (p.stdout, p.stderr)
-assert p.stdout == 'CONTINUATION-primary space\\n', p.stdout
-assert 'LINKED-CONTINUATION' not in p.stdout
+assert p.stdout == 'LINKED-CONTINUATION\\n', p.stdout
+assert 'CONTINUATION-primary space' not in p.stdout
 from common.paths import get_current_task_abs
 assert get_current_task_abs(primary, dict(session_id='one'), 'codex') == directory
 `);

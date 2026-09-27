@@ -214,7 +214,7 @@ console.log(JSON.stringify(new TrellisContext(process.argv[2]).getActiveTask({se
     expect(text).not.toContain("Primary-only workflow");
   });
 
-  it("continuation uses linked task facts and the invocation workflow", () => {
+  it("continuation uses linked task facts and workflow", () => {
     const facts = run("python3", ["-B", ".trellis/scripts/get_context.py", "--json"]);
     expect(facts.status, facts.stderr).toBe(0);
     const current = JSON.parse(facts.stdout) as {
@@ -228,8 +228,8 @@ console.log(JSON.stringify(new TrellisContext(process.argv[2]).getActiveTask({se
       "-B", ".trellis/scripts/get_context.py", "--mode", "continuation",
     ]);
     expect(continuation.status, continuation.stderr).toBe(0);
-    expect(continuation.stdout).toBe("PRIMARY-CONTINUATION\n");
-    expect(continuation.stdout).not.toContain("LINKED-CONTINUATION");
+    expect(continuation.stdout).toBe("LINKED-CONTINUATION\n");
+    expect(continuation.stdout).not.toContain("PRIMARY-CONTINUATION");
   });
 
   it("UserPromptSubmit resolves linked workflow and reports corrupt binding explicitly", () => {
