@@ -283,7 +283,8 @@ def _visible_identity_candidates(task_ref: str) -> set[str]:
 
 
 def resolve_task_identity(
-    facts: RepositoryFacts, task_id: str, generation: int
+    facts: RepositoryFacts, task_id: str, generation: int,
+    *, preferred_workspace: Path | None = None,
 ) -> ResolvedTask:
     """Resolve one session identity from current registered-worktree facts."""
     folded = task_id.casefold()
@@ -349,6 +350,10 @@ def resolve_task_identity(
             f"task_id_casefold_collision: {task_id!r}: {detail}"
         )
     if len(exact) > 1 or (exact and generation_mismatches):
+        if preferred_workspace is not None:
+            local = [row for row in exact if row.workspace == preferred_workspace.resolve()]
+            if len(local) == 1:
+                return local[0]
         raise SessionBindingError(f"ambiguous_task_identity: {task_id!r}")
     if exact:
         return exact[0]
