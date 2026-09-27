@@ -97,6 +97,8 @@ BLANK_CHARS = (
     "\ufeff"                                  # zero-width no-break space / BOM (JS only)
 )
 
+TASK_ID_PATTERN = re.compile(r"^(?!.*\.\.)(?!.*(?:\.lock|\.)$)[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 
 def strip_blank(value: str | None) -> str:
     """Return ``value`` with :data:`BLANK_CHARS` trimmed from both ends."""
@@ -465,8 +467,8 @@ def cmd_create(args: argparse.Namespace) -> int:
     task_id = getattr(args, "task_id", None)
     if task_id is None:
         task_id = slug
-    elif not task_id.strip() or task_id != task_id.strip():
-        print(colored("Error: --task-id must be a nonempty trimmed value", Colors.RED), file=sys.stderr)
+    elif not TASK_ID_PATTERN.fullmatch(task_id):
+        print(colored("Error: --task-id must be a control-ref-safe [A-Za-z0-9][A-Za-z0-9._-]* value without '..', a trailing dot, or a .lock suffix", Colors.RED), file=sys.stderr)
         return 1
     task_dir = tasks_dir / dir_name
     task_json_path = task_dir / FILE_TASK_JSON
