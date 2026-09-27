@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .history_paths import RetiredDataPathError, require_active_path
-from .io import read_json_checked, write_json
+from .io import JSON_READ_MISSING, read_json_checked, write_json
 from .task_utils import TaskIdentityError, lifecycle_generation
 
 
@@ -133,6 +133,36 @@ def workspace_roots(facts: RepositoryFacts) -> tuple[Path, ...]:
         if (candidate / ".trellis").is_dir():
             roots.add(validate_workspace(candidate, facts))
     return tuple(sorted(roots))
+
+
+def _bound_task_workspace(
+    facts: RepositoryFacts, task_id: str, generation: int,
+    workspaces: tuple[Path, ...],
+) -> Path | None:
+    if facts.common_dir is None:
+        return None
+    path = facts.common_dir / "trellis" / "task-branches" / task_id / f"{generation}.json"
+    require_active_path(path, facts.invocation_root)
+    binding, reason = read_json_checked(path)
+    if reason == JSON_READ_MISSING:
+        return None
+    if binding is None or set(binding) != {
+        "schema_version", "task_id", "lifecycle_generation", "binding_epoch",
+        "binding_revision", "branch_name",
+    } or (binding["schema_version"] != "1.0" or binding["task_id"] != task_id
+          or type(binding["lifecycle_generation"]) is not int
+          or binding["lifecycle_generation"] != generation
+          or type(binding["binding_epoch"]) is not int or binding["binding_epoch"] < 0
+          or type(binding["binding_revision"]) is not int or binding["binding_revision"] < 0
+          or not isinstance(binding["branch_name"], str) or not binding["branch_name"]):
+        raise SessionBindingError(f"invalid_task_branch_binding: {path}")
+    matches = [
+        workspace for workspace in workspaces
+        if _git(workspace, "branch", "--show-current").strip() == binding["branch_name"]
+    ]
+    if len(matches) != 1:
+        raise SessionBindingError(f"current_task_checkout_unresolved: {path}")
+    return matches[0]
 
 
 def sessions_directory(root: Path, facts: RepositoryFacts) -> Path:
@@ -291,7 +321,9 @@ def resolve_task_identity(
     exact: list[ResolvedTask] = []
     generation_mismatches: list[tuple[Path, int]] = []
     casefold_conflicts: list[tuple[Path, str]] = []
-    for workspace in workspace_roots(facts):
+    workspaces = workspace_roots(facts)
+    bound_workspace = _bound_task_workspace(facts, task_id, generation, workspaces)
+    for workspace in (bound_workspace,) if bound_workspace is not None else workspaces:
         tasks = workspace / ".trellis" / "tasks"
         require_active_path(tasks, workspace)
         if not tasks.is_dir():
