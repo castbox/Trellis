@@ -166,6 +166,29 @@ print(json.dumps({'workspace': str(task.task_workspace_root), 'error': task.erro
     }
   });
 
+  it("does not borrow the sole linked session into a contextless checkout", () => {
+    delete env.CODEX_THREAD_ID;
+    delete env.TRELLIS_CONTEXT_ID;
+    const command = `
+from pathlib import Path
+import json, sys
+sys.path.insert(0, '.trellis/scripts')
+from common.active_task import resolve_active_task
+task = resolve_active_task(Path.cwd(), allow_single_session_fallback=True,
+                           allow_environment_context=False)
+print(json.dumps({'task': task.task_path, 'source': task.source_type,
+                  'workspace': str(task.task_workspace_root) if task.task_workspace_root else None,
+                  'error': task.error}))
+`;
+    const unrelated = run("python3", ["-B", "-c", command], primary);
+    expect(unrelated.status, unrelated.stderr).toBe(0);
+    expect(JSON.parse(unrelated.stdout)).toEqual({ task: null, source: "none", workspace: null, error: null });
+
+    const local = run("python3", ["-B", "-c", command], linked);
+    expect(local.status, local.stderr).toBe(0);
+    expect(JSON.parse(local.stdout)).toEqual({ task: ".trellis/tasks/cross", source: "session-fallback", workspace: linked, error: null });
+  });
+
   it("OpenCode selects the invoking checkout through a symlink", () => {
     const source = path.join(linked, ".trellis/tasks/cross/task.json");
     write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));

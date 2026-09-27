@@ -648,6 +648,8 @@ def _resolve_single_session_fallback(repo_root: Path) -> ActiveTask | None:
         facts, record.task_id, record.lifecycle_generation,
         preferred_workspace=repo_root,
     )
+    if resolved.workspace != repo_root.resolve():
+        return None
     return ActiveTask(resolved.task_ref, "session-fallback", session_file.stem,
                       invocation_root=repo_root, repository_common_dir=facts.common_dir,
                       task_workspace_root=resolved.workspace,
