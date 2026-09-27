@@ -605,7 +605,8 @@ def resolve_active_task(
                     )
             if record is not None:
                 resolved = resolve_task_identity(
-                    facts, record.task_id, record.lifecycle_generation
+                    facts, record.task_id, record.lifecycle_generation,
+                    preferred_workspace=root,
                 )
                 return ActiveTask(resolved.task_ref, "session", context_key,
                                   invocation_root=root, repository_common_dir=facts.common_dir,
@@ -644,7 +645,8 @@ def _resolve_single_session_fallback(repo_root: Path) -> ActiveTask | None:
     session_file = files[0]
     record = read_record(session_file, repo_root, facts)
     resolved = resolve_task_identity(
-        facts, record.task_id, record.lifecycle_generation
+        facts, record.task_id, record.lifecycle_generation,
+        preferred_workspace=repo_root,
     )
     return ActiveTask(resolved.task_ref, "session-fallback", session_file.stem,
                       invocation_root=repo_root, repository_common_dir=facts.common_dir,
@@ -676,6 +678,14 @@ def set_active_task(
         identity = read_task_identity(resolved / "task.json", workspace)
     except TaskIdentityError as exc:
         raise SessionBindingError(str(exc)) from exc
+    selected = resolve_task_identity(
+        facts, identity.task_id, identity.lifecycle_generation,
+        preferred_workspace=repo_root,
+    )
+    if selected.task_path != resolved or selected.workspace != workspace:
+        raise SessionBindingError(
+            f"ambiguous_task_identity: explicit target cannot be selected: {resolved}"
+        )
     context_path = session_path(repo_root, context_key, facts)
     context = {
         "schema_version": 2,

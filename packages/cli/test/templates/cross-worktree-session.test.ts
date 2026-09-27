@@ -80,6 +80,81 @@ afterEach(() => {
 });
 
 describe("cross-worktree installed hook entrypoints", () => {
+  it("resolves a merged active task in the invoking checkout without borrowing another copy", () => {
+    const source = path.join(linked, ".trellis/tasks/cross/task.json");
+    write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
+    for (const [workspace, expected] of [[primary, primary], [linked, linked]]) {
+      const result = run("python3", ["-B", ".trellis/scripts/get_context.py", "--json"], workspace);
+      expect(result.status, result.stderr).toBe(0);
+      const current = JSON.parse(result.stdout) as { currentTask: { taskWorkspaceRoot: string } };
+      expect(current.currentTask.taskWorkspaceRoot).toBe(expected);
+    }
+    env.TRELLIS_CONTEXT_ID = "codex_cross-hook";
+    const code = `
+import { pathToFileURL } from 'node:url';
+const { TrellisContext } = await import(pathToFileURL(process.argv[1]));
+console.log(JSON.stringify(new TrellisContext(process.argv[2]).getActiveTask({sessionID:'cross-hook'})));
+`;
+    for (const workspace of [primary, linked]) {
+      const result = run(process.execPath, ["--input-type=module", "-e", code, path.join(templates, "opencode/lib/trellis-context.js"), workspace]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout).taskWorkspaceRoot).toBe(workspace);
+    }
+  });
+
+  it("rejects an explicit nonlocal duplicate before changing the session binding", () => {
+    const source = path.join(linked, ".trellis/tasks/cross/task.json");
+    write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
+    const attempt = run("python3", ["-B", "-c", `
+from pathlib import Path
+import sys
+sys.path.insert(0, '.trellis/scripts')
+from common.active_task import set_active_task
+set_active_task(sys.argv[1], Path.cwd())
+`, path.join(linked, ".trellis/tasks/cross")]);
+    expect(attempt.status).not.toBe(0);
+    expect(attempt.stderr).toContain("explicit target cannot be selected");
+    const current = run("python3", ["-B", ".trellis/scripts/task.py", "current", "--json"]);
+    expect(current.status, current.stderr).toBe(0);
+    expect(JSON.parse(current.stdout).task_workspace_root).toBe(primary);
+  });
+
+  it("selects the invoking checkout in the sole-session fallback", () => {
+    const source = path.join(linked, ".trellis/tasks/cross/task.json");
+    write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
+    delete env.CODEX_THREAD_ID;
+    delete env.TRELLIS_CONTEXT_ID;
+    const command = `
+from pathlib import Path
+import json, sys
+sys.path.insert(0, '.trellis/scripts')
+from common.active_task import resolve_active_task
+task = resolve_active_task(Path.cwd(), allow_single_session_fallback=True)
+print(json.dumps({'workspace': str(task.task_workspace_root), 'error': task.error}))
+`;
+    for (const workspace of [primary, linked]) {
+      const result = run("python3", ["-B", "-c", command], workspace);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ workspace, error: null });
+    }
+  });
+
+  it("OpenCode selects the invoking checkout through a symlink", () => {
+    const source = path.join(linked, ".trellis/tasks/cross/task.json");
+    write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
+    const alias = path.join(sandbox, "primary-alias");
+    fs.symlinkSync(primary, alias, "dir");
+    env.TRELLIS_CONTEXT_ID = "codex_cross-hook";
+    const code = `
+import { pathToFileURL } from 'node:url';
+const { TrellisContext } = await import(pathToFileURL(process.argv[1]));
+console.log(JSON.stringify(new TrellisContext(process.argv[2]).getActiveTask({sessionID:'cross-hook'})));
+`;
+    const result = run(process.execPath, ["--input-type=module", "-e", code, path.join(templates, "opencode/lib/trellis-context.js"), alias]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).taskWorkspaceRoot).toBe(primary);
+  });
+
   it("Codex SessionStart uses linked task metadata and workflow from primary", () => {
     const text = hook(".codex/hooks/session-start.py");
     expect(text).toContain("Linked task title");

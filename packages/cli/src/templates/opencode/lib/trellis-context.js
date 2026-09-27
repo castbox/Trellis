@@ -598,7 +598,11 @@ export class TrellisContext {
       }
     }
     if (casefoldConflicts.length) throw new Error(`task_id_casefold_collision: ${casefoldConflicts.join(", ")}`)
-    if (exact.length > 1 || (exact.length && mismatches.length)) throw new Error("ambiguous_task_identity")
+    if (exact.length > 1 || (exact.length && mismatches.length)) {
+      const local = exact.filter(item => realpathSync(item.taskWorkspaceRoot) === realpathSync(this.directory))
+      if (local.length === 1) return { ...local[0] }
+      throw new Error("ambiguous_task_identity")
+    }
     if (!exact.length && mismatches.length) throw new Error(`stale_lifecycle_generation: ${mismatches.join(", ")}`)
     if (!exact.length) throw new Error("stale_task_identity")
     return {
