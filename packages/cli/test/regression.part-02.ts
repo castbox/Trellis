@@ -1013,6 +1013,37 @@ describe("regression: current-task path normalization", () => {
     expect(fs.existsSync(contextPath)).toBe(false);
   });
 
+  it("[task-identity] create accepts a distinct TaskId with a reused slug", () => {
+    writeTrellisScripts();
+    const oldPrefix = new Date().getMonth() === 0 && new Date().getDate() === 1 ? "02-02" : "01-01";
+    writeProjectFile(
+      path.join(".trellis", "tasks", `${oldPrefix}-reused`, "task.json"),
+      JSON.stringify({ id: "old-task-id", name: "reused", lifecycle_generation: 0, status: "completed" }),
+    );
+    const args = [
+      path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
+      "--slug", "reused", "--task-id", "new-task-id", "--description", "Distinct task",
+      "--creator", "test-dev",
+      "--assignee", "test-dev", "--no-start",
+    ];
+    const created = spawnSync(pythonCmd, args, { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
+    expect(created.status, created.stderr).toBe(0);
+    const tasksDir = path.join(tmpDir, ".trellis", "tasks");
+    const createdDir = fs.readdirSync(tasksDir).find((name) => name.endsWith("-reused") && name !== `${oldPrefix}-reused`);
+    expect(createdDir).toBeDefined();
+    expect(JSON.parse(fs.readFileSync(path.join(tasksDir, createdDir as string, "task.json"), "utf-8"))).toMatchObject({
+      id: "new-task-id", name: "reused", lifecycle_generation: 0,
+    });
+
+    const duplicateArgs = [...args];
+    duplicateArgs[duplicateArgs.indexOf("--task-id") + 1] = "old-task-id";
+    const duplicate = spawnSync(pythonCmd, duplicateArgs, {
+      cwd: tmpDir, encoding: "utf-8", env: sessionEnv(),
+    });
+    expect(duplicate.status).toBe(1);
+    expect(duplicate.stderr).toContain("task_id_collision");
+  });
+
   it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(

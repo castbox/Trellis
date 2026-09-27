@@ -462,13 +462,19 @@ def cmd_create(args: argparse.Namespace) -> int:
             return 1
 
     dir_name = f"{date_prefix}-{slug}"
+    task_id = getattr(args, "task_id", None)
+    if task_id is None:
+        task_id = slug
+    elif not task_id.strip() or task_id != task_id.strip():
+        print(colored("Error: --task-id must be a nonempty trimmed value", Colors.RED), file=sys.stderr)
+        return 1
     task_dir = tasks_dir / dir_name
     task_json_path = task_dir / FILE_TASK_JSON
     for filename in (FILE_TASK_JSON, "prd.md", "implement.jsonl", "check.jsonl"):
         require_active_path(task_dir / filename, repo_root)
 
     try:
-        require_unique_task_id(slug, tasks_dir, repo_root)
+        require_unique_task_id(task_id, tasks_dir, repo_root)
     except TaskIdentityError as exc:
         print(colored(f"Error: {exc}", Colors.RED), file=sys.stderr)
         return 1
@@ -535,7 +541,7 @@ def cmd_create(args: argparse.Namespace) -> int:
             )
 
     task_data = {
-        "id": slug,
+        "id": task_id,
         "name": slug,
         "lifecycle_generation": 0,
         "title": args.title,
