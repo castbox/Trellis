@@ -67,7 +67,7 @@ python3 ./.trellis/scripts/task.py create-pr [name] [--dry-run]
 
 > Run `python3 ./.trellis/scripts/task.py --help` to see the authoritative, up-to-date list.
 
-**Current-task mechanism**: `task.py create` creates the task directory and, when session identity is available, binds the session to it. `task.py start` records the binding and changes `planning` to `in_progress`. Git projects store versioned per-session bindings under `<git-common-dir>/trellis/sessions/`, including task workspace identity; registered worktrees resolve the same binding using live Git validation. Non-Git projects keep `.trellis/.runtime/sessions/`. A unique valid legacy local binding remains readable when the new record is absent. Conflicting, corrupt or stale bindings produce explicit errors, not normal `no_task`. `task.py finish` clears the selected session and legacy state that could resurrect it, without changing task status. Archive completes and moves the task and clears bindings to that exact workspace-qualified task; rename repoints them. No repository-global current task or developer identity is used.
+**Current-task mechanism**: `task.py create` creates the task directory and, when session identity is available, binds the session to it. `task.py start` keeps that binding and changes `planning` to `in_progress`. Git projects store one current TaskId and lifecycle generation per session under `<git-common-dir>/trellis/sessions/`; registered worktrees resolve the task's current ref from that identity and live Git facts. Non-Git projects keep `.trellis/.runtime/sessions/`. Conflicting, corrupt or stale bindings produce explicit errors, not normal `no_task`. `task.py finish` clears the selected session without changing task status. Archive completes and moves the exact task, then clears bindings to that TaskId and generation; rename changes the task ref without repointing sessions. No repository-global current task or developer identity is used.
 
 ### Context Script
 
@@ -306,6 +306,7 @@ python3 ./.trellis/scripts/task.py create "<task title>" --creator <creator> --a
 ```
 
 `--slug` is the human-readable name only. Do **not** include the `MM-DD-` date prefix; `task.py create` adds that prefix automatically.
+For an Issue-backed task, include `--source-json '{"kind":"issue","repo_ref":"owner/repo","number":123,"disposition":"exact_source"}'` with the reviewed Issue identity. Omitting it creates a `no_issue` task.
 
 For task trees, create the parent task first and then create each child with `--parent <parent-dir>`. Do not start the parent just because children exist; start the child that owns the next independently verifiable deliverable.
 

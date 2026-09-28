@@ -147,7 +147,7 @@ with patch.object(Path, "open", audit(Path.open)), patch.object(Path, "iterdir",
                  ["set-meta", "old", "review", "changed"],
                  ["list", "--json"], ["list-archive"],
                  ["create", "New", "--description", "Active task", "--creator", "caller", "--assignee", "owner", "--no-start"],
-                 ["archive", "old", "--no-commit", "--skip-branch-validation"]):
+                 ["archive", "old", "--no-commit"]):
         with patch.object(sys, "argv", ["task.py", *argv]):
             assert task_cli.main() == 1, argv
 assert attempts == [], attempts

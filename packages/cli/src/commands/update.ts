@@ -2698,6 +2698,44 @@ export async function update(options: UpdateOptions): Promise<void> {
   const existingTask = existingTasks[0]
     ? path.join(tasksDir, existingTasks[0].name)
     : undefined;
+  const needsMigrationTask = cliVsProject > 0 && !existingTask;
+  const migrationId = taskSlug.toLowerCase();
+  const checkMigrationId = (taskDir: string): void => {
+    const metadataPath = path.join(taskDir, "task.json");
+    assertActiveDataPath(metadataPath, cwd);
+    if (!fs.existsSync(metadataPath)) return;
+    const metadata: unknown = JSON.parse(
+      fs.readFileSync(metadataPath, "utf-8"),
+    );
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+      throw new Error(`Invalid task metadata: ${metadataPath}`);
+    const id = (metadata as { id?: unknown }).id;
+    if (
+      typeof id === "string" &&
+      id.toLowerCase() === migrationId &&
+      taskDir !== existingTask
+    )
+      throw new Error(`Migration task id collision: ${metadataPath}`);
+  };
+  if (needsMigrationTask && fs.existsSync(tasksDir)) {
+    for (const entry of fs.readdirSync(tasksDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "archive") continue;
+      checkMigrationId(path.join(tasksDir, entry.name));
+    }
+    const archiveDir = path.join(tasksDir, "archive");
+    assertActiveDataPath(archiveDir, cwd);
+    if (fs.existsSync(archiveDir)) {
+      for (const month of fs.readdirSync(archiveDir, { withFileTypes: true })) {
+        if (!month.isDirectory()) continue;
+        for (const entry of fs.readdirSync(path.join(archiveDir, month.name), {
+          withFileTypes: true,
+        })) {
+          if (entry.isDirectory())
+            checkMigrationId(path.join(archiveDir, month.name, entry.name));
+        }
+      }
+    }
+  }
   if (existingTask) {
     const prdPath = path.join(existingTask, "prd.md");
     assertActiveDataPath(prdPath, cwd);
@@ -2719,8 +2757,9 @@ export async function update(options: UpdateOptions): Promise<void> {
     );
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
       throw new Error(`Invalid migration task metadata: ${existingTask}`);
+    if ((metadata as { id?: unknown }).id !== taskSlug)
+      throw new Error(`Incompatible migration task id: ${existingTask}`);
   }
-  const needsMigrationTask = cliVsProject > 0 && !existingTask;
   const today = new Date();
   const monthDay = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const newTaskDir = path.join(tasksDir, `${monthDay}-${taskSlug}`);

@@ -80,7 +80,7 @@ with patch.dict(os.environ, {"TRELLIS_CONTEXT_ID":"review"}):
         enabled = True
         for args in (["current", "--json"], ["start", ".trellis/tasks/one"], ["finish"],
                      ["rename", ".trellis/tasks/one", "renamed"],
-                     ["archive", ".trellis/tasks/one", "--no-commit", "--skip-branch-validation"]):
+                     ["archive", ".trellis/tasks/one", "--no-commit"]):
             status, _, error = command(args)
             assert status == 1 and "historical" in error, (args, status, error)
         for operation in (

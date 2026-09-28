@@ -923,6 +923,9 @@ describe("init() integration", () => {
     const task = JSON.parse(fs.readFileSync(path.join(tmpDir, ".trellis/tasks/00-bootstrap-guidelines/task.json"), "utf8"));
     expect(task.creator).toBe("testdev");
     expect(task.assignee).toBe("testdev");
+    expect(task.lifecycle_generation).toBe(0);
+    expect(task.source).toEqual({ kind: "no_issue" });
+    expect(task).not.toHaveProperty("branch");
   });
 
   it("#7b throws when the selected Python command is below 3.9", async () => {

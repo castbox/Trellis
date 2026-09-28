@@ -47,7 +47,6 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       name: "rt",
       title: "Round Trip",
       assignee: "developer",
-      branch: "feat/x",
     });
     writeTaskRecord({ taskDir: dir, record });
     const loaded = loadTaskRecord({ taskDir: dir });
@@ -153,6 +152,25 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       "external_tracker",
       "legacy_flag",
     ]);
+  });
+
+  it("keeps legacy source unresolved and preserves a legacy branch on write", () => {
+    const dir = path.join(tmp, "05-13-legacy");
+    fs.mkdirSync(dir, { recursive: true });
+    const legacy = { ...emptyTaskRecord({ id: "old", name: "old" }), branch: "feature/old" } as Record<string, unknown>;
+    delete legacy.source;
+    delete legacy.lifecycle_generation;
+    fs.writeFileSync(path.join(dir, "task.json"), `${JSON.stringify(legacy)}\n`);
+
+    const loaded = loadTaskRecord({ taskDir: dir });
+    expect(loaded.lifecycle_generation).toBe(0);
+    expect(loaded).not.toHaveProperty("source");
+    writeTaskRecord({ taskDir: dir, record: loaded });
+
+    const written = JSON.parse(fs.readFileSync(path.join(dir, "task.json"), "utf8"));
+    expect(written.lifecycle_generation).toBe(0);
+    expect(written).not.toHaveProperty("source");
+    expect(written.branch).toBe("feature/old");
   });
 
   it("refuses to overwrite corrupt existing task.json files", () => {
