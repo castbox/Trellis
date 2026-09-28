@@ -91,7 +91,7 @@ describe("cross-worktree installed hook entrypoints", () => {
     fs.mkdirSync(path.dirname(binding), { recursive: true });
     fs.writeFileSync(binding, JSON.stringify({
       schema_version: "1.0", task_id: "cross", lifecycle_generation: 0,
-      binding_epoch: 1, binding_revision: 1, branch_name: "current-task",
+      binding_revision: 1, branch_name: "current-task",
     }));
 
     const current = run("python3", ["-B", ".trellis/scripts/get_context.py", "--json"]);
@@ -100,11 +100,19 @@ describe("cross-worktree installed hook entrypoints", () => {
 
     fs.writeFileSync(binding, JSON.stringify({
       schema_version: "1.0", task_id: "cross", lifecycle_generation: 0,
-      binding_epoch: 1, binding_revision: 2, branch_name: "missing-task-branch",
+      binding_revision: 2, branch_name: "missing-task-branch",
     }));
     const missing = run("python3", ["-B", ".trellis/scripts/get_context.py", "--mode", "phase"]);
     expect(missing.status).not.toBe(0);
     expect(missing.stderr).toContain("current_task_checkout_unresolved");
+
+    fs.writeFileSync(binding, JSON.stringify({
+      schema_version: "1.0", task_id: "cross", lifecycle_generation: 0,
+      binding_epoch: 1, binding_revision: 2, branch_name: "current-task",
+    }));
+    const retired = run("python3", ["-B", ".trellis/scripts/get_context.py", "--mode", "phase"]);
+    expect(retired.status).not.toBe(0);
+    expect(retired.stderr).toContain("invalid_task_branch_binding");
   });
 
   it("resolves a merged active task in the invoking checkout without borrowing another copy", () => {
