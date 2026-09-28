@@ -157,9 +157,20 @@ describe.skipIf(!hasPython())("task.py meta (task.json.meta access)", () => {
     ]) {
       const result = runTask(tmp, "create", slug, "--description", "identity fixture", "--slug", slug, "--task-id", taskId);
       expect(result.status, taskId).toBe(1);
-      expect(result.stderr).toContain("--task-id");
+      expect(result.stderr).toContain("--task-id must match");
       expect(fs.readdirSync(path.join(tmp, ".trellis", "tasks")).some((directory) => directory.endsWith(`-${slug}`))).toBe(false);
     }
+  });
+
+  it("create rejects an invalid TaskId derived from --slug before writing", () => {
+    const invalid = runTask(tmp, "create", "two words", "--description", "identity fixture", "--slug", "two words");
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("derived task id must match");
+    expect(fs.readdirSync(path.join(tmp, ".trellis", "tasks")).some((directory) => directory.endsWith("-two words"))).toBe(false);
+
+    const explicit = runTask(tmp, "create", "two words", "--description", "identity fixture", "--slug", "two words", "--task-id", "valid-task");
+    expect(explicit.status, explicit.stderr).toBe(0);
+    expect(readTaskJson(tmp, findTaskDir(tmp, "two words")).id).toBe("valid-task");
   });
 
   it("create --task-id still rejects exact and case-fold collisions", () => {
