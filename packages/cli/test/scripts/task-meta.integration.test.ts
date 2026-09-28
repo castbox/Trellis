@@ -136,20 +136,39 @@ describe.skipIf(!hasPython())("task.py meta (task.json.meta access)", () => {
     expect(r.stderr).toContain("=value");
   });
 
-  it("create --task-id accepts a distinct control-safe identity and rejects invalid identities before writing", () => {
-    const valid = runTask(tmp, "create", "stable task", "--description", "identity fixture", "--slug", "stable-task", "--task-id", "Issue_434.2");
-    expect(valid.status, valid.stderr).toBe(0);
-    expect(readTaskJson(tmp, findTaskDir(tmp, "stable-task")).id).toBe("Issue_434.2");
-
+  it("create --task-id keeps the explicit identity separate from the task directory", () => {
     for (const [slug, taskId] of [
-      ["space-task", "issue 434"],
+      ["stable-task", "Issue_434.2"],
       ["dot-task", "issue."],
       ["lock-task", "issue.lock"],
       ["double-dot-task", "issue..434"],
     ]) {
       const result = runTask(tmp, "create", slug, "--description", "identity fixture", "--slug", slug, "--task-id", taskId);
+      expect(result.status, `${taskId}: ${result.stderr}`).toBe(0);
+      expect(readTaskJson(tmp, findTaskDir(tmp, slug)).id).toBe(taskId);
+    }
+  });
+
+  it("create --task-id rejects values outside the pattern before writing", () => {
+    for (const [slug, taskId] of [
+      ["space-task", "issue 434"],
+      ["leading-dot-task", ".issue"],
+      ["punctuation-task", "issue:434"],
+    ]) {
+      const result = runTask(tmp, "create", slug, "--description", "identity fixture", "--slug", slug, "--task-id", taskId);
       expect(result.status, taskId).toBe(1);
       expect(result.stderr).toContain("--task-id");
+      expect(fs.readdirSync(path.join(tmp, ".trellis", "tasks")).some((directory) => directory.endsWith(`-${slug}`))).toBe(false);
+    }
+  });
+
+  it("create --task-id still rejects exact and case-fold collisions", () => {
+    const original = runTask(tmp, "create", "original", "--description", "identity fixture", "--slug", "original", "--task-id", "Issue_434.2");
+    expect(original.status, original.stderr).toBe(0);
+
+    for (const [slug, taskId] of [["exact-task", "Issue_434.2"], ["case-fold-task", "issue_434.2"]]) {
+      const result = runTask(tmp, "create", slug, "--description", "identity fixture", "--slug", slug, "--task-id", taskId);
+      expect(result.status, `${taskId}: ${result.stderr}`).toBe(1);
       expect(fs.readdirSync(path.join(tmp, ".trellis", "tasks")).some((directory) => directory.endsWith(`-${slug}`))).toBe(false);
     }
   });
