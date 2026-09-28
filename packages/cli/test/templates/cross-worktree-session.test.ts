@@ -115,6 +115,30 @@ describe("cross-worktree installed hook entrypoints", () => {
     expect(retired.stderr).toContain("invalid_task_branch_binding");
   });
 
+  it("requires branch establishment when a Guru task loses its binding after rebind", () => {
+    const source = path.join(linked, ".trellis/tasks/cross/task.json");
+    write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
+    write(primary, ".trellis/guru-team/extension.json", "{}\n");
+    const switched = run("git", ["-C", linked, "switch", "-q", "-c", "current-task"]);
+    expect(switched.status, switched.stderr).toBe(0);
+    const common = run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    expect(common.status, common.stderr).toBe(0);
+    const binding = path.join(common.stdout.trim(), "trellis/task-branches/cross/0.json");
+    fs.mkdirSync(path.dirname(binding), { recursive: true });
+    fs.writeFileSync(binding, JSON.stringify({
+      schema_version: "1.0", task_id: "cross", lifecycle_generation: 0,
+      binding_revision: 1, branch_name: "current-task",
+    }));
+    const current = run("python3", ["-B", ".trellis/scripts/get_context.py", "--json"]);
+    expect(current.status, current.stderr).toBe(0);
+    expect(JSON.parse(current.stdout).currentTask.taskWorkspaceRoot).toBe(linked);
+
+    fs.unlinkSync(binding);
+    const missing = run("python3", ["-B", ".trellis/scripts/get_context.py", "--mode", "phase"]);
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain("binding_required");
+  });
+
   it("resolves a merged active task in the invoking checkout without borrowing another copy", () => {
     const source = path.join(linked, ".trellis/tasks/cross/task.json");
     write(primary, ".trellis/tasks/cross/task.json", fs.readFileSync(source, "utf8"));
