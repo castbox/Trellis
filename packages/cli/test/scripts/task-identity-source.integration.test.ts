@@ -108,11 +108,25 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
       JSON.stringify({ kind: "issue", repo_ref: "castbox/Trellis", number: 8 }),
       JSON.stringify({ kind: "issue", repo_ref: "castbox/Trellis", number: true, disposition: "exact_source" }),
       JSON.stringify({ kind: "issue", repo_ref: "castbox/Trellis", number: 8, disposition: "follow_up" }),
+      JSON.stringify({ kind: "issue", repo_ref: "castbox/Trellis.git", number: 8, disposition: "exact_source" }),
+      JSON.stringify({ kind: "issue", repo_ref: ".castbox/Trellis", number: 8, disposition: "exact_source" }),
+      JSON.stringify({ kind: "issue", repo_ref: "castbox/_Trellis", number: 8, disposition: "exact_source" }),
     ]) {
       const result = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--source-json", source, "--creator", "test", "--assignee", "test", "--no-start");
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("--source-json");
       expect(fs.existsSync(path.join(repo, ".trellis/tasks"))).toBe(false);
+    }
+  });
+
+  it("accepts portable issue repository names retained by the Guru reader", () => {
+    for (const [index, repoRef] of ["Owner_1/repo.name", "a/b.git-tools"].entries()) {
+      const slug = `source-${index}`;
+      const source = { kind: "issue", repo_ref: repoRef, number: 8, disposition: "exact_source" };
+      const created = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", slug,
+        "--source-json", JSON.stringify(source), "--creator", "test", "--assignee", "test", "--no-start");
+      expect(created.status, created.stderr).toBe(0);
+      expect(metadata(repo, taskDir(repo, slug)).source).toEqual(source);
     }
   });
 
