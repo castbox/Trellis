@@ -482,11 +482,9 @@ def has_git_remote(repo_root: Path) -> bool
   resolved. This fixes creating a task from a feature branch mis-recording
   that feature branch as the PR target (#399).
 - `branch_exists_locally()` checks `git rev-parse --verify --quiet
-  refs/heads/<branch>`. `task_context.py:cmd_validate` and
-  `task_store.py:cmd_archive` call it against `task.json.branch` and print a
-  yellow warning (not a failure/block) when the recorded branch no longer
-  exists locally — the common case is the branch was already merged and
-  deleted upstream.
+  refs/heads/<branch>`. `task_context.py:cmd_validate` may warn about a stale
+  legacy `task.json.branch`; creation, start and archive do not use it as
+  lifecycle authority.
 - `current_branch_name()` returns `git branch --show-current` or `None`;
   detached HEAD and "not a git repository" both come back as `None`, and
   callers must treat them the same — there is no branch worth recording.
@@ -521,38 +519,13 @@ See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the cu
 No environment, checkout or main-worktree identity lookup remains. Git worktree
 helpers report checkout facts only; they are not person resolvers.
 
-#### `task.json.branch` lifecycle
+#### `task.json.branch` compatibility
 
-`branch` names the feature branch the work was done on; `base_branch` names
-the branch a PR targets. They must differ for PR-backed work.
-
-- `task.py start` (`task.py:_record_start_state`) records
-  `current_branch_name()` into `branch` **only when the field is empty**, in
-  the same read/write that flips `planning → in_progress`. An explicit
-  `set-branch` therefore survives re-starting a task. On detached HEAD or
-  outside git it prints a note and records nothing; the start still succeeds.
-  When the recorded branch equals `base_branch` it is written anyway (the
-  value is true) and a warning says archive will refuse that shape.
-- `task.py archive` (`task_store.py:_validate_branch_metadata`) runs before
-  any mutation and refuses, exit 1, when either
-  (a) `branch` is empty while `base_branch` is set **and** the repo has a
-  remote — the pragmatic definition of "PR-backed": a task created expecting a
-  PR whose branch was simply never written down; or
-  (b) `branch == base_branch`.
-  Both errors name the repair command (`task.py set-branch` /
-  `set-base-branch`) — hand-editing `task.json` is never the documented path.
-  `--skip-branch-validation` bypasses both for tasks that were never
-  PR-backed; it does not suppress the stale-branch warning.
-- Local-only repos (no remote) and tasks without a `base_branch` skip the
-  missing-branch check entirely.
-- Note how wide (a) actually is: `cmd_create` stamps `base_branch` on every
-  task, so in a repo with a remote the predicate reduces to "every task must
-  have a `branch`". Tasks created before start-time recording landed carry
-  `branch: null` and are refused until repaired — repair with `set-branch`,
-  or pass `--skip-branch-validation` per archive.
-- Repairing an **already-archived** task works the same way, but the bare task
-  name no longer resolves; pass the archive path explicitly:
-  `task.py set-branch .trellis/tasks/archive/<YYYY-MM>/<task> <branch>`.
+New task creation does not write `branch`. `task.py start` changes only task
+status; `task.py archive` preserves a legacy `branch` value without checking
+it or requiring it. `base_branch` remains the PR target, not task identity.
+The old `--skip-branch-validation` archive flag is accepted as a hidden no-op
+so existing invocations continue to archive normally.
 
 ### `common/active_task.py` — Active Task Resolver
 
@@ -764,7 +737,7 @@ a `.current-task` fallback or a Python hook directory.
 | `start` on a task whose `task.json` is corrupt, or whose status write fails | Session pointer is still set and `after_start` hooks still run; the skipped status flip is named on stderr; exit 0 |
 | `list --json --mine` | Retirement diagnostic on stderr; exit 2; use explicit `--assignee` |
 | `list --json` / `list` with a parent whose stored status is `planning` and a child past `planning` | `display_status` (and human list label) shows `"active"`; `task.json.status` on disk stays `planning` |
-| `archive` / `validate` when `task.json.branch` no longer exists locally | Prints a yellow warning; does not block archive or fail validation |
+| `validate` when legacy `task.json.branch` no longer exists locally | Prints a yellow warning; does not fail validation; archive ignores the field |
 | stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
 | `finish` with an exact context-key match | Deletes only `.runtime/sessions/<exact-key>.json` |
 | `finish` with a missing exact match and one fallback session | Deletes only the fallback file named by the resolved `ActiveTask.context_key` |

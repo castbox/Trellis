@@ -105,6 +105,9 @@ describe("retirement update transaction", () => {
       };
       expect(metadata.creator).toBe("trellis-update");
       expect(metadata.assignee).toBe("explicit-owner");
+      expect(metadata.lifecycle_generation).toBe(0);
+      expect(metadata.source).toEqual({ kind: "no_issue" });
+      expect(metadata).not.toHaveProperty("branch");
       expect(hasRetiredInstructions(read(`${taskPath}/prd.md`))).toBe(false);
       expect(read(`${taskPath}/prd.md`)).toContain("task.py");
       const taskBefore = read(`${taskPath}/task.json`);
@@ -134,6 +137,24 @@ describe("retirement update transaction", () => {
     expect(read(".trellis/.version")).toBe("0.6.15");
     expect(read(".trellis/.template-hashes.json")).toBe(hashes);
     expect(fs.readdirSync(path.join(root, ".trellis"))).toEqual(dirs);
+  });
+
+  it("does not reuse an archived migration task id on a later upgrade", async () => {
+    write(".trellis/.version", "0.6.15");
+    await update({ force: true, migrate: true, assignee: "owner" });
+    const taskName = fs.readdirSync(path.join(root, ".trellis/tasks"))
+      .find((name) => name.endsWith(`migrate-to-${VERSION}`));
+    expect(taskName).toBeDefined();
+    if (!taskName) throw new Error("Migration task was not created");
+    const archiveDir = path.join(root, ".trellis/tasks/archive/2026-09");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.renameSync(path.join(root, ".trellis/tasks", taskName), path.join(archiveDir, taskName));
+    await update({ force: true, migrate: true });
+    write(".trellis/.version", "0.6.15");
+    await expect(update({ force: true, migrate: true, assignee: "owner" }))
+      .rejects.toThrow("Migration task id collision");
+    expect(read(`.trellis/tasks/archive/2026-09/${taskName}/task.json`))
+      .toContain(`"id": "migrate-to-${VERSION}"`);
   });
 
   it("incompatible existing target task blocks without rewriting custom content", async () => {

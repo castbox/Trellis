@@ -1028,7 +1028,7 @@ describe("regression: JSON read/write failure reporting", () => {
       } finally {
         fs.chmodSync(taskDir(name), 0o755);
       }
-      expect(readTaskJson(name).branch).toBeNull();
+      expect(readTaskJson(name)).not.toHaveProperty("branch");
     },
   );
 

@@ -247,7 +247,7 @@ describe("regression: current-task path normalization", () => {
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
     if (withRemote) {
-      // Never contacted: only `git remote` (the PR-backed predicate) reads it.
+      // Never contacted: the fixture only needs a configured remote.
       execSync("git remote add origin https://example.invalid/repo.git", {
         cwd: tmpDir,
       });
@@ -2087,7 +2087,7 @@ print(len(entries))
     );
   });
 
-  it("[issue-399.2] task.py archive warns when the recorded branch no longer exists locally", () => {
+  it("[issue-8] task.py archive ignores a missing legacy branch without warning", () => {
     setupTaskRepo();
     execSync("git init -q -b main", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
@@ -2113,12 +2113,15 @@ print(len(entries))
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
-    expect(result.stderr).toContain(
-      "recorded branch 'task/deleted-branch-does-not-exist' no longer exists locally",
-    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("recorded branch");
+    const archiveRoot = path.join(tmpDir, ".trellis", "tasks", "archive");
+    const month = fs.readdirSync(archiveRoot)[0];
+    const archivedTask = JSON.parse(fs.readFileSync(path.join(archiveRoot, month, "issue-106", "task.json"), "utf-8"));
+    expect(archivedTask.branch).toBe("task/deleted-branch-does-not-exist");
   });
 
-  it("[issue-399.3] task.py start records the checked-out branch when none is set", () => {
+  it("[issue-8] task.py start does not infer branch metadata", () => {
     setupTaskRepo();
     initTaskGitRepo("main");
     execSync("git checkout -q -b feature/record-me", { cwd: tmpDir });
@@ -2139,9 +2142,9 @@ print(len(entries))
       },
     );
 
-    expect(result.stdout).toContain("Branch recorded: feature/record-me");
+    expect(result.stdout).not.toContain("Branch recorded");
     expect(readIssue106Task()).toMatchObject({
-      branch: "feature/record-me",
+      branch: null,
       status: "in_progress",
     });
   });
@@ -2171,7 +2174,7 @@ print(len(entries))
     expect(readIssue106Task().branch).toBe("task/set-by-hand");
   });
 
-  it("[issue-399.3] task.py start on a detached HEAD notes the skip and still starts", () => {
+  it("[issue-8] task.py start on a detached HEAD still starts without branch metadata", () => {
     setupTaskRepo();
     initTaskGitRepo("main");
     execSync("git checkout -q --detach", { cwd: tmpDir });
@@ -2193,14 +2196,14 @@ print(len(entries))
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("no checked-out branch");
+    expect(result.stderr).not.toContain("no checked-out branch");
     expect(readIssue106Task()).toMatchObject({
       branch: null,
       status: "in_progress",
     });
   });
 
-  it("[issue-399.3] task.py archive refuses a PR-backed task with no recorded branch", () => {
+  it("[issue-8] task.py archive accepts a branch-less task in a remote-backed repo", () => {
     setupTaskRepo();
     initTaskGitRepo("main", true);
     patchIssue106Task({ branch: null, base_branch: "main" });
@@ -2209,55 +2212,6 @@ print(len(entries))
     const result = spawnSync(
       pythonCmd,
       [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
-      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
-    );
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("no branch is recorded");
-    expect(result.stderr).toContain("task.py set-branch");
-    expect(result.stderr).toContain("--skip-branch-validation");
-    // Refused before any mutation: the task stays put, still un-completed.
-    expect(
-      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
-    ).toBe(true);
-    expect(readIssue106Task().status).toBe("in_progress");
-  });
-
-  it("[issue-399.3] task.py archive refuses a task whose branch equals its base_branch", () => {
-    setupTaskRepo();
-    initTaskGitRepo("main", true);
-    patchIssue106Task({ branch: "main", base_branch: "main" });
-
-    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    const result = spawnSync(
-      pythonCmd,
-      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
-      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
-    );
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("branch and base_branch are both 'main'");
-    expect(result.stderr).toContain("task.py set-base-branch");
-    expect(
-      fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
-    ).toBe(true);
-  });
-
-  it("[issue-399.3] task.py archive --skip-branch-validation archives despite missing branch metadata", () => {
-    setupTaskRepo();
-    initTaskGitRepo("main", true);
-    patchIssue106Task({ branch: null, base_branch: "main" });
-
-    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    const result = spawnSync(
-      pythonCmd,
-      [
-        taskScriptPath,
-        "archive",
-        ".trellis/tasks/issue-106",
-        "--no-commit",
-        "--skip-branch-validation",
-      ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -2265,9 +2219,37 @@ print(len(entries))
     expect(
       fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
     ).toBe(false);
+    const archiveRoot = path.join(tmpDir, ".trellis", "tasks", "archive");
+    const month = fs.readdirSync(archiveRoot)[0];
+    const archivedTask = JSON.parse(fs.readFileSync(path.join(archiveRoot, month, "issue-106", "task.json"), "utf-8"));
+    expect(archivedTask).toMatchObject({ branch: null, status: "completed" });
   });
 
-  it("[issue-399.3] task.py archive still only warns when a PR-backed branch was merged and deleted", () => {
+  it("[issue-8] task.py archive preserves self-referential legacy branch and durable identity", () => {
+    setupTaskRepo();
+    initTaskGitRepo("main", true);
+    const source = { kind: "issue", repo_ref: "castbox/Trellis", number: 8, disposition: "exact_source" };
+    patchIssue106Task({ branch: "main", base_branch: "main", lifecycle_generation: 3, source });
+
+    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
+    const result = spawnSync(
+      pythonCmd,
+      [taskScriptPath, "archive", ".trellis/tasks/issue-106", "--no-commit"],
+      { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("branch and base_branch");
+    const archiveRoot = path.join(tmpDir, ".trellis", "tasks", "archive");
+    const month = fs.readdirSync(archiveRoot)[0];
+    const archivedTask = JSON.parse(fs.readFileSync(path.join(archiveRoot, month, "issue-106", "task.json"), "utf-8"));
+    expect(archivedTask).toMatchObject({
+      id: "issue-106", source, lifecycle_generation: 3,
+      branch: "main", base_branch: "main", status: "completed",
+    });
+  });
+
+  it("[issue-8] task.py archive preserves a deleted legacy branch without warning", () => {
     setupTaskRepo();
     initTaskGitRepo("main", true);
     patchIssue106Task({
@@ -2283,11 +2265,13 @@ print(len(entries))
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain(
-      "recorded branch 'feature/merged-and-deleted' no longer exists locally",
-    );
+    expect(result.stderr).not.toContain("recorded branch");
     expect(
       fs.existsSync(path.join(tmpDir, ".trellis", "tasks", "issue-106")),
     ).toBe(false);
+    const archiveRoot = path.join(tmpDir, ".trellis", "tasks", "archive");
+    const month = fs.readdirSync(archiveRoot)[0];
+    const archivedTask = JSON.parse(fs.readFileSync(path.join(archiveRoot, month, "issue-106", "task.json"), "utf-8"));
+    expect(archivedTask.branch).toBe("feature/merged-and-deleted");
   });
 });

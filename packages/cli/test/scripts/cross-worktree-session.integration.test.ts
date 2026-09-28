@@ -143,7 +143,7 @@ assert_absent(third, 'one')
 assert resolve(primary, 'same-task-peer').resolved_task_path == left_task
 assert resolve(primary, 'two').resolved_task_path == right_task
 start(left, 'archive-peer', left_task)
-p = command(third, 'same-task-peer', 'archive', '.trellis/tasks/same', '--no-commit', '--skip-branch-validation')
+p = command(third, 'same-task-peer', 'archive', '.trellis/tasks/same', '--no-commit')
 assert p.returncode == 0, (p.stdout, p.stderr)
 assert not left_task.exists() and right_task.is_dir()
 for session in ('same-task-peer', 'archive-peer'):

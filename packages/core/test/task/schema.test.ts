@@ -8,12 +8,12 @@ import {
 
 describe("emptyTaskRecord", () => {
   it("emits every canonical field in canonical order", () => {
-    const record = emptyTaskRecord();
+    const record = emptyTaskRecord({ id: "example" });
     expect(Object.keys(record)).toEqual([...TASK_RECORD_FIELD_ORDER]);
   });
 
   it("uses canonical defaults: planning status, P2 priority, today ISO date", () => {
-    const record = emptyTaskRecord();
+    const record = emptyTaskRecord({ id: "example" });
     expect(record.status).toBe("planning");
     expect(record.priority).toBe("P2");
     expect(record.dev_type).toBeNull();
@@ -21,6 +21,9 @@ describe("emptyTaskRecord", () => {
     expect(record.children).toEqual([]);
     expect(record.relatedFiles).toEqual([]);
     expect(record.meta).toEqual({});
+    expect(record.lifecycle_generation).toBe(0);
+    expect(record.source).toEqual({ kind: "no_issue" });
+    expect(record).not.toHaveProperty("branch");
     expect(record.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -64,6 +67,7 @@ describe("emptyTaskRecord", () => {
 });
 
 describe("taskRecordSchema", () => {
+  const validRecord = () => emptyTaskRecord({ id: "x" });
   it("parses a canonical record", () => {
     const input = emptyTaskRecord({ id: "x", name: "x", title: "X" });
     const parsed = taskRecordSchema.parse(input);
@@ -79,17 +83,17 @@ describe("taskRecordSchema", () => {
 
   it("rejects wrong field types", () => {
     expect(() =>
-      taskRecordSchema.parse({ ...emptyTaskRecord(), title: 42 }),
+      taskRecordSchema.parse({ ...validRecord(), title: 42 }),
     ).toThrow(/task.title must be a string/);
     expect(() =>
-      taskRecordSchema.parse({ ...emptyTaskRecord(), children: ["ok", 1] }),
+      taskRecordSchema.parse({ ...validRecord(), children: ["ok", 1] }),
     ).toThrow(/task.children must be an array of strings/);
     expect(() =>
-      taskRecordSchema.parse({ ...emptyTaskRecord(), meta: [] }),
+      taskRecordSchema.parse({ ...validRecord(), meta: [] }),
     ).toThrow(/task.meta must be a JSON object/);
     expect(() =>
       taskRecordSchema.parse({
-        ...emptyTaskRecord(),
+        ...validRecord(),
         meta: { nested: new Date() },
       }),
     ).toThrow(/task.meta.nested must contain only JSON values/);
@@ -98,12 +102,12 @@ describe("taskRecordSchema", () => {
   it("rejects records missing canonical fields", () => {
     expect(() =>
       taskRecordSchema.parse({
-        ...emptyTaskRecord(),
+        ...validRecord(),
         meta: undefined,
       }),
     ).toThrow(/task.meta must be a JSON object/);
 
-    const partial = { ...emptyTaskRecord() } as Record<string, unknown>;
+    const partial = { ...validRecord() } as Record<string, unknown>;
     delete partial.base_branch;
     expect(() => taskRecordSchema.parse(partial)).toThrow(
       /task.base_branch is required/,
@@ -112,18 +116,33 @@ describe("taskRecordSchema", () => {
 
   it("allows null for nullable string fields", () => {
     const parsed = taskRecordSchema.parse({
-      ...emptyTaskRecord(),
-      branch: null,
+      ...validRecord(),
       worktree_path: null,
       parent: null,
     });
-    expect(parsed.branch).toBeNull();
     expect(parsed.worktree_path).toBeNull();
     expect(parsed.parent).toBeNull();
   });
 
+  it("keeps a legacy missing source unresolved and normalizes generation to zero", () => {
+    const legacy = { ...validRecord(), branch: "old-branch" } as Record<string, unknown>;
+    delete legacy.source;
+    delete legacy.lifecycle_generation;
+    const parsed = taskRecordSchema.parse(legacy);
+    expect(parsed.lifecycle_generation).toBe(0);
+    expect(parsed).not.toHaveProperty("source");
+    expect(parsed).not.toHaveProperty("branch");
+  });
+
+  it("rejects invalid source and generation", () => {
+    expect(() => taskRecordSchema.parse({ ...validRecord(), lifecycle_generation: true })).toThrow();
+    expect(() => taskRecordSchema.parse({ ...validRecord(), lifecycle_generation: -1 })).toThrow();
+    expect(() => taskRecordSchema.parse({ ...validRecord(), source: { kind: "issue", number: 8 } })).toThrow();
+    expect(() => taskRecordSchema.parse({ ...validRecord(), id: "bad id" })).toThrow(/task.id must match/);
+  });
+
   it("safeParse returns success / error discriminated result", () => {
-    const ok = taskRecordSchema.safeParse(emptyTaskRecord());
+    const ok = taskRecordSchema.safeParse(validRecord());
     expect(ok.success).toBe(true);
     const bad = taskRecordSchema.safeParse({ title: 1 });
     expect(bad.success).toBe(false);
