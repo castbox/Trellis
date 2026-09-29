@@ -1044,6 +1044,28 @@ describe("regression: current-task path normalization", () => {
     expect(duplicate.stderr).toContain("task_id_collision");
   });
 
+  it("[task-identity] create rejects a TaskId retained only by a remote-tracking ref", () => {
+    writeTrellisScripts();
+    execSync("git init -q -b main", { cwd: tmpDir });
+    execSync("git config user.name Test", { cwd: tmpDir });
+    execSync("git config user.email test@example.invalid", { cwd: tmpDir });
+    const prior = path.join(".trellis", "tasks", "09-29-prior", "task.json");
+    writeProjectFile(prior, JSON.stringify({ id: "stable-prior", status: "in_progress", lifecycle_generation: 0 }));
+    execSync("git add .trellis/tasks && git commit -qm prior", { cwd: tmpDir });
+    const priorHead = execSync("git rev-parse HEAD", { cwd: tmpDir, encoding: "utf-8" }).trim();
+    execSync(`git update-ref refs/remotes/origin/prior ${priorHead}`, { cwd: tmpDir });
+    execSync("git rm -q .trellis/tasks/09-29-prior/task.json && git commit -qm current", { cwd: tmpDir });
+
+    const result = spawnSync(pythonCmd, [
+      path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
+      "--slug", "new-task", "--task-id", "stable-prior", "--description", "new task",
+      "--creator", "fixture-creator", "--assignee", "test-dev", "--no-start",
+    ], { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("task_id_collision");
+    expect(fs.readdirSync(path.join(tmpDir, ".trellis", "tasks")).some((name) => name.endsWith("-new-task"))).toBe(false);
+  });
+
   it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(
