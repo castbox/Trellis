@@ -623,7 +623,7 @@ describe("regression: current-task path normalization", () => {
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-auto-active" --description "regression fixture" --slug r7-auto --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-auto-active" --description "regression fixture" --slug r7-auto`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -654,17 +654,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "described task",
         "--description",
         "  padded description  ",
         "--slug",
         "described",
-        "--assignee",
-        "test-dev",
       ],
       {
         cwd: tmpDir,
@@ -705,15 +700,10 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "batch backlog task",
         "--slug",
         "batch-backlog",
-        "--assignee",
-        "test-dev",
         "--description",
         "regression fixture",
         "--no-start",
@@ -756,7 +746,7 @@ describe("regression: current-task path normalization", () => {
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     // sessionEnv() with no overrides drops every session-identity env var.
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-cli-only" --description "regression fixture" --slug r7-cli --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-cli-only" --description "regression fixture" --slug r7-cli`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -785,7 +775,7 @@ describe("regression: current-task path normalization", () => {
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-idem" --description "regression fixture" --slug r7-idem --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-idem" --description "regression fixture" --slug r7-idem`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -918,17 +908,12 @@ describe("regression: current-task path normalization", () => {
     const createArgs = [
       taskScriptPath,
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "web auth retry",
       "--description",
       "regression fixture",
       "--slug",
       "web-auth-retry",
-      "--assignee",
-      "test-dev",
     ];
     const env = sessionEnv({ TRELLIS_CONTEXT_ID: "archive-collision" });
 
@@ -1023,8 +1008,7 @@ describe("regression: current-task path normalization", () => {
     const args = [
       path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
       "--slug", "reused", "--task-id", "new-task-id", "--description", "Distinct task",
-      "--creator", "test-dev",
-      "--assignee", "test-dev", "--no-start",
+       "--no-start",
     ];
     const created = spawnSync(pythonCmd, args, { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
     expect(created.status, created.stderr).toBe(0);
@@ -1059,7 +1043,7 @@ describe("regression: current-task path normalization", () => {
     const result = spawnSync(pythonCmd, [
       path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
       "--slug", "new-task", "--task-id", "stable-prior", "--description", "new task",
-      "--creator", "fixture-creator", "--assignee", "test-dev", "--no-start",
+       "--no-start",
     ], { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("task_id_collision");
@@ -1081,17 +1065,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         `${todayPrefix}-example-task`,
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -1126,17 +1105,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         `${otherPrefix}-example-task`,
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -1165,17 +1139,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         "13-45-example-task",
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );

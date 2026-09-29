@@ -117,6 +117,11 @@ describe("target-owned retirement contract", () => {
     "install /tmp/history .trellis/.developer",
     "Do not read history; run /trellis:record-session",
     "add_session.py is retired. Invoke trellis-record-session after finishing",
+    "python3 .trellis/scripts/task.py create Example --creator alice --assignee bob",
+    "python3 .trellis/scripts/task.py list --assignee bob",
+    "trellis update --migrate --assignee bob",
+    "New tasks require creator and assignee values.",
+    "Use list_tasks_by_assignee to find work.",
   ])("rejects obsolete instruction: %s", (text) => {
     expect(hasRetiredInstructions(text)).toBe(true);
   });
@@ -132,6 +137,7 @@ describe("target-owned retirement contract", () => {
     "trellis-record-session is deprecated.",
     "Do not run get_context.py --mode record.",
     "Do not run grep -r task .trellis/.",
+    "Remove --creator and --assignee from task callers.",
   ])("accepts retirement explanation: %s", (text) => {
     expect(hasRetiredInstructions(text)).toBe(false);
   });

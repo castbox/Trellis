@@ -19,8 +19,6 @@ const TEMPLATE_SCRIPTS = path.resolve(
   "../../src/templates/trellis/scripts",
 );
 
-const DEVELOPER = "tester";
-
 function hasPython(): boolean {
   try {
     execFileSync("python3", ["--version"], { stdio: "ignore" });
@@ -39,7 +37,6 @@ function setupRepo(tmp: string): void {
 }
 
 function runTask(repo: string, ...args: string[]) {
-  if (args[0] === "create") args.push("--creator", DEVELOPER, "--assignee", DEVELOPER);
   return spawnSync("python3", [".trellis/scripts/task.py", ...args], {
     cwd: repo,
     encoding: "utf-8",

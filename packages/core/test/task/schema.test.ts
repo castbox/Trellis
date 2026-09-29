@@ -32,12 +32,11 @@ describe("emptyTaskRecord", () => {
       id: "demo",
       name: "demo",
       title: "Demo task",
-      assignee: "developer",
       package: "core",
     });
     expect(record.id).toBe("demo");
     expect(record.title).toBe("Demo task");
-    expect(record.assignee).toBe("developer");
+    expect(record).not.toHaveProperty("assignee");
     expect(record.package).toBe("core");
     expect(record.priority).toBe("P2");
   });
@@ -156,7 +155,11 @@ describe("taskRecordSchema", () => {
       ...emptyTaskRecord({ id: "x" }),
       // @ts-expect-error - simulate older/newer on-disk field
       legacy_field: "keep-me-on-disk",
+      creator: "old-creator",
+      assignee: "old-assignee",
     });
     expect("legacy_field" in parsed).toBe(false);
+    expect(parsed).not.toHaveProperty("creator");
+    expect(parsed).not.toHaveProperty("assignee");
   });
 });

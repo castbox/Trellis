@@ -26,8 +26,6 @@ export interface TrellisTaskRecord {
   scope: string | null;
   package: string | null;
   priority: string;
-  creator: string;
-  assignee: string;
   createdAt: string;
   completedAt: string | null;
   base_branch: string | null;
@@ -58,8 +56,6 @@ export const TASK_RECORD_FIELD_ORDER = [
   "scope",
   "package",
   "priority",
-  "creator",
-  "assignee",
   "createdAt",
   "completedAt",
   "base_branch",
@@ -83,8 +79,6 @@ const STRING_FIELDS: ReadonlySet<TaskRecordField> = new Set([
   "description",
   "status",
   "priority",
-  "creator",
-  "assignee",
   "createdAt",
   "notes",
 ]);
@@ -232,7 +226,7 @@ function assignField(
  *
  * New-task fields are present in canonical order. `overrides` shallow-merges
  * over the defaults — callers supply a valid id and per-task values (name, title,
- * assignee, createdAt, etc.) and leave null-default fields untouched
+ * createdAt, etc.) and leave null-default fields untouched
  * unless they have a real value.
  */
 export function emptyTaskRecord(
@@ -254,8 +248,6 @@ export function emptyTaskRecord(
     scope: null,
     package: null,
     priority: "P2",
-    creator: "",
-    assignee: "",
     createdAt: today,
     completedAt: null,
     base_branch: null,

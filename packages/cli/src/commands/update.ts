@@ -101,7 +101,6 @@ export interface UpdateOptions {
   createNew?: boolean;
   allowDowngrade?: boolean;
   migrate?: boolean;
-  assignee?: string;
 }
 
 interface FileChange {
@@ -2767,28 +2766,9 @@ export async function update(options: UpdateOptions): Promise<void> {
   if (needsMigrationTask && fs.existsSync(newTaskDir))
     throw new Error(`Migration task destination conflicts: ${newTaskDir}`);
   let createdTaskDir: string | undefined;
-  let assignee = options.assignee?.trim();
-  if (needsMigrationTask && !assignee && !options.dryRun) {
-    if (!process.stdin.isTTY) {
-      console.error(
-        "Migration task requires explicit --assignee before update.",
-      );
-      process.exit(2);
-    }
-    const answer = await inquirer.prompt<{ assignee: string }>([
-      { type: "input", name: "assignee", message: "Migration task assignee:" },
-    ]);
-    assignee = answer.assignee?.trim();
-    if (!assignee) {
-      console.error("Migration task requires explicit --assignee.");
-      process.exit(2);
-    }
-  }
   const finishMigrationTask = (): void => {
     if (!needsMigrationTask) return;
     const taskDir = newTaskDir;
-    if (!assignee)
-      throw new Error("Migration task requires explicit --assignee.");
     fs.mkdirSync(taskDir, { recursive: true });
     createdTaskDir = taskDir;
     writeFileAtomic(path.join(taskDir, "prd.md"), guide);
@@ -2803,8 +2783,6 @@ export async function update(options: UpdateOptions): Promise<void> {
           status: "planning",
           scope: "migration",
           priority: "P1",
-          creator: "trellis-update",
-          assignee,
           createdAt: today.toISOString().split("T")[0],
         }),
         null,

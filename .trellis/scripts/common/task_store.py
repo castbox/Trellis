@@ -417,13 +417,6 @@ def cmd_create(args: argparse.Namespace) -> int:
         # Inferred: default_package → None (no task.json yet for create)
         package = resolve_package(repo_root=repo_root)
 
-    creator = (getattr(args, "creator", None) or "").strip()
-    assignee = (getattr(args, "assignee", None) or "").strip()
-    missing = [flag for flag, value in (("--creator", creator), ("--assignee", assignee)) if not value]
-    if missing:
-        print("Error: explicit task ownership required: " + ", ".join(missing), file=sys.stderr)
-        return 2
-
     ensure_tasks_dir(repo_root)
 
     # Generate slug if not provided. A title-derived slug is sanitized by
@@ -600,8 +593,6 @@ def cmd_create(args: argparse.Namespace) -> int:
         "scope": None,
         "package": package,
         "priority": args.priority,
-        "creator": creator,
-        "assignee": assignee,
         "createdAt": today,
         "completedAt": None,
         "base_branch": base_branch,

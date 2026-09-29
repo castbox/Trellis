@@ -512,9 +512,9 @@ def main_worktree_root(repo_root: Path) -> Path | None
   become a worktree mid-run, and the answer costs two subprocesses on a path
   that is consulted several times per command.
 
-#### Explicit task ownership
+#### Task records without personnel fields
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current ownership, preservation and compatibility contract.
+See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current record, preservation and compatibility contract.
 
 No environment, checkout or main-worktree identity lookup remains. Git worktree
 helpers report checkout facts only; they are not person resolvers.
@@ -598,10 +598,10 @@ a `.current-task` fallback or a Python hook directory.
 
 ##### 2. Signatures
 
-- `python3 .trellis/scripts/task.py create "<title>" --creator <creator> --assignee <assignee> [--slug <slug>] [--description <text>] [--no-start]`
+- `python3 .trellis/scripts/task.py create "<title>" --description <text> [--slug <slug>] [--no-start]`
 - `python3 .trellis/scripts/task.py start <task-dir>`
 - `python3 .trellis/scripts/task.py current [--source] [--json]`
-- `python3 .trellis/scripts/task.py list [--assignee <name>] [--status <status>] [--json]`
+- `python3 .trellis/scripts/task.py list [--status <status>] [--json]`
 - `python3 .trellis/scripts/task.py finish`
 - `resolve_active_task(repo_root, platform_input=None, platform=None) -> ActiveTask`
 - `set_active_task(task_path, repo_root, platform_input=None, platform=None) -> ActiveTask | None`
@@ -702,8 +702,8 @@ a `.current-task` fallback or a Python hook directory.
   distinguishable from a task whose fields genuinely are null. The key is
   absent on the healthy path, and the exit code is unchanged.
 - `task.py list --json` prints `{tasks: [...]}` on one line, one object per
-  task after `--assignee`/`--status` filtering: `{dir, id, title, status,
-  display_status, priority, assignee, parent, children, package}`. Retired `--mine/-m` fails before listing, including JSON mode.
+  task after `--status` filtering: `{dir, id, title, status,
+  display_status, priority, parent, children, package}`. Retired `--mine/-m` fails before listing, including JSON mode.
   `--json` and human `list` share one iteration pass over
   `iter_active_tasks()` — do not add a second pass for either mode.
 - `display_status` (`_display_status()` in `task.py`) shows `"active"`
@@ -735,7 +735,7 @@ a `.current-task` fallback or a Python hook directory.
 | `archive` when the status write or a child re-parent write fails | Nothing is moved; the failure and the affected child are named; exit 1 |
 | `list` with one corrupt `task.json` | Other tasks still list; the skipped task is named on stderr with the reason; exit 0 |
 | `start` on a task whose `task.json` is corrupt, or whose status write fails | Session pointer is still set and `after_start` hooks still run; the skipped status flip is named on stderr; exit 0 |
-| `list --json --mine` | Retirement diagnostic on stderr; exit 2; use explicit `--assignee` |
+| `list --json --mine` | Retirement diagnostic on stderr; exit 2; filter by status or inspect all tasks |
 | `list --json` / `list` with a parent whose stored status is `planning` and a child past `planning` | `display_status` (and human list label) shows `"active"`; `task.json.status` on disk stays `planning` |
 | `validate` when legacy `task.json.branch` no longer exists locally | Prints a yellow warning; does not fail validation; archive ignores the field |
 | stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
@@ -1156,7 +1156,6 @@ write_json(task_json, {"title": info.title, "status": "completed"})
 | `directory` | `Path` | Absolute path to task dir |
 | `title` | `str` | `data["title"]` or `data["name"]` or `"unknown"` |
 | `status` | `str` | `data["status"]` (default `"unknown"`) |
-| `assignee` | `str` | `data["assignee"]` (default `""`) |
 | `priority` | `str` | `data["priority"]` (default `"P2"`) |
 | `children` | `tuple[str, ...]` | Immutable copy of `data["children"]` |
 | `parent` | `str \| None` | Parent task dir name |
@@ -1371,8 +1370,8 @@ Windows; that drift causes misleading bootstrap instructions.
 # In docstrings
 """
 Usage:
-    python task.py create "My Task" --creator alice --assignee bob  # Windows
-    python3 task.py create "My Task" --creator alice --assignee bob # macOS/Linux
+    python task.py create "My Task" --description "Example"  # Windows
+    python3 task.py create "My Task" --description "Example" # macOS/Linux
 """
 
 # In error messages
@@ -2505,8 +2504,8 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 task.py create "Add login" --creator alice --assignee bob --slug add-login
-  python3 task.py list --assignee alice --status in_progress
+  python3 task.py create "Add login" --description "Email sign-in" --slug add-login
+  python3 task.py list --status in_progress
 """
     )
 
@@ -2517,12 +2516,9 @@ Examples:
     create_parser.add_argument("title", help="Task title")
     create_parser.add_argument("--description", help="One-line summary")
     create_parser.add_argument("--slug", help="URL-friendly name")
-    create_parser.add_argument("--creator", help="Explicit creator; validated before writes")
-    create_parser.add_argument("--assignee", help="Explicit assignee; validated before writes")
 
     # list command
     list_parser = subparsers.add_parser("list", help="List tasks")
-    list_parser.add_argument("--assignee", "-a", help="Exact assignee filter")
     list_parser.add_argument("--status", "-s", choices=["planning", "in_progress", "review", "completed"])
 
     args = parser.parse_args()
@@ -2615,7 +2611,7 @@ When two split modules need each other (A imports from B, B imports from A), use
 
 ```python
 # status_display.py — imports status_monitor at call time, not module load time
-def cmd_summary(repo_root: Path, filter_assignee: str | None = None) -> int:
+def cmd_summary(repo_root: Path) -> int:
     # Lazy import: status_monitor imports find_agent from this module
     from .status_monitor import get_last_tool, get_last_message
 

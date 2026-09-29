@@ -288,17 +288,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "curation hint task",
         "--description",
         "regression fixture",
         "--slug",
         "curation-hint-task",
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -313,7 +308,7 @@ describe("regression: current-task path normalization", () => {
     fs.mkdirSync(path.join(tmpDir, ".grok"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "grok task" --description "regression fixture" --slug grok-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "grok task" --description "regression fixture" --slug grok-task`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -336,7 +331,7 @@ describe("regression: current-task path normalization", () => {
     fs.mkdirSync(path.join(tmpDir, ".kimi-code"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "kimi task" --description "regression fixture" --slug kimi-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "kimi task" --description "regression fixture" --slug kimi-task`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -360,7 +355,7 @@ describe("regression: current-task path normalization", () => {
     writeConfigYaml("codex:\n  dispatch_mode: inline\n");
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex inline task" --description "regression fixture" --slug codex-inline-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex inline task" --description "regression fixture" --slug codex-inline-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -385,7 +380,7 @@ describe("regression: current-task path normalization", () => {
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex subagent task" --description "regression fixture" --slug codex-subagent-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex subagent task" --description "regression fixture" --slug codex-subagent-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -470,7 +465,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-only" --description "regression fixture" --slug seed-only-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-only" --description "regression fixture" --slug seed-only-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -779,7 +774,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-list" --description "regression fixture" --slug seed-list-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-list" --description "regression fixture" --slug seed-list-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -957,7 +952,7 @@ print(len(entries))
         "utf-8",
       );
       expect(content, relativePath).toContain(
-        "Sub-agent-dispatch tasks have real curated entries in both `implement.jsonl` and `check.jsonl`; seed-only manifests are not ready.",
+        "The caller manages any task manifests and activation checks.",
       );
     }
   });
@@ -1848,12 +1843,12 @@ print(len(entries))
         title: string;
         status: string;
         priority: string;
-        assignee: string | null;
         parent: string | null;
         children: string[];
       }[];
     };
     expect(parsed.tasks).toHaveLength(1);
+    expect(parsed.tasks[0]).not.toHaveProperty("assignee");
     expect(parsed.tasks[0]).toMatchObject({
       dir: ".trellis/tasks/issue-106",
       title: "Issue 106 task",
@@ -1937,7 +1932,7 @@ print(len(entries))
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "base branch test" --description "regression fixture" --slug base-branch-test --assignee test-dev --no-start`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "base branch test" --description "regression fixture" --slug base-branch-test --no-start`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -1971,17 +1966,12 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "no remote test",
         "--description",
         "regression fixture",
         "--slug",
         "no-remote-test",
-        "--assignee",
-        "test-dev",
         "--no-start",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
@@ -2021,17 +2011,12 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "explicit base branch test",
         "--description",
         "regression fixture",
         "--slug",
         "explicit-base-branch-test",
-        "--assignee",
-        "test-dev",
         "--base-branch",
         "release/1.0",
         "--no-start",

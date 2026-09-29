@@ -76,7 +76,7 @@ console.error(
 
 ```typescript
 // Key-value pairs
-console.log(chalk.blue("Task assignee:"), chalk.gray(assignee));
+console.log(chalk.blue("Task status:"), chalk.gray(status));
 console.log(chalk.blue("🔍 Project type:"), chalk.gray(projectDescription));
 
 // Instructions with highlighted commands
@@ -109,7 +109,7 @@ console.log(chalk.gray("\n  AI-assisted development workflow framework\n"));
 console.log(chalk.gray("Mode: Force overwrite existing files\n"));
 
 // Detection results
-console.log(chalk.blue("Task assignee:"), chalk.gray(assignee));
+console.log(chalk.blue("Task status:"), chalk.gray(status));
 console.log(chalk.blue("🔍 Project type:"), chalk.gray(description));
 
 // Configuration summary
@@ -213,7 +213,7 @@ if (options.force) {
 }
 
 // 3. Detection results
-console.log(chalk.blue("Task assignee:"), chalk.gray(assignee));
+console.log(chalk.blue("Task status:"), chalk.gray(status));
 console.log(chalk.blue("🔍 Project type:"), chalk.gray(typeDescription));
 
 // 4. Configuration summary

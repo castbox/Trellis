@@ -211,6 +211,14 @@ describe("getMigrationMetadata", () => {
       expect(typeof guide.guide).toBe("string");
     }
   });
+
+  it("includes AI migration instructions for the personnel retirement", () => {
+    const metadata = getMigrationMetadata("0.7.0-beta.2", "0.7.0-castbox.1");
+    const guide = metadata.migrationGuides.find(
+      (entry) => entry.version === "0.7.0-castbox.1",
+    );
+    expect(guide?.aiInstructions).toContain("Do not rewrite historical task JSON");
+  });
 });
 
 // =============================================================================

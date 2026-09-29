@@ -200,7 +200,7 @@ Verify acceptance and preserve validation evidence in task artifacts. Archive th
 ### Example 1: Bug Fix Session
 
 **[1/8] /** - AI needs project context before touching code
-**[2/8] python3 ./.trellis/scripts/task.py create "Fix bug" --creator <creator> --assignee <assignee> --description "Fix the reported bug" --slug fix-bug** - Track work for future reference
+**[2/8] python3 ./.trellis/scripts/task.py create "Fix bug" --description "Fix the reported bug" --slug fix-bug** - Track work for future reference
 **[3/8] /** - Inject project-specific development guidelines
 **[4/8] Investigate and fix the bug** - Actual development work
 **[5/8] /** - Re-verify code against guidelines
@@ -211,7 +211,7 @@ Verify acceptance and preserve validation evidence in task artifacts. Archive th
 ### Example 2: Planning Session (No Code)
 
 **[1/4] /** - Context needed even for non-coding work
-**[2/4] python3 ./.trellis/scripts/task.py create "Planning task" --creator <creator> --assignee <assignee> --description "Plan the upcoming work" --slug planning-task** - Planning is valuable work
+**[2/4] python3 ./.trellis/scripts/task.py create "Planning task" --description "Plan the upcoming work" --slug planning-task** - Planning is valuable work
 **[3/4] Review docs, create subtask list** - Actual planning work
 **[4/4] Update task artifacts** - Planning decisions must be recorded
 
@@ -306,7 +306,7 @@ I recommend reading through `.trellis/spec/` to familiarize yourself with the te
 If the developer wants help filling guidelines, create a feature to track this:
 
 ```bash
-python3 ./.trellis/scripts/task.py create "Fill spec guidelines" --creator <creator> --assignee <assignee> --description "Fill in the spec guideline files" --slug fill-spec-guidelines
+python3 ./.trellis/scripts/task.py create "Fill spec guidelines" --description "Fill in the spec guideline files" --slug fill-spec-guidelines
 ```
 
 Then systematically analyze the codebase and fill each guideline file:

@@ -78,8 +78,8 @@ try {
 
 ### Pattern 3: Graceful Degradation with Warning
 
-Optional advisory checks may warn and continue. Required ownership validation
-is not optional: reject missing creator/assignee before writes. See
+Optional advisory checks may warn and continue. Required task title and
+description validation must reject invalid input before writes. See
 [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).
 
 ### Pattern 4: Return-Based Error Signaling

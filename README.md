@@ -58,10 +58,10 @@
 npm install -g @mindfoldhq/trellis@latest
 
 # 2. Initialize in your repo
-trellis init --creator your-name --assignee your-name
+trellis init
 
 # 3. Or initialize with the platforms you actually use
-trellis init --cursor --opencode --codex --creator your-name --assignee your-name
+trellis init --cursor --opencode --codex
 ```
 
 See the [Quick Start](https://docs.trytrellis.app/start/install-and-first-task) and [Supported Platforms](https://docs.trytrellis.app/advanced/multi-platform) guides for setup details.
@@ -127,7 +127,7 @@ No. Many teams start by letting AI draft specs from existing code and then tight
 <details>
 <summary><strong>Can teams use this without constant conflicts?</strong></summary>
 
-Yes. New tasks take explicit creator and assignee inputs, while current-task bindings stay isolated per session. Shared specs and task artifacts remain reviewable in the repo.
+Yes. Task records do not require personnel fields, and current-task bindings stay isolated per session. Shared specs and task artifacts remain reviewable in the repo.
 
 </details>
 

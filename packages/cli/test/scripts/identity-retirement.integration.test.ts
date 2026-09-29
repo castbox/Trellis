@@ -67,38 +67,42 @@ describe("identity and workspace retirement runtime", () => {
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  it("requires both ownership fields before creating directories, ignoring all retired inputs", () => {
+  it("creates without personnel and rejects retired flags", () => {
     seedRetired("local-owner");
     const before = retiredSnapshot();
-    for (const args of [[], ["--creator", "alice"], ["--assignee", "bob"]]) {
+    for (const args of [["--creator", "alice"], ["--assignee", "bob"]]) {
       const result = run("task.py", "create", "Example", "--description", "Fixture", ...args);
       expect(result.status, result.stderr).toBe(2);
-      expect(result.stderr).toContain("explicit task ownership");
+      expect(result.stderr).toContain("unrecognized arguments");
       expect(fs.existsSync(path.join(root, ".trellis/tasks"))).toBe(false);
       expect(result.stderr).not.toContain("local-owner");
     }
-    const result = run("task.py", "create", "Example", "--description", "Fixture", "--creator", "alice", "--assignee", "bob", "--no-start");
+    const result = run("task.py", "create", "Example", "--description", "Fixture", "--no-start");
     expect(result.status, result.stderr).toBe(0);
     const tasks = path.join(root, ".trellis/tasks");
     const task = JSON.parse(fs.readFileSync(path.join(tasks, fs.readdirSync(tasks)[0], "task.json"), "utf8"));
-    expect(task).toMatchObject({ creator: "alice", assignee: "bob" });
+    expect(task).not.toHaveProperty("creator");
+    expect(task).not.toHaveProperty("assignee");
     expect(retiredSnapshot()).toEqual(before);
   });
 
-  it("filters matching children even when their parent does not match; --mine never broadens", () => {
+  it("filters children by status and rejects personnel filters", () => {
     write(".trellis/tasks/parent/task.json", JSON.stringify({ title: "Parent", assignee: "alice", status: "planning", children: ["child"] }));
     write(".trellis/tasks/child/task.json", JSON.stringify({ title: "Child", assignee: "bob", status: "in_progress", parent: "parent" }));
-    const text = run("task.py", "list", "--assignee", "bob", "--status", "in_progress");
+    const text = run("task.py", "list", "--status", "in_progress");
     expect(text.status, text.stderr).toBe(0);
     expect(text.stdout).toContain("child/");
     expect(text.stdout).not.toContain("parent/");
-    const json = run("task.py", "list", "--assignee", "bob", "--json");
-    expect(JSON.parse(json.stdout).tasks.map((t: { assignee: string }) => t.assignee)).toEqual(["bob"]);
+    const json = run("task.py", "list", "--json");
+    expect(JSON.parse(json.stdout).tasks).toHaveLength(2);
+    expect(JSON.parse(json.stdout).tasks[0]).not.toHaveProperty("assignee");
+    const removed = run("task.py", "list", "--assignee", "bob");
+    expect(removed.status).toBe(2);
     for (const flag of ["--mine", "-m"]) {
       const retired = run("task.py", "list", flag, "--json");
       expect(retired.status).toBe(2);
       expect(retired.stdout).toBe("");
-      expect(retired.stderr).toContain("--assignee <name>");
+      expect(retired.stderr).toContain("explicit task paths");
     }
   });
 
@@ -113,20 +117,22 @@ describe("identity and workspace retirement runtime", () => {
     }
     const result = py(`
 from common import paths, config, task_queue, session_context
-for module, names in ((paths, ('get_developer', 'check_developer', 'get_workspace_dir', 'get_active_journal_file')), (config, ('get_session_auto_commit', 'get_session_commit_message', 'get_max_journal_lines')), (task_queue, ('list_my_tasks',)), (session_context, ('get_context_record_json', 'get_context_text_record'))):
+for module, names in ((paths, ('get_developer', 'check_developer', 'get_workspace_dir', 'get_active_journal_file')), (config, ('get_session_auto_commit', 'get_session_commit_message', 'get_max_journal_lines')), (task_queue, ('list_my_tasks', 'list_tasks_by_assignee')), (session_context, ('get_context_record_json', 'get_context_text_record'))):
     assert all(not hasattr(module, name) for name in names)
 `);
     expect(result.status, result.stderr).toBe(0);
     expect(retiredSnapshot()).toEqual(before);
   });
 
-  it("preserves ownership and retired bytes through task start, finish, rename and archive", () => {
+  it("preserves legacy fields and retired bytes through task start, finish, rename and archive", () => {
     seedRetired("old-name");
     write(".trellis/config.yaml", "task_auto_commit: false\n");
     git("checkout", "-qb", "task-lifecycle");
-    const created = run("task.py", "create", "Lifecycle", "--description", "Fixture", "--slug", "old-name", "--creator", "alice", "--assignee", "bob", "--base-branch", "main", "--no-start");
+    const created = run("task.py", "create", "Lifecycle", "--description", "Fixture", "--slug", "old-name", "--base-branch", "main", "--no-start");
     expect(created.status, created.stderr).toBe(0);
     const name = fs.readdirSync(path.join(root, ".trellis/tasks"))[0];
+    const taskFile = path.join(root, ".trellis/tasks", name, "task.json");
+    fs.writeFileSync(taskFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(taskFile, "utf8")), creator: "alice", assignee: "bob" }));
     const before = retiredSnapshot();
     const started = run("task.py", "start", name);
     expect(started.status, started.stderr).toBe(0);

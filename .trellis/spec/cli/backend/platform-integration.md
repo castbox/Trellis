@@ -1599,7 +1599,7 @@ Use parent/child task trees when a request contains multiple deliverables that c
 ### Signatures
 
 ```bash
-python3 ./.trellis/scripts/task.py create "<title>" --creator <creator> --assignee <assignee> --description "<one-line summary>" --slug <name> --parent <parent-dir>
+python3 ./.trellis/scripts/task.py create "<title>" --description "<one-line summary>" --slug <name> --parent <parent-dir>
 python3 ./.trellis/scripts/task.py add-subtask <parent-dir> <child-dir>
 python3 ./.trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
 ```
@@ -2110,13 +2110,13 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 
 ## Bootstrap Task Generation
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current ownership, preservation and compatibility contract.
+See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current task record, preservation and compatibility contract.
 
 Init derives bootstrap eligibility from installation/spec state, never identity
-file presence. New bootstrap tasks require explicit creator and assignee before
-mutation; existing bootstrap ownership is preserved. Re-init and adding a platform
-do not create per-developer joiner tasks. Test both the main init path and re-init
-fast path, including noninteractive missing-input rejection. Registry-derived
+file presence. New bootstrap tasks omit personnel fields; existing task JSON
+is preserved without interpreting historical personnel data. Re-init and adding
+a platform do not create per-developer joiner tasks. Test both the main init path
+and re-init fast path, including noninteractive task creation. Registry-derived
 platform tests must cover generated hooks, skills and enabled context paths.
 
 ## Common Mistakes

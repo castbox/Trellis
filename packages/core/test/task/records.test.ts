@@ -29,7 +29,6 @@ describe("loadTaskRecord / writeTaskRecord", () => {
         id: "demo",
         name: "demo",
         title: "Demo",
-        assignee: "developer",
       }),
     });
     const raw = fs.readFileSync(path.join(dir, "task.json"), "utf-8");
@@ -46,7 +45,6 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       id: "rt",
       name: "rt",
       title: "Round Trip",
-      assignee: "developer",
     });
     writeTaskRecord({ taskDir: dir, record });
     const loaded = loadTaskRecord({ taskDir: dir });
@@ -60,7 +58,7 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       string,
       unknown
     >;
-    delete partial.assignee;
+    delete partial.createdAt;
     fs.writeFileSync(
       path.join(dir, "task.json"),
       JSON.stringify(partial, null, 2) + "\n",
@@ -68,7 +66,7 @@ describe("loadTaskRecord / writeTaskRecord", () => {
     );
 
     expect(() => loadTaskRecord({ taskDir: dir })).toThrow(
-      /task.assignee is required/,
+      /task.createdAt is required/,
     );
   });
 
@@ -116,6 +114,8 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       // Simulate a field added by an external tool / future version.
       external_tracker: { id: "external-42", system: "external" },
       legacy_flag: true,
+      creator: "old-creator",
+      assignee: "old-assignee",
     };
     fs.writeFileSync(
       path.join(dir, "task.json"),
@@ -143,6 +143,9 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       system: "external",
     });
     expect(raw.legacy_flag).toBe(true);
+    expect(raw.creator).toBe("old-creator");
+    expect(raw.assignee).toBe("old-assignee");
+    expect(loadTaskRecord({ taskDir: dir })).not.toHaveProperty("assignee");
 
     // Canonical fields come first, unknown fields trail in original order.
     const keys = Object.keys(raw);
@@ -151,6 +154,8 @@ describe("loadTaskRecord / writeTaskRecord", () => {
     expect(keys.slice(canonicalCount)).toEqual([
       "external_tracker",
       "legacy_flag",
+      "creator",
+      "assignee",
     ]);
   });
 

@@ -146,7 +146,7 @@ with patch.object(Path, "open", audit(Path.open)), patch.object(Path, "iterdir",
     for argv in (["set-meta", ".trellis/tasks/old", "review", "changed"],
                  ["set-meta", "old", "review", "changed"],
                  ["list", "--json"], ["list-archive"],
-                 ["create", "New", "--description", "Active task", "--creator", "caller", "--assignee", "owner", "--no-start"],
+                 ["create", "New", "--description", "Active task", "--no-start"],
                  ["archive", "old", "--no-commit"]):
         with patch.object(sys, "argv", ["task.py", *argv]):
             assert task_cli.main() == 1, argv
@@ -192,7 +192,7 @@ for name in ("workspace", "agent-traces", ".backup-old", ".developer"):
                     pass
                 else:
                     raise AssertionError("historical configuration accepted")
-            with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--creator", "caller", "--assignee", "owner", "--no-start"]):
+            with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--no-start"]):
                 assert task_cli.main() == 1
         assert attempts == [], attempts
         assert historical.read_text() == text
@@ -215,7 +215,7 @@ config = workflow / "config.yaml"
 for value, expected in (("false", False), ("true", True)):
     config.write_text("task_auto_commit: " + value + "\\n")
     assert get_task_auto_commit(root) is expected
-with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--slug", "fresh", "--creator", "caller", "--assignee", "owner", "--no-start"]):
+with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--slug", "fresh", "--no-start"]):
     assert task_cli.main() == 0
 task = next(p for p in active.iterdir() if p.name != "archive")
 with patch.object(sys, "argv", ["task.py", "set-meta", task.name, "review", "active"]):
@@ -266,7 +266,7 @@ with patch.object(Path, "open", audit(Path.open)), patch.object(Path, "iterdir",
         assert task_cli.main() == 0
     assert "HISTORICAL-TITLE" not in output.getvalue()
     assert "Active task" in output.getvalue()
-    with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--slug", "old", "--creator", "caller", "--assignee", "owner", "--no-start", "--force"]):
+    with patch.object(sys, "argv", ["task.py", "create", "New", "--description", "Active task", "--slug", "old", "--no-start", "--force"]):
         assert task_cli.main() == 1
     with patch.object(sys, "argv", ["task.py", "set-meta", str(alias), "review", "changed"]):
         assert task_cli.main() == 1

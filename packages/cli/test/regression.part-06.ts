@@ -736,10 +736,7 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
   function create(slug: string, parent?: string): string {
     const args = [
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       slug,
       "--description",
       "rename fixture",

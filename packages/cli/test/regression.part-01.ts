@@ -286,10 +286,7 @@ describe("regression: resolve_task_dir containment chokepoint", () => {
   it("[audit] create --slug with traversal fails and writes nothing outside the tasks dir", () => {
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Evil",
       "--description",
       "regression fixture",
@@ -454,10 +451,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "First",
         "--description",
         "regression fixture",
@@ -480,10 +474,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Second",
       "--description",
       "regression fixture",
@@ -500,10 +491,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "First",
         "--description",
         "regression fixture",
@@ -517,10 +505,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Second",
       "--description",
       "regression fixture",
@@ -541,10 +526,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Kid",
         "--description",
         "regression fixture",
@@ -584,10 +566,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Kid",
         "--description",
         "regression fixture",
@@ -611,10 +590,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
   it("[audit] create --parent on a missing task fails and creates nothing", () => {
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Orphan",
       "--description",
       "regression fixture",
@@ -637,10 +613,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Orphan",
       "--description",
       "regression fixture",
@@ -659,10 +632,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     expect(
       runTask(
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Mum",
         "--description",
         "regression fixture",
@@ -676,10 +646,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
 
     const r = runTask(
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "Kid",
       "--description",
       "regression fixture",
@@ -705,10 +672,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Mum",
           "--description",
           "regression fixture",
@@ -720,10 +684,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Kid",
           "--description",
           "regression fixture",
@@ -755,10 +716,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Mum",
           "--description",
           "regression fixture",
@@ -772,10 +730,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       expect(
         runTask(
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Kid",
           "--description",
           "regression fixture",
@@ -870,10 +825,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Broken",
         "--description",
         "regression fixture",
@@ -901,10 +853,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Latin",
         "--description",
         "regression fixture",
@@ -931,10 +880,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Typed",
         "--description",
         "regression fixture",
@@ -962,10 +908,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Locked",
           "--description",
           "regression fixture",
@@ -1003,10 +946,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Ro",
           "--description",
           "regression fixture",
@@ -1038,10 +978,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "First",
           "--description",
           "regression fixture",
@@ -1056,10 +993,7 @@ describe("regression: JSON read/write failure reporting", () => {
       try {
         const r = runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Second",
           "--description",
           "regression fixture",
@@ -1086,10 +1020,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Mum",
           "--description",
           "regression fixture",
@@ -1103,10 +1034,7 @@ describe("regression: JSON read/write failure reporting", () => {
       expect(
         runTask([
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Kid",
           "--description",
           "regression fixture",
@@ -1147,10 +1075,6 @@ describe("regression: JSON read/write failure reporting", () => {
           title,
           "--description",
           "regression fixture",
-          "--creator",
-          "regression-fixture",
-          "--assignee",
-          "regression-fixture",
           "--slug",
           slug,
           "--no-start",
@@ -1211,10 +1135,6 @@ describe("regression: JSON read/write failure reporting", () => {
           title,
           "--description",
           "regression fixture",
-          "--creator",
-          "regression-fixture",
-          "--assignee",
-          "regression-fixture",
           "--slug",
           slug,
           "--no-start",
@@ -1260,10 +1180,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Good",
         "--description",
         "regression fixture",
@@ -1275,10 +1192,7 @@ describe("regression: JSON read/write failure reporting", () => {
     expect(
       runTask([
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Bad",
         "--description",
         "regression fixture",
@@ -1305,10 +1219,7 @@ describe("regression: JSON read/write failure reporting", () => {
       runTask(
         [
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Rot",
           "--description",
           "regression fixture",
@@ -1340,10 +1251,7 @@ describe("regression: JSON read/write failure reporting", () => {
       runTask(
         [
           "create",
-          "--creator",
-          "fixture-creator",
-          "--assignee",
-          "test-dev",
+
           "Live",
           "--description",
           "regression fixture",
@@ -1397,10 +1305,7 @@ describe("regression: JSON read/write failure reporting", () => {
         runTask(
           [
             "create",
-            "--creator",
-            "fixture-creator",
-            "--assignee",
-            "test-dev",
+
             "One",
             "--description",
             "regression fixture",
@@ -1415,10 +1320,7 @@ describe("regression: JSON read/write failure reporting", () => {
         runTask(
           [
             "create",
-            "--creator",
-            "fixture-creator",
-            "--assignee",
-            "test-dev",
+
             "Two",
             "--description",
             "regression fixture",
@@ -1735,10 +1637,7 @@ describe("regression: task auto-activation failure diagnostics (issue #430)", ()
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "issue-430 probe",
         "--description",
         "regression fixture",

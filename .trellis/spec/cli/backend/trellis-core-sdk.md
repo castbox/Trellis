@@ -204,6 +204,7 @@ Rule of thumb when changing task behavior:
   injection (Python shared hook ↔ Pi extension) — see the Context Injection
   Limits Contract in platform-integration.md.
 
-Task creator and assignee are explicit caller fields; no core or CLI fallback
-may infer a person from Git, environment or retired storage.
+Task personnel fields are absent from the canonical SDK record. Historical
+JSON properties remain unknown data and are preserved by generic write-back;
+no core or CLI fallback infers a person from Git, environment or retired storage.
 See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).

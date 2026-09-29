@@ -139,7 +139,8 @@ describe("trellis template constants", () => {
       : path.resolve(process.cwd(), "../..");
     const workflow = fs.readFileSync(path.join(repoRoot, ".trellis/workflow.md"), "utf-8");
     for (const content of [workflow, workflowMdTemplate]) {
-      expect(content).toContain("--creator <creator> --assignee <assignee>");
+      expect(content).toContain("task.py create \"<task title>\" --description \"<summary>\"");
+      expect(content).not.toContain("--creator <creator> --assignee <assignee>");
       expect(content).not.toMatch(/init_developer|add_session|--mine|### Workspace System/);
     }
   });

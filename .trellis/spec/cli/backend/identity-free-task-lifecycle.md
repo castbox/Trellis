@@ -2,29 +2,29 @@
 
 ## 1. Scope / Trigger
 
-Current contract for identity/workspace retirement (#3): installation, update,
-task factories, session context, archive, context trust, and managed storage.
+Current contract for identity/workspace retirement (#3) and task personnel
+retirement (#23): installation, update, task factories, session context,
+archive, context trust, and managed storage.
 This supersedes historical identity/journal contracts, not platform session
 keys, Git worktrees, package-manager workspaces, or raw `trellis mem` stores.
 
 ## 2. Signatures
 
 ```sh
-python3 .trellis/scripts/task.py create "Example" --description "Example task" --creator alice --assignee bob
-python3 .trellis/scripts/task.py list --assignee bob --status in_progress --json
+python3 .trellis/scripts/task.py create "Example" --description "Example task"
+python3 .trellis/scripts/task.py list --status in_progress --json
 python3 .trellis/scripts/task.py current --source
 python3 .trellis/scripts/get_context.py --mode default --json
-trellis init --yes --codex --creator alice --assignee bob
-trellis update --migrate --assignee bob
+trellis init --yes --codex
+trellis update --migrate
 ```
 
 - Python `common.config.get_task_auto_commit(repo_root: Path | None = None) -> bool`.
 - `common.safe_commit.safe_archive_paths_to_add(repo_root: Path,
   archive_dest: Path, modified_children: list[str] | None = None) -> list[str]`
   receives the exact archive destination; `safe_trellis_paths_to_add` is removed.
-- `common.task_queue.list_tasks_by_assignee(assignee: str,
-  filter_status: str | None = None, repo_root: Path | None = None) -> list[dict]`;
-  `list_my_tasks` is removed.
+- `common.task_queue.list_tasks_by_status(filter_status: str | None = None,
+  repo_root: Path | None = None) -> list[dict]`; personnel filtering is removed.
 - Storage guards: `isRetiredDataPath(filePath: string, trellisRoot?: string): boolean`,
   `resolveTrellisDataRoot(cwd: string): string`,
   `activeTrellisChildren(trellisDir: string): string[]`, and
@@ -38,29 +38,35 @@ trellis update --migrate --assignee bob
 
 ## 3. Contracts
 
-### Ownership and routing
+### Task records and routing
 
-| Creator of a new task | Creator input | Assignee input |
-| --- | --- | --- |
-| `task.py create` / automated factory | Explicit caller field | Explicit caller field |
-| Init bootstrap | `--creator` or invocation-local interactive answer | `--assignee` or invocation-local interactive answer |
-| Update migration task | Fixed actor `trellis-update` | `--assignee` or invocation-local interactive answer |
-
-Both fields must be nonempty before task writes. Do not copy assignee to creator,
-infer either from Git configuration, environment identity, another task or main
-worktree. Init/update that create no task need no ownership input. Reuse existing
-task metadata without rewriting owners. Bootstrap follows install/spec state;
-there is no automatic per-developer joiner task.
+`task.py create`, bootstrap init and migration update require no person input.
+New task records omit task personnel fields. Old task JSON may still contain
+them as uninterpreted unknown data; loaders, routing, checks and archive do not
+read them or require backfill. Generic raw-record write-back preserves unknown
+properties, but no task factory emits them. No implicit Git, environment,
+GitHub or Issue identity replaces the retired fields. Bootstrap follows
+install/spec state; there is no automatic per-developer joiner task.
 
 Task selection uses explicit task arguments or validated session bindings plus
-checkout/Git facts, never personal ownership. `list --assignee` is an exact filter
-in text/tree and JSON, composable with status. Default context distinguishes the
-current-session task from project task inventory; it removes identity, workspace,
+checkout/Git facts. Status filtering remains available in text/tree and JSON.
+Default context distinguishes the current-session task from project task
+inventory; it removes identity, workspace,
 index, journal and inferred personal-task fields without historical fallbacks.
 Default JSON removes `developer` and `journal` (including `file`, `lines`,
 `nearLimit`). It retains `git`, `tasks.active`, `tasks.directory`, optional
 `packageGit`, and adds `currentTask: {path, source, contextKey} | null`.
 `tasks.active` is project inventory, not a personal or current-session selection.
+
+The outer Trellis workflow owns task-creation consent, `task.py create`,
+planning artifact paths, context manifests, artifact review and `task.py start`.
+`trellis-brainstorm` is callable without a task: it researches requirements,
+asks substantive product questions and returns reviewable planning content.
+With a caller-supplied destination it writes there; without one it returns
+content in conversation. It must not create/select a task or directory, bind a
+session, change lifecycle status or request lifecycle approval. This allows
+other workflows to reuse the complete requirement method without adopting
+Trellis task lifecycle.
 
 ### Data, archive and upgrade
 
@@ -185,7 +191,7 @@ scoped Git checks and selected-task archive, with no recording step.
 Git status/diff subprocesses exclude retired paths in their arguments, not after
 reading them. Do not confuse Git's index with the retired Markdown index.
 
-Update preflights task ownership, required managed-file conflicts and workflow
+Update preflights required managed-file conflicts and workflow
 compatibility before writes/backups/receipts. A skipped required runtime file or
 `.new`-only result blocks convergence; force never overrides historical protection.
 Postcheck enabled assets and generated instructions before version/hash completion.
@@ -208,11 +214,13 @@ authorization for implicit downgrades, and does not generate a migration task.
 
 | Input / condition | Required result |
 | --- | --- |
-| Missing creator or assignee on task creation | Exit 2 before task writes; name missing input |
-| Noninteractive init/update needs unresolved ownership | Exit 2 before installation/update mutation; never prompt |
-| Existing task operation | No new ownership gate or owner backfill |
+| Missing task title or description | Reject before task writes |
+| Old task record has or lacks personnel fields | Same continue/check/archive behavior; no backfill |
+| Retired task personnel CLI flag | Argument error; never consume or record value |
+| Brainstorm without a task or output destination | Return planning content in conversation; no task or session write |
+| Ordinary Trellis planning | Caller creates task and supplies artifact paths; brainstorm only plans |
 | `--mine`, record mode, retired init flag/script | Nonzero retirement diagnostic; no historical access |
-| Explicit assignee has no matches | Empty result, never broaden to all tasks |
+| Status filter has no matches | Empty result, never broaden to all tasks |
 | Retired context/trust path | Reject before content access |
 | Required customized runtime cannot converge | Nonzero before writes; files/tasks/hashes/version unchanged |
 | Old recovery transaction includes retired data | Refuse before historical access or mutation |
@@ -220,17 +228,18 @@ authorization for implicit downgrades, and does not generate a migration task.
 
 ## 5. Good/Base/Bad Cases
 
-- Good: caller supplies distinct creator/assignee; task creation and resume behave
-  identically with absent or different historical data.
-- Base: existing task is resumed and archived without any new person input.
+- Good: new task creation works without personnel input or fields; old tasks
+  with arbitrary historical personnel values behave identically.
+- Base: existing task is resumed and archived without person input.
 - Bad: resolve `.developer` from the main worktree, use Git user.name as hidden
   authority, read journals to reconstruct current context, or mark a partial
   runtime upgrade successful because files were copied.
 
 ## 6. Tests Required
 
-- `task-meta`, `task-list-tree`, and `task-archive` integration suites: missing
-  input/no writes, exact text/JSON filters, stable ownership, parallel-task staging,
+- `task-meta`, `task-list-tree`, and `task-archive` integration suites: task
+  creation without person fields, exact text/JSON status filters, legacy records,
+  parallel-task staging,
   default/legacy/new config precedence, explicit opt-out and archive failures.
 - Init/update/workflow suites: fresh/repeated init, both init paths, no joiner,
   customized required conflicts, same-version retry, and cumulative instructions
@@ -244,7 +253,7 @@ authorization for implicit downgrades, and does not generate a migration task.
   missing OS-level read evidence is a reported gap, not a passing zero-read claim.
 - Fix HEAD, task, caller and non-retired files; vary historical trees/environment
   and tracked/untracked history. Normalize timestamps/fixture roots only. Compare
-  exits, selected task, owners, context, scoped dirty status and finish decisions.
+  exits, selected task, context, scoped dirty status and finish decisions.
 
 ## 7. Cross-Worktree Session Contract
 
@@ -325,8 +334,8 @@ Correct: reject error/stale, use `active.resolved_task_path` and
 # Wrong: implicit personal selection and removed recording workflow.
 python3 .trellis/scripts/task.py list --mine
 
-# Correct: operation-local filtering; no identity is persisted.
-python3 .trellis/scripts/task.py list --assignee bob --json
+# Correct: filter by task status; no identity is persisted.
+python3 .trellis/scripts/task.py list --status in_progress --json
 ```
 
 Use [Release Process](./release-process.md) for fixed-version fork delivery.

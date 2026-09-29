@@ -552,20 +552,14 @@ etc.) I can pull from, or should I scan the codebase from scratch?"
   return content;
 }
 
-interface TaskOwnership {
-  creator: string;
-  assignee: string;
-}
-
 function getBootstrapTaskJson(
-  ownership: TaskOwnership,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): TaskJson {
   const today = new Date().toISOString().split("T")[0];
   const relatedFiles = getBootstrapRelatedFiles(projectType, packages);
 
-  // Canonical 24-field shape via emptyTaskJson factory.
+  // Canonical task shape via emptyTaskJson factory.
   // Checklist items (previously stored as structured `subtasks`) are now
   // rendered as `- [ ]` items in prd.md; task.json.subtasks is always
   // string[] (child task dir names) per the canonical schema.
@@ -577,8 +571,6 @@ function getBootstrapTaskJson(
     status: "in_progress",
     dev_type: "docs",
     priority: "P1",
-    creator: ownership.creator,
-    assignee: ownership.assignee,
     createdAt: today,
     relatedFiles,
     notes: `First-time setup task created by trellis init (${projectType} project)`,
@@ -590,12 +582,11 @@ function getBootstrapTaskJson(
  */
 function createBootstrapTask(
   cwd: string,
-  ownership: TaskOwnership,
   pythonCmd: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): boolean {
-  const taskJson = getBootstrapTaskJson(ownership, projectType, packages);
+  const taskJson = getBootstrapTaskJson(projectType, packages);
   const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
   return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
 }
@@ -795,8 +786,6 @@ interface InitOptions {
   yes?: boolean;
   /** Retired identity option; accepted only to emit migration guidance. */
   user?: string;
-  creator?: string;
-  assignee?: string;
   force?: boolean;
   skipExisting?: boolean;
   template?: string;
@@ -872,9 +861,7 @@ interface InitAnswers {
 
 export async function init(options: InitOptions): Promise<void> {
   if (options.user !== undefined) {
-    console.error(
-      "--user/-u is retired. Use --creator and --assignee for a new bootstrap task; no global identity is created.",
-    );
+    console.error("--user/-u is retired; no global identity is created.");
     process.exit(2);
   }
   // Refuse to run in $HOME — running here would scoop platform runtime data
@@ -968,22 +955,6 @@ export async function init(options: InitOptions): Promise<void> {
   const needsBootstrap =
     (isFirstInit || tasksEmptyEarly) &&
     !fs.existsSync(path.join(cwd, PATHS.TASKS, BOOTSTRAP_TASK_NAME));
-  let ownership: TaskOwnership | undefined;
-  if (needsBootstrap) {
-    let creator = options.creator?.trim();
-    let assignee = options.assignee?.trim();
-    if ((!creator || !assignee) && !options.yes && process.stdin.isTTY) {
-      creator ??= (await askInput("Bootstrap task creator: ")).trim();
-      assignee ??= (await askInput("Bootstrap task assignee: ")).trim();
-    }
-    if (!creator || !assignee) {
-      console.error(
-        "Bootstrap task requires explicit --creator and --assignee. No identity is initialized.",
-      );
-      process.exit(2);
-    }
-    ownership = { creator, assignee };
-  }
 
   // Detect project type (silent - no output)
   const detectedType = detectProjectType(cwd);
@@ -1755,14 +1726,8 @@ export async function init(options: InitOptions): Promise<void> {
   }
 
   if (
-    ownership &&
-    !createBootstrapTask(
-      cwd,
-      ownership,
-      pythonCmd,
-      projectType,
-      monorepoPackages,
-    )
+    needsBootstrap &&
+    !createBootstrapTask(cwd, pythonCmd, projectType, monorepoPackages)
   ) {
     throw new Error("Could not create bootstrap task.");
   }

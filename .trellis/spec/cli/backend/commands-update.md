@@ -33,7 +33,6 @@ trellis update
   [-n, --create-new]     write `.new` copies for changed files
   [--allow-downgrade]    permit CLI < project version
   [--migrate]            apply pending file migrations (renames/deletes)
-  [--assignee <name>]    explicit owner for a new migration task
 ```
 
 The action handler in `cli/index.ts` constructs `UpdateOptions` and calls `commands/update.ts:update`. There is no env override surface today — flags are the only knobs. (Note: `setupProxy()` in `commands/update.ts:update` reads `HTTP_PROXY` / `HTTPS_PROXY` for the npm version check, but that's the only env input.)
@@ -48,7 +47,6 @@ interface UpdateOptions {
   createNew?: boolean;
   allowDowngrade?: boolean;
   migrate?: boolean;
-  assignee?: string;
 }
 ```
 
@@ -229,7 +227,7 @@ version/hash completion. See [Identity-Free Task Lifecycle](./identity-free-task
 
 7. **`configSectionsAdded`** — only on real upgrades (`cliVsProject > 0`, `projectVersion !== "unknown"`). `commands/update.ts:applyConfigSectionsAdded` walks entries from `migrations/index.ts:getConfigSectionsAddedBetween`, dedupes by `file::sentinel`, skips any whose sentinel is already present in the user's file (idempotent), and appends the named section extracted via `commands/update.ts:extractConfigSection`. This is the only path that can grow `.trellis/config.yaml` without going through the conflict prompt — by design, since users routinely edit other parts of `config.yaml` (`task_auto_commit`, `packages`, etc.) and a hash-mismatch overwrite would either lose those edits (`y`) or starve the project of new sections (`n`). See `migrations.md` § `configSectionsAdded` for the schema.
 
-8. **Migration task and postchecks** use explicit `trellis-update` creator and invocation-local assignee. Target-owned cumulative guidance replaces historical prose concatenation. Reused tasks preserve metadata/custom bytes; incompatible instructions block preflight. Validate installed enabled entry points and generated instructions before receipts. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).
+8. **Migration task and postchecks** create records without task personnel fields. Target-owned cumulative guidance replaces historical prose concatenation. Reused tasks preserve metadata/custom bytes; incompatible instructions block preflight. Validate installed enabled entry points and generated instructions before receipts. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).
 
 9. **Hash refresh** — every newly-written file (`newFiles`, `autoUpdateFiles`, overwritten `changedFiles`, plus any `missingAgentsMdHash` entry from `collectMissingAgentsMdHash`) gets its hash recomputed and saved via `utils/template-hash.ts:updateHashes`. `.new` copies and skipped files do NOT get their hash updated — the original file's recorded hash continues to drive the next-update conflict decision.
 
@@ -325,8 +323,9 @@ OpenCode's plugin pattern installs npm dependencies under `.opencode/`. Without 
 ### Historical Incident: Identity File Parsing
 
 Earlier migration-task code read a key/value identity file as a raw string and
-corrupted assignee metadata. Both parsing routes are now retired: task ownership
-is explicit and no identity file is read. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract.
+corrupted historical task personnel metadata. Both parsing routes and the task
+personnel fields are now retired; no identity file is read. See
+[Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current contract.
 
 ### Idempotency churn after adding a placeholder
 

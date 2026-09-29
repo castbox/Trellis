@@ -8,25 +8,26 @@ authorized publication are still required for downstream installation.
 
 | Previous surface | Current action |
 | --- | --- |
-| Init `--user/-u` | Remove it; provide `--creator` and `--assignee` only when init creates a bootstrap task |
-| Task create with implicit owner | Supply both explicit fields; neither is inferred from Git or copied from the other |
-| Task list `--mine/-m` | Use `--assignee <name>`; exact filtering also works with `--json` and `--status` |
+| Init `--user/-u`, `--creator`, `--assignee` | Remove these options; bootstrap tasks have no personnel fields |
+| Task create with `--creator` or `--assignee` | Remove both options; title and description remain required |
+| Task list `--mine/-m` or `--assignee` | Use explicit task paths or `--status`; JSON listing has no personnel fields |
+| Update `--assignee` | Remove the option; migration tasks have no personnel fields |
 | Identity initialization/read scripts | Retired; no replacement global identity store |
 | Record context and session-recording commands | Retired; use default context and task-only finish/archive |
 | Automatic per-developer joiner task | Retired; explicitly create an onboarding task when needed |
 | `session_auto_commit` | Deprecated archive-only compatibility; use `task_auto_commit` |
 
 ```sh
-python3 .trellis/scripts/task.py create "Example" --description "Example task" --creator alice --assignee bob
-python3 .trellis/scripts/task.py list --assignee bob --status in_progress --json
+python3 .trellis/scripts/task.py create "Example" --description "Example task"
+python3 .trellis/scripts/task.py list --status in_progress --json
 python3 .trellis/scripts/get_context.py --json
-trellis init --yes --codex --creator alice --assignee bob
-trellis update --migrate --assignee bob
+trellis init --yes --codex
+trellis update --migrate
 ```
 
-Use the configured Python executable on Windows. Missing ownership on a new task
-fails before writes; noninteractive calls do not prompt. Existing task ownership
-is preserved and reading/resuming an existing task requires no new person input.
+Use the configured Python executable on Windows. New task records omit personnel
+fields. Historical task JSON remains usable and retains its old fields during
+generic write-back; reading, resuming and archiving require no person input.
 Task archive defaults to auto-commit as before. Explicit `task_auto_commit` wins
 over legacy `session_auto_commit`; absent both, the default is true. Explicit
 false remains an opt-out. Neither setting enables recording.
@@ -34,9 +35,10 @@ false remains an opt-out. Neither setting enables recording.
 ## Custom Integrations
 
 Remove imports of `common.developer`, `get_developer`, workspace/index/journal
-path helpers, and personal-task helpers. Replace `list_my_tasks` with
-`common.task_queue.list_tasks_by_assignee(assignee, filter_status=None,
-repo_root=None)` using explicit caller input. Archive configuration consumers use
+path helpers, and personal-task helpers. Replace `list_my_tasks` and
+`list_tasks_by_assignee` with explicit task paths or
+`common.task_queue.list_tasks_by_status(status, repo_root=None)`.
+Archive configuration consumers use
 `common.config.get_task_auto_commit(repo_root=None)`.
 `safe_trellis_paths_to_add` is removed. Archive callers provide the exact
 destination Path to `safe_archive_paths_to_add(repo_root, archive_dest,
@@ -87,7 +89,7 @@ this identity-free CLI; it does not run reverse migrations or restore retired
 data. Without that flag, downgrades remain refused. Follow the resolved
 current migration plan for surviving shell-to-Python, skill and platform changes.
 Do not concatenate obsolete historical manifest instructions. Reused migration
-tasks retain their custom text and ownership; incompatible instructions block
+tasks retain their custom text and historical unknown fields; incompatible instructions block
 until explicitly reconciled.
 
 Updates preserve leaf-link metadata for rollback. Unsupported symlink parents

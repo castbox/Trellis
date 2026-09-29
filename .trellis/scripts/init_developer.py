@@ -7,8 +7,7 @@ import sys
 def main() -> int:
     print(
         "Error: init_developer.py is retired. Developer identity and workspace recording "
-        "are no longer supported. Use task.py create --creator <name> "
-        "--assignee <name> and task.py finish/archive for task lifecycle.",
+        "are no longer supported. Use task.py create and task.py finish/archive for task lifecycle.",
         file=sys.stderr,
     )
     return 2

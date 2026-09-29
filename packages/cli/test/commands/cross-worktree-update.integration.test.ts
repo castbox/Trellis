@@ -171,7 +171,6 @@ function createFixture(): Fixture {
   run(fixture, primary, "git", ["config", "user.email", "fixture@example.invalid"]);
   cli(fixture, primary, [
     "init", "--yes", "--codex", "--claude", "--no-monorepo",
-    "--creator", "fixture-creator", "--assignee", "fixture-owner",
   ]);
   return fixture;
 }
@@ -191,8 +190,6 @@ function prepareLinkedTask(fixture: Fixture): void {
     title: taskTitle,
     description: "Installed runtime resolves this linked-worktree task from primary",
     status: "planning",
-    creator: "fixture-creator",
-    assignee: "fixture-owner",
   }));
   write(fixture.linked, `${taskRef}/prd.md`, "# Installed binding\n\nResolve the linked task.\n");
   for (const manifest of ["implement.jsonl", "check.jsonl"]) {

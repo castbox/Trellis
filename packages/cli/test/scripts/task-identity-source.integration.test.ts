@@ -53,7 +53,7 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
   afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
 
   it("creates a no-Issue task without branch metadata and archives it in a remote-backed repo", () => {
-    const created = task(repo, "create", "Standalone", "--description", "Local work", "--slug", "standalone", "--creator", "test", "--assignee", "test", "--no-start");
+    const created = task(repo, "create", "Standalone", "--description", "Local work", "--slug", "standalone", "--no-start");
     expect(created.status, created.stderr).toBe(0);
     const name = taskDir(repo, "standalone");
     const before = metadata(repo, name);
@@ -79,7 +79,7 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
 
   it("writes reviewed issue source on create and preserves it through rename and archive", () => {
     const source = { kind: "issue", repo_ref: "castbox/Trellis", number: 8, disposition: "exact_source" };
-    const created = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--task-id", "Issue_8", "--source-json", JSON.stringify(source), "--creator", "test", "--assignee", "test", "--no-start");
+    const created = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--task-id", "Issue_8", "--source-json", JSON.stringify(source), "--no-start");
     expect(created.status, created.stderr).toBe(0);
     const oldName = taskDir(repo, "issue-work");
     const file = path.join(repo, ".trellis/tasks", oldName, "task.json");
@@ -112,7 +112,7 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
       JSON.stringify({ kind: "issue", repo_ref: ".castbox/Trellis", number: 8, disposition: "exact_source" }),
       JSON.stringify({ kind: "issue", repo_ref: "castbox/_Trellis", number: 8, disposition: "exact_source" }),
     ]) {
-      const result = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--source-json", source, "--creator", "test", "--assignee", "test", "--no-start");
+      const result = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--source-json", source, "--no-start");
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("--source-json");
       expect(fs.existsSync(path.join(repo, ".trellis/tasks"))).toBe(false);
@@ -124,7 +124,7 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
       const slug = `source-${index}`;
       const source = { kind: "issue", repo_ref: repoRef, number: 8, disposition: "exact_source" };
       const created = task(repo, "create", "Issue work", "--description", "Issue delivery", "--slug", slug,
-        "--source-json", JSON.stringify(source), "--creator", "test", "--assignee", "test", "--no-start");
+        "--source-json", JSON.stringify(source), "--no-start");
       expect(created.status, created.stderr).toBe(0);
       expect(metadata(repo, taskDir(repo, slug)).source).toEqual(source);
     }
@@ -132,12 +132,12 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
 
   it("does not replace an existing TaskId or issue source with --force", () => {
     const source = { kind: "issue", repo_ref: "castbox/Trellis", number: 8, disposition: "exact_source" };
-    const args = ["create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--task-id", "Issue_8", "--source-json", JSON.stringify(source), "--creator", "test", "--assignee", "test", "--no-start"];
+    const args = ["create", "Issue work", "--description", "Issue delivery", "--slug", "issue-work", "--task-id", "Issue_8", "--source-json", JSON.stringify(source), "--no-start"];
     expect(task(repo, ...args).status).toBe(0);
     const name = taskDir(repo, "issue-work");
     const before = metadata(repo, name);
 
-    const replaced = task(repo, "create", "Other work", "--description", "Different task", "--slug", "issue-work", "--task-id", "other-id", "--creator", "test", "--assignee", "test", "--no-start", "--force");
+    const replaced = task(repo, "create", "Other work", "--description", "Different task", "--slug", "issue-work", "--task-id", "other-id", "--no-start", "--force");
     expect(replaced.status).toBe(1);
     expect(replaced.stderr).toContain("task_id_collision");
     expect(metadata(repo, name)).toEqual(before);
@@ -151,9 +151,9 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
     const linked = `${repo}-linked`;
     git(repo, "worktree", "add", "-q", "-b", "linked", linked, "HEAD");
     try {
-      const first = task(repo, "create", "First", "--description", "First task", "--slug", "first", "--task-id", "shared-id", "--creator", "test", "--assignee", "test", "--no-start");
+      const first = task(repo, "create", "First", "--description", "First task", "--slug", "first", "--task-id", "shared-id", "--no-start");
       expect(first.status, first.stderr).toBe(0);
-      const second = task(linked, "create", "Second", "--description", "Second task", "--slug", "second", "--task-id", "shared-id", "--creator", "test", "--assignee", "test", "--no-start");
+      const second = task(linked, "create", "Second", "--description", "Second task", "--slug", "second", "--task-id", "shared-id", "--no-start");
       expect(second.status).toBe(1);
       expect(second.stderr).toContain("task_id_collision");
       expect(fs.readdirSync(path.join(linked, ".trellis/tasks")).filter((entry) => entry !== "archive")).toEqual([]);
@@ -163,7 +163,7 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
   });
 
   it("rejects a legacy invalid TaskId before session binding or archive", () => {
-    const created = task(repo, "create", "Legacy", "--description", "Legacy task", "--slug", "legacy", "--creator", "test", "--assignee", "test", "--no-start");
+    const created = task(repo, "create", "Legacy", "--description", "Legacy task", "--slug", "legacy", "--no-start");
     expect(created.status, created.stderr).toBe(0);
     const name = taskDir(repo, "legacy");
     const file = path.join(repo, ".trellis/tasks", name, "task.json");

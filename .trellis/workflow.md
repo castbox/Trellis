@@ -16,7 +16,7 @@
 
 ### Task Ownership
 
-New tasks require explicit `--creator <name>` and `--assignee <name>` values supplied by the user or caller. Ask for missing values before creation; do not infer them from Git or session routing. Existing task metadata remains authoritative.
+New tasks require a non-empty title and description. Task lifecycle and planning artifact destinations belong to this workflow.
 
 ### Spec System
 
@@ -37,12 +37,12 @@ Every task has its own directory under `.trellis/tasks/{MM-DD-name}/` holding `t
 
 ```bash
 # Task lifecycle
-python3 ./.trellis/scripts/task.py create "<title>" --creator <creator> --assignee <assignee> [--slug <name>] [--parent <dir>]
+python3 ./.trellis/scripts/task.py create "<title>" --description "<summary>" [--slug <name>] [--parent <dir>]
 python3 ./.trellis/scripts/task.py start <name>          # set active task (session-scoped when available)
 python3 ./.trellis/scripts/task.py current --source      # show active task and source
 python3 ./.trellis/scripts/task.py finish                # clear active task (triggers after_finish hooks)
 python3 ./.trellis/scripts/task.py archive <name>        # move to archive/{year-month}/
-python3 ./.trellis/scripts/task.py list [--assignee <name>] [--status <s>]
+python3 ./.trellis/scripts/task.py list [--status <s>]
 python3 ./.trellis/scripts/task.py list-archive
 
 # Code-spec context (injected into implement/check agents via JSONL).
@@ -152,7 +152,7 @@ Use a parent task when one user request contains several independently verifiabl
 
 Use child tasks for deliverables that can be planned, implemented, checked, and archived independently. Parent/child structure is not a dependency system: if one child must wait for another, write that ordering in the child `prd.md` / `implement.md` and keep each child's acceptance criteria testable.
 
-Create new children with `task.py create "<title>" --creator <creator> --assignee <assignee> --slug <name> --parent <parent-dir>`. Link existing tasks with `task.py add-subtask <parent> <child>`, and unlink mistakes with `task.py remove-subtask <parent> <child>`.
+Create new children with `task.py create "<title>" --description "<summary>" --slug <name> --parent <parent-dir>`. Link existing tasks with `task.py add-subtask <parent> <child>`, and unlink mistakes with `task.py remove-subtask <parent> <child>`.
 
 <!-- Per-turn breadcrumb: shown when there is no active task (before Phase 1) -->
 
@@ -302,7 +302,7 @@ Goal: classify the request, get task-creation consent when a task is needed, and
 Create the task directory only after task-creation consent. The command sets status to `planning`, writes `task.json`, creates a default `prd.md`, and auto-targets the new task when session identity is available:
 
 ```bash
-python3 ./.trellis/scripts/task.py create "<task title>" --creator <creator> --assignee <assignee> --slug <name>
+python3 ./.trellis/scripts/task.py create "<task title>" --description "<summary>" --slug <name>
 ```
 
 `--slug` is the human-readable name only. Do **not** include the `MM-DD-` date prefix; `task.py create` adds that prefix automatically.
@@ -318,7 +318,7 @@ Skip when `python3 ./.trellis/scripts/task.py current --source` already points t
 
 #### 1.1 Requirement exploration `[required · repeatable]`
 
-Load the `trellis-brainstorm` skill and explore requirements interactively with the user per the skill's guidance.
+Load the `trellis-brainstorm` skill with the task's planning artifact paths and explore requirements interactively with the user. This workflow owns creation, context manifests, review approval, and activation.
 
 The brainstorm skill will guide you to:
 - Ask one question at a time
@@ -702,7 +702,7 @@ For the workflow state machine's runtime contract, the locations of all status w
 [trellis-continuation]
 ### Native workflow continuation
 
-Use only the exact current-session binding supplied by the active-task resolver. The binding's task identity, task workspace, and repository identity are authoritative. Project inventory, task counts, assignee, invocation checkout, artifact names, and previous conversation text must not select or replace the current task.
+Use only the exact current-session binding supplied by the active-task resolver. The binding's task identity, task workspace, and repository identity are authoritative. Project inventory, task counts, invocation checkout, artifact names, and previous conversation text must not select or replace the current task.
 
 Re-read the bound task and the current repository before every decision. `task.json.status` is a broad lifecycle hint, not proof that implementation, checking, spec update, commit, or finish has completed. Choose the first unmet required owner from live evidence and the ordered workflow steps.
 

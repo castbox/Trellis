@@ -83,9 +83,9 @@ identity-free runtime without reversing migrations or restoring retired APIs.
 Use Python 3.9 or newer. Replace task.sh with an explicit Python invocation
 of .trellis/scripts/task.py and get-context.sh with get_context.py.
 Use python3, or the installed Python executable selected on Windows.
-New tasks require --creator and --assignee; migration tasks use the fixed
-creator trellis-update and an explicit --assignee. Existing task ownership stays intact.
-Use list --assignee for explicit filtering. --mine and init --user are retired errors.
+New tasks use title and description. Their records omit personnel fields.
+Existing task personnel values remain untouched as historical data. Remove
+--creator, --assignee and list --assignee from active callers. --mine and init --user are retired errors.
 Identity, workspace APIs, record context and journal recording are retired,
 without replacement stores. Leave .trellis/.developer, .trellis/workspace and
 .trellis/agent-traces untouched, including indexes and arbitrary historical files.
@@ -116,7 +116,7 @@ selected custom automation. Never recursively scan .trellis or platform history.
 Exclude retired data before any traversal, content read, backup or Git status/diff probe.
 Reconcile custom enabled scripts, hooks and workflows before proceeding; skipped required
 files or .new sidecars alone cannot complete retirement. Review the exact remaining
-rename/delete plan, then run trellis update --migrate --assignee <explicit-owner>.
+rename/delete plan, then run trellis update --migrate.
 Verify enabled entry points and new task instructions; repeat update to confirm convergence.
 `;
 }
@@ -177,7 +177,12 @@ export function hasRetiredInstructions(content: string): boolean {
         /(?:>>?|<<)\s*[^\n]*?(?:\.trellis[\\/](?:workspace|agent-traces|\.developer)(?:[\\/]|\b)|\.developer\b)/i.test(
           clause,
         );
+      const taskPersonnelInstruction =
+        /(?:task\.py\s+(?:create|list)\b|\btrellis\s+(?:init|update)\b)[^\n]*--(?:creator|assignee)\b|\blist_tasks_by_assignee\b|\b(?:new|migration|bootstrap)\s+tasks?\s+(?:require|need)\s+[^\n.!?]*\b(?:creator|assignee)\b/i.test(
+          clause,
+        );
       return (
+        taskPersonnelInstruction ||
         /(?:get[-_]?developer|init[-_]?developer|add[-_]?session|get_?workspace_?dir|get_?active_?journal_?file|list_?my_?tasks|TRELLIS_DEVELOPER|(?:trellis[-:])?record-session)\b|--mode\s+record\b|(?:grep|rg)\s+-[^\n]*r[^\n]*\.trellis\//i.test(
           clause,
         ) ||

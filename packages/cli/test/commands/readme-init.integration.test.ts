@@ -26,8 +26,8 @@ describe("maintained quick-start commands", () => {
         const args = command.trim().split(/\s+/).slice(1);
         expect(args).not.toContain("-u");
         expect(args).not.toContain("--user");
-        expect(args).toContain("--creator");
-        expect(args).toContain("--assignee");
+        expect(args).not.toContain("--creator");
+        expect(args).not.toContain("--assignee");
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-readme-init-"));
         temporaryDirectories.push(dir);
         // Keep the documented flags; --yes only supplies a noninteractive test mode.
@@ -39,8 +39,8 @@ describe("maintained quick-start commands", () => {
         });
         expect(result.status, result.stderr || result.stdout).toBe(0);
         const task = JSON.parse(fs.readFileSync(path.join(dir, ".trellis/tasks/00-bootstrap-guidelines/task.json"), "utf8"));
-        expect(task.creator).toBe(args[args.indexOf("--creator") + 1]);
-        expect(task.assignee).toBe(args[args.indexOf("--assignee") + 1]);
+        expect(task).not.toHaveProperty("creator");
+        expect(task).not.toHaveProperty("assignee");
         expect(fs.existsSync(path.join(dir, ".trellis/.developer"))).toBe(false);
         expect(fs.existsSync(path.join(dir, ".trellis/workspace"))).toBe(false);
       }

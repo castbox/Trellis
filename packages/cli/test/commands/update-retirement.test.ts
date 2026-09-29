@@ -42,8 +42,6 @@ describe("retirement update transaction", () => {
     await init({
       yes: true,
       force: true,
-      creator: "fixture",
-      assignee: "fixture",
     });
   });
   afterEach(() => {
@@ -53,7 +51,7 @@ describe("retirement update transaction", () => {
   });
 
   it.each(["0.2.15", "0.6.15"])(
-    "upgrades %s without reading or backing up retired bytes, using explicit ownership",
+    "upgrades %s without reading or backing up retired bytes",
     async (source) => {
       write(".trellis/.version", source);
       const historical = {
@@ -89,7 +87,7 @@ describe("retirement update transaction", () => {
           throw new Error(`forbidden traversal ${name}`);
         return Reflect.apply(originalList, fs, [name, ...args]);
       }) as typeof fs.readdirSync);
-      await update({ force: true, migrate: true, assignee: "explicit-owner" });
+      await update({ force: true, migrate: true });
       readSpy.mockRestore();
       listSpy.mockRestore();
       for (const [name, content] of Object.entries(historical))
@@ -99,12 +97,9 @@ describe("retirement update transaction", () => {
         .filter((name) => name.endsWith(`migrate-to-${VERSION}`));
       expect(tasks).toHaveLength(1);
       const taskPath = `.trellis/tasks/${tasks[0]}`;
-      const metadata = JSON.parse(read(`${taskPath}/task.json`)) as {
-        creator: string;
-        assignee: string;
-      };
-      expect(metadata.creator).toBe("trellis-update");
-      expect(metadata.assignee).toBe("explicit-owner");
+      const metadata = JSON.parse(read(`${taskPath}/task.json`)) as Record<string, unknown>;
+      expect(metadata).not.toHaveProperty("creator");
+      expect(metadata).not.toHaveProperty("assignee");
       expect(metadata.lifecycle_generation).toBe(0);
       expect(metadata.source).toEqual({ kind: "no_issue" });
       expect(metadata).not.toHaveProperty("branch");
@@ -124,24 +119,20 @@ describe("retirement update transaction", () => {
     },
   );
 
-  it("missing noninteractive assignee exits 2 before receipts, backup or task writes", async () => {
+  it("creates a migration task without personnel input", async () => {
     write(".trellis/.version", "0.6.15");
-    const hashes = read(".trellis/.template-hashes.json");
-    const dirs = fs.readdirSync(path.join(root, ".trellis"));
-    vi.spyOn(process, "exit").mockImplementation((code) => {
-      throw new Error(`exit:${code}`);
-    });
-    await expect(update({ force: true, migrate: true })).rejects.toThrow(
-      "exit:2",
-    );
-    expect(read(".trellis/.version")).toBe("0.6.15");
-    expect(read(".trellis/.template-hashes.json")).toBe(hashes);
-    expect(fs.readdirSync(path.join(root, ".trellis"))).toEqual(dirs);
+    await update({ force: true, migrate: true });
+    const taskName = fs.readdirSync(path.join(root, ".trellis/tasks"))
+      .find((name) => name.includes("migrate-to-"));
+    expect(taskName).toBeDefined();
+    const metadata = JSON.parse(read(`.trellis/tasks/${taskName}/task.json`));
+    expect(metadata).not.toHaveProperty("creator");
+    expect(metadata).not.toHaveProperty("assignee");
   });
 
   it("does not reuse an archived migration task id on a later upgrade", async () => {
     write(".trellis/.version", "0.6.15");
-    await update({ force: true, migrate: true, assignee: "owner" });
+    await update({ force: true, migrate: true });
     const taskName = fs.readdirSync(path.join(root, ".trellis/tasks"))
       .find((name) => name.endsWith(`migrate-to-${VERSION}`));
     expect(taskName).toBeDefined();
@@ -151,7 +142,7 @@ describe("retirement update transaction", () => {
     fs.renameSync(path.join(root, ".trellis/tasks", taskName), path.join(archiveDir, taskName));
     await update({ force: true, migrate: true });
     write(".trellis/.version", "0.6.15");
-    await expect(update({ force: true, migrate: true, assignee: "owner" }))
+    await expect(update({ force: true, migrate: true }))
       .rejects.toThrow("Migration task id collision");
     expect(read(`.trellis/tasks/archive/2026-09/${taskName}/task.json`))
       .toContain(`"id": "migrate-to-${VERSION}"`);
@@ -188,7 +179,7 @@ describe("retirement update transaction", () => {
       write(".trellis/.version", "0.6.15");
       const receipt = read(".trellis/.template-hashes.json");
       const entries = fs.readdirSync(path.join(root, ".trellis"));
-      await expect(update({ skipAll: true, migrate: true, assignee: "owner" })).rejects.toThrow(
+      await expect(update({ skipAll: true, migrate: true })).rejects.toThrow(
         "Retirement requires reconciliation",
       );
       expect(read(".trellis/workflow.md")).toBe(workflow);
@@ -218,7 +209,7 @@ describe("retirement update transaction", () => {
     await init({ yes: true });
     expect(read(".trellis/workflow.md")).toBe(workflow);
     write(".trellis/.version", "0.6.15");
-    await update({ force: true, migrate: true, assignee: "owner" });
+    await update({ force: true, migrate: true });
     expect(read(".trellis/.version")).toBe(VERSION);
     expect(read(".trellis/workflow.md")).toBe(workflow);
     expect(loadHashes(root)[".trellis/workflow.md"]).toBe(receipt);
@@ -231,7 +222,7 @@ describe("retirement update transaction", () => {
     fs.symlinkSync(path.join(root, ".trellis/workspace"), tasks, "dir");
     const receipt = read(".trellis/.template-hashes.json");
     const readdir = vi.spyOn(fs, "readdirSync");
-    await expect(init({ yes: true, force: true, creator: "caller", assignee: "owner" })).rejects.toThrow("Retired identity/history");
+    await expect(init({ yes: true, force: true })).rejects.toThrow("Retired identity/history");
     expect(readdir.mock.calls.filter(([entry]) => String(entry) === tasks || String(entry).includes(".trellis/workspace"))).toEqual([]);
     expect(read(".trellis/workspace/history.txt")).toBe("historical bytes");
     expect(read(".trellis/.template-hashes.json")).toBe(receipt);
@@ -244,7 +235,7 @@ describe("retirement update transaction", () => {
     const receipt = read(".trellis/.template-hashes.json");
     const version = read(".trellis/.version");
     const entries = fs.readdirSync(path.join(root, ".trellis"));
-    await expect(update({ force, skipAll: !force, migrate: true, assignee: "owner" })).rejects.toThrow("Incompatible statusLine");
+    await expect(update({ force, skipAll: !force, migrate: true })).rejects.toThrow("Incompatible statusLine");
     expect(JSON.parse(read(".claude/settings.json"))).toEqual(settings);
     expect(read(".trellis/.template-hashes.json")).toBe(receipt);
     expect(read(".trellis/.version")).toBe(version);
@@ -257,7 +248,7 @@ describe("retirement update transaction", () => {
     write(".claude/settings.json", JSON.stringify(settings));
     write(".trellis/.developer", "name=historical\n");
     write(".trellis/.version", "0.6.15");
-    await expect(update({ force: true, migrate: true, assignee: "owner" })).rejects.toThrow("Incompatible statusLine");
+    await expect(update({ force: true, migrate: true })).rejects.toThrow("Incompatible statusLine");
     expect(read(".trellis/.version")).toBe("0.6.15");
     expect(read(".claude/settings.json")).toContain("cat .trellis/.developer");
   });
@@ -274,7 +265,7 @@ describe("retirement update transaction", () => {
   it("force reapply replaces rather than preserves a workflow with a commented legacy command", async () => {
     const workflow = "# Custom workflow\n```sh\npython3 .trellis/scripts/init_developer.py alice # deprecated\n```\n";
     write(".trellis/workflow.md", workflow);
-    await update({ force: true, migrate: true, assignee: "owner" });
+    await update({ force: true, migrate: true });
     expect(read(".trellis/workflow.md")).not.toBe(workflow);
     expect(read(".trellis/workflow.md")).not.toContain("init_developer.py alice");
   });
@@ -294,8 +285,6 @@ describe("retirement update transaction", () => {
         yes: true,
         force: true,
         copilot: true,
-        creator: "fixture",
-        assignee: "fixture",
       });
       const name = ".github/prompts/record-session.prompt.md";
       // Exact pre-retirement shipped prompt, not synthetic command text.
@@ -317,14 +306,14 @@ describe("retirement update transaction", () => {
         const receipt = read(".trellis/.template-hashes.json");
         const entries = fs.readdirSync(path.join(root, ".trellis"));
         await expect(
-          update({ migrate: true, skipAll: true, assignee: "owner" }),
+          update({ migrate: true, skipAll: true }),
         ).rejects.toThrow(name);
         expect(read(name)).toBe(content);
         expect(read(".trellis/.version")).toBe("0.6.15");
         expect(read(".trellis/.template-hashes.json")).toBe(receipt);
         expect(fs.readdirSync(path.join(root, ".trellis"))).toEqual(entries);
       }
-      await update({ migrate: true, force: customized, assignee: "owner" });
+      await update({ migrate: true, force: customized });
       expect(fs.existsSync(path.join(root, name))).toBe(false);
       expect(loadHashes(root)[name]).toBeUndefined();
       expect(read(".trellis/.version")).toBe(VERSION);
@@ -349,7 +338,7 @@ describe("retirement update transaction", () => {
     const name = ".trellis/scripts/get-developer.sh";
     write(name, "#!/bin/sh\necho old identity\n");
     saveHashes(root, { ...loadHashes(root), [name]: computeHash(read(name)) });
-    await update({ force: true, migrate: true, assignee: "owner" });
+    await update({ force: true, migrate: true });
     expect(fs.existsSync(path.join(root, name))).toBe(false);
     expect(
       fs.existsSync(
@@ -375,14 +364,14 @@ describe("retirement update transaction", () => {
           throw new Error("Task write unavailable");
         originalWrite(name, content);
       });
-    await expect(update({ force: true, assignee: "owner" })).rejects.toThrow(
+    await expect(update({ force: true })).rejects.toThrow(
       "Update incomplete",
     );
     failingWrite.mockRestore();
     expect(read(script)).toBe("# previous stock runtime\n");
     expect(read(".trellis/.version")).toBe("0.6.15");
     expect(read(".trellis/.template-hashes.json")).toBe(receipt);
-    await update({ force: true, assignee: "owner" });
+    await update({ force: true });
     expect(read(".trellis/.version")).toBe(VERSION);
     expect(
       fs
@@ -407,7 +396,7 @@ describe("retirement update transaction", () => {
       const entries = fs.readdirSync(tasks);
       fs.chmodSync(tasks, 0o555);
       try {
-        await expect(update({ force: true, assignee: "owner" })).rejects.toThrow(
+        await expect(update({ force: true })).rejects.toThrow(
           /managed backup restoration completed.*EACCES/s,
         );
       } finally {
@@ -419,7 +408,7 @@ describe("retirement update transaction", () => {
       expect(read(".trellis/.version")).toBe("0.6.15");
       expect(read(".trellis/.template-hashes.json")).toBe(receipt);
       expect(fs.readdirSync(tasks)).toEqual(entries);
-      await update({ force: true, assignee: "owner" });
+      await update({ force: true });
       expect(read(".trellis/.version")).toBe(VERSION);
       expect(read("settings-target.json")).toBe("{}\n");
     },
@@ -438,7 +427,7 @@ describe("retirement update transaction", () => {
       const receipt = read(".trellis/.template-hashes.json");
       const entries = fs.readdirSync(path.join(root, ".trellis"));
       try {
-        await expect(update({ force: true, assignee: "owner" })).rejects.toThrow(
+        await expect(update({ force: true })).rejects.toThrow(
           "Unsupported managed symlink parent .claude",
         );
         expect(fs.readlinkSync(claude)).toBe(external);

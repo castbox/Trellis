@@ -12,7 +12,7 @@ vi.mock("node:child_process", () => ({
 import { execSync } from "node:child_process";
 import { init } from "../../src/commands/init.js";
 
-describe("init explicit task ownership and historical preservation", () => {
+describe("init task bootstrap and historical preservation", () => {
   let root: string;
 
   beforeEach(() => {
@@ -30,26 +30,16 @@ describe("init explicit task ownership and historical preservation", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it.each([
-    {},
-    { creator: "alice" },
-    { assignee: "bob" },
-    { creator: " ", assignee: "bob" },
-  ])("rejects unresolved ownership without writing: %j", async (owners) => {
-    await expect(init({ yes: true, ...owners })).rejects.toThrow("exit:2");
-    expect(fs.readdirSync(root)).toEqual([]);
-  });
-
   it("rejects retired user option before writes", async () => {
     await expect(init({ yes: true, user: "alice" })).rejects.toThrow("exit:2");
     expect(fs.readdirSync(root)).toEqual([]);
   });
 
-  it("creates bootstrap with distinct explicit owner fields and no workspace", async () => {
-    await init({ yes: true, codex: true, creator: "Alice Smith", assignee: "team/reviewer" });
+  it("creates bootstrap without personnel fields or workspace", async () => {
+    await init({ yes: true, codex: true });
     const task = JSON.parse(fs.readFileSync(path.join(root, ".trellis/tasks/00-bootstrap-guidelines/task.json"), "utf8"));
-    expect(task.creator).toBe("Alice Smith");
-    expect(task.assignee).toBe("team/reviewer");
+    expect(task).not.toHaveProperty("creator");
+    expect(task).not.toHaveProperty("assignee");
     expect(fs.existsSync(path.join(root, ".trellis/.developer"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".trellis/workspace"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".gitattributes"))).toBe(false);
@@ -79,8 +69,8 @@ describe("init explicit task ownership and historical preservation", () => {
     if (identity) expect(fs.readFileSync(identityFile, "utf8")).toBe(`name=${identity}\n`);
   });
 
-  it("repeated initialization preserves bootstrap metadata without owner input", async () => {
-    await init({ yes: true, codex: true, creator: "alice", assignee: "bob" });
+  it("repeated initialization preserves bootstrap metadata", async () => {
+    await init({ yes: true, codex: true });
     const file = path.join(root, ".trellis/tasks/00-bootstrap-guidelines/task.json");
     const before = fs.readFileSync(file);
     await init({ yes: true, codex: true, force: true });
@@ -91,7 +81,7 @@ describe("init explicit task ownership and historical preservation", () => {
   it("retains user merge attributes without provisioning a journal rule", async () => {
     const file = path.join(root, ".gitattributes");
     fs.writeFileSync(file, "*.txt text\n");
-    await init({ yes: true, codex: true, creator: "alice", assignee: "bob" });
+    await init({ yes: true, codex: true });
     expect(fs.readFileSync(file, "utf8")).toBe("*.txt text\n");
   });
 

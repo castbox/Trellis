@@ -293,7 +293,7 @@ a new writer requires updating this spec.**
 
 | # | Writer | File:Line | Value | Trigger |
 |---|--------|-----------|-------|---------|
-| 1 | `cmd_create` | `packages/cli/src/templates/trellis/scripts/common/task_store.py:206` | `"planning"` | `task.py create "<title>" --creator <creator> --assignee <assignee>` (also visibly auto-sets the session active-task pointer when session identity is available; `--no-start` skips pointer movement for backlog batching — see R7 in 04-30-workflow-state-commit-gap PRD) |
+| 1 | `cmd_create` | `packages/cli/src/templates/trellis/scripts/common/task_store.py` | `"planning"` | `task.py create "<title>" --description "<summary>"` (also visibly auto-sets the session active-task pointer when session identity is available; `--no-start` skips pointer movement for backlog batching — see R7 in 04-30-workflow-state-commit-gap PRD) |
 | 2 | `_record_start_state` (called from both `cmd_start` branches) | `packages/cli/src/templates/trellis/scripts/task.py` | `"in_progress"` (gated on prior `"planning"`; does not infer branch identity) | `task.py start <dir>` |
 | 3 | `cmd_archive` | `packages/cli/src/templates/trellis/scripts/common/task_store.py` | `"completed"` (flip + archive `mv`; preserves TaskId, source and generation without branch gating) | `task.py archive <dir>` |
 | 4 | `emptyTaskJson` factory | `packages/cli/src/utils/task-json.ts:54` | `"planning"` (default) | TS callers (init, update) |

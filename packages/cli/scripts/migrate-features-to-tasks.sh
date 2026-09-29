@@ -84,8 +84,6 @@ convert_feature_to_task() {
   "dev_type": null,
   "scope": null,
   "priority": "P2",
-  "creator": "$developer",
-  "assignee": "$developer",
   "createdAt": null,
   "completedAt": null,
   "branch": null,
@@ -118,16 +116,12 @@ EOF
         medium) priority="P2" ;;
         low) priority="P3" ;;
     esac
-    local old_developer=$(jq -r '.developer // empty' "$feature_json")
     local createdAt=$(jq -r '.createdAt // null' "$feature_json")
     local completedAt=$(jq -r '.completedAt // null' "$feature_json")
     local commit=$(jq -r '.commit // null' "$feature_json")
     local subtasks=$(jq -c '.subtasks // []' "$feature_json")
     local relatedFiles=$(jq -c '.relatedFiles // []' "$feature_json")
     local notes=$(jq -r '.notes // ""' "$feature_json")
-
-    # Use old developer if available, otherwise use the directory developer
-    local creator="${old_developer:-$developer}"
 
     # Generate task.json
     jq -n \
@@ -138,8 +132,6 @@ EOF
         --arg status "$status" \
         --arg dev_type "$dev_type" \
         --arg priority "$priority" \
-        --arg creator "$creator" \
-        --arg assignee "$creator" \
         --arg createdAt "$createdAt" \
         --arg completedAt "$completedAt" \
         --arg commit "$commit" \
@@ -155,8 +147,6 @@ EOF
           dev_type: (if $dev_type == "null" then null else $dev_type end),
           scope: null,
           priority: $priority,
-          creator: $creator,
-          assignee: $assignee,
           createdAt: (if $createdAt == "null" then null else $createdAt end),
           completedAt: (if $completedAt == "null" then null else $completedAt end),
           branch: null,

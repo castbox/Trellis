@@ -662,7 +662,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
         t = all_tasks[name]
         progress = children_progress(t.children, all_statuses)
         prefix = "  " * indent
-        lines.append(f"{prefix}- {name}/ ({t.status}){progress} @{t.assignee or '-'}")
+        lines.append(f"{prefix}- {name}/ ({t.status}){progress}")
         task_count += 1
         for child in t.children:
             if child in all_tasks:
