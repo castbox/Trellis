@@ -178,9 +178,6 @@ describe("opencode session-start history detection", () => {
     expect(context).toContain("<ready>");
     expect(context).not.toContain("say once in Chinese");
     expect(context).not.toContain("exactly one short Chinese sentence");
-    expect(context).not.toContain(
-      "Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。",
-    );
   });
 
   it("injects startup context onto the latest user message without mutating stored parts", async () => {

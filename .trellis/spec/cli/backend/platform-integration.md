@@ -1599,7 +1599,7 @@ Use parent/child task trees when a request contains multiple deliverables that c
 ### Signatures
 
 ```bash
-python3 ./.trellis/scripts/task.py create "<title>" --creator <creator> --assignee <assignee> --description "<one-line summary>" --slug <name> --parent <parent-dir>
+python3 ./.trellis/scripts/task.py create "<title>" --description "<one-line summary>" --slug <name> --parent <parent-dir>
 python3 ./.trellis/scripts/task.py add-subtask <parent-dir> <child-dir>
 python3 ./.trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
 ```
@@ -2110,13 +2110,13 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 
 ## Bootstrap Task Generation
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current ownership, preservation and compatibility contract.
+See [Task Lifecycle](./task-lifecycle.md) for the current task record, preservation and compatibility contract.
 
 Init derives bootstrap eligibility from installation/spec state, never identity
-file presence. New bootstrap tasks require explicit creator and assignee before
-mutation; existing bootstrap ownership is preserved. Re-init and adding a platform
-do not create per-developer joiner tasks. Test both the main init path and re-init
-fast path, including noninteractive missing-input rejection. Registry-derived
+file presence. New bootstrap tasks omit personnel fields; existing task JSON
+is preserved without interpreting historical personnel data. Re-init and adding
+a platform do not create per-developer joiner tasks. Test both the main init path
+and re-init fast path, including noninteractive task creation. Registry-derived
 platform tests must cover generated hooks, skills and enabled context paths.
 
 ## Common Mistakes
@@ -2277,7 +2277,7 @@ Note this is *only* about `{{…}}` placeholders. The separate `python3` → `py
 
 **Cause**: `init()` at `src/commands/init.ts` early-returns into `handleReinit` when `.trellis/` already exists and neither `--force` nor `--skip-existing` is set. Main dispatch at the end of `init()` is never reached. If the new trigger is only wired into main dispatch, the most common real-user path is uncovered.
 
-**Fix**: Wire the trigger into BOTH (a) the main-dispatch block near the end of `init()` AND (b) `handleReinit` platform branch, whichever is relevant. Use installation/spec state only; never identity or retired-data presence.
+**Fix**: Wire the trigger into BOTH (a) the main-dispatch block near the end of `init()` AND (b) `handleReinit` platform branch, whichever is relevant. Use installation/spec state.
 
 **Prevention**: Integration tests must cover the default path WITHOUT `force: true`. Any test using `force: true` bypasses `handleReinit` and is not testing real-user behavior. See "Bootstrap Task Generation" above for the current contract.
 
@@ -2291,4 +2291,3 @@ Note this is *only* about `{{…}}` placeholders. The separate `python3` → `py
 | main                          | Antigravity      | Workflows + skills from `common/`              | No physical template dir — one `collectBothTemplates()` call; no Codex coupling                |
 | #71                           | Qoder            | Skills (like Codex/Kiro)                       | Skills with YAML frontmatter; Trae was dropped (IDE-only, no deterministic invocation trigger) |
 | feat/v0.5.0-beta              | All platforms (13 at the time; 21 today) | Unified template architecture | Common templates + shared hooks + `createTemplateReader()` factory                    |
-| `04-21-bootstrap-onboard-gap` | n/a              | Three-branch init dispatch + joiner onboarding | Historical only: identity signal and automatic joiner are retired; fast-path coverage remains relevant        |

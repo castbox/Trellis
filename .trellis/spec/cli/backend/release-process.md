@@ -182,28 +182,19 @@ through a release-time blanket stage.
 > community-governance task files into the pre-release commit twice
 > (`5ee43ecc`, `ec123deb`). The maintainer had to `git rm --cached` three
 > times (`d66405d9`, `81960120`, `3c3219cf`) before finally tracking the
-> drafts to stop the bleed (`e83233c9`). The same staging-scope defect also
-> historically existed in the now-retired `add_session.py` (the #303 body) and in ad-hoc human/AI
-> `git add -A`. This contract exists so the release route can never re-open
+> drafts to stop the bleed (`e83233c9`). Ad-hoc human/AI `git add -A` can
+> create the same defect. This contract exists so the release route cannot re-open
 > that escape hatch. See `script-conventions.md` → "Absolute prohibition:
 > never blanket-stage" for the full bug-class writeup.
 
 ---
 
-## Manifest continuity across branches
+## Installed Version Boundary
 
-Each release branch maintains its own `packages/cli/src/migrations/manifests/<version>.json`. The CLI update logic walks the manifest chain between `fromVersion` and `toVersion`, so every published version that a user can upgrade through must have a local manifest on the release branch.
-
-When a stable patch manifest is missing from a beta branch:
-
-```bash
-git show main:packages/cli/src/migrations/manifests/<version>.json \
-  > packages/cli/src/migrations/manifests/<version>.json
-git add packages/cli/src/migrations/manifests/<version>.json
-git commit -m "chore: restore manifest <version> from main"
-```
-
-Restore published manifests deliberately. Do not auto-merge whole manifest directories across release branches, because branch-specific manifests can mention files that do not exist on the other branch.
+The CLI supports fresh initialization and same-version template reapplication.
+Published manifest files remain as release records and are not loaded by the
+current runtime. Release checks verify the paired package versions and bundled
+current assets.
 
 ---
 
@@ -220,17 +211,16 @@ pnpm release:promote
 
 `packages/cli/scripts/release.js` runs:
 
-1. `check-manifest-continuity`
-2. `check-docs-changelog --type beta|rc|promote` for prerelease/promotion tracks
-3. core tests
-4. CLI tests
-5. pre-release commit excluding `docs-site`, `marketplace`, and `.trellis`
-6. `bump-versions.js <type>` to update both package versions together
-7. `release-preflight check-versions`
-8. version commit with the version string as the commit message
-9. git tag `v<version>`
-10. push branch and tags
-11. GitHub Actions publish workflow builds, tests, packs, publishes, and verifies both packages
+1. `check-docs-changelog --type beta|rc|promote` for prerelease/promotion tracks
+2. core tests
+3. CLI tests
+4. pre-release commit excluding `docs-site`, `marketplace`, and `.trellis`
+5. `bump-versions.js <type>` to update both package versions together
+6. `release-preflight check-versions`
+7. version commit with the version string as the commit message
+8. git tag `v<version>`
+9. push branch and tags
+10. GitHub Actions publish workflow builds, tests, packs, publishes, and verifies both packages
 
 The release script does not publish locally. The pushed tag is what starts official npm publication.
 
@@ -300,7 +290,7 @@ printf '{"name":"trellis-smoke","version":"0.0.0"}\n' > "$tmpdir/package.json"
 git -C "$tmpdir" init -q
 (
   cd "$tmpdir"
-  node /path/to/Trellis/packages/cli/bin/trellis.js init --creator smoke --assignee smoke --yes --claude --codex
+  node /path/to/Trellis/packages/cli/bin/trellis.js init --yes --claude --codex
   test -f .claude/skills/<skill>/SKILL.md
   test -f .agents/skills/<skill>/SKILL.md
   grep -q '<skill>' .trellis/.template-hashes.json
@@ -314,7 +304,6 @@ git -C "$tmpdir" init -q
 
 - [ ] Worktree is clean except intentional release changes.
 - [ ] Relevant coding specs have been read.
-- [ ] Manifest exists for the target version.
 - [ ] English and Chinese docs-site changelogs exist and match 1:1.
 - [ ] `docs-site/docs.json` points to the new changelog.
 - [ ] Submodule commits are pushed before main repo pointer commits.
@@ -322,7 +311,6 @@ git -C "$tmpdir" init -q
 - [ ] `node packages/cli/scripts/release-preflight.js verify-packed-cli` passes.
 - [ ] Release-claimed bundled assets are verified in `npm pack --dry-run --json` and a fresh temp-directory `trellis init` / `trellis update --dry-run` smoke test.
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` pass or the blocker is recorded.
-- [ ] Breaking releases include `migrationGuide` and `aiInstructions` in the manifest.
 - [ ] Official package publication is left to CI.
 
 ---
@@ -330,19 +318,19 @@ git -C "$tmpdir" init -q
 ## Cross-references
 
 - Core/CLI code ownership and package boundaries: `trellis-core-sdk.md`
-- Manifest format and migration types: `migrations.md`
+- Installed version boundary: `installed-version.md`
 - Docs lifecycle: `.trellis/spec/docs-site/docs/release-lifecycle.md`
 - Native dependency policy: `quality-guidelines.md`
 
 ## Castbox Fixed-Version Delivery
 
-The retirement release uses paired `0.7.0-castbox.N` tarballs attached to a
+The fixed-version release uses paired `0.7.0-castbox.N` tarballs attached to a
 `castbox/Trellis` release, with `castbox-v<VERSION>` bound to the reviewed full
 SHA. Verify the next unused N before assigning it; never replace published bytes.
 This route does not invoke `release.js`, `publish-plan`, npm publish or upstream
 publish lifecycle hooks. Local validation is not authorization to tag/upload.
 
-Required assets: both package tarballs, SHA256SUMS, migration guide and manifest
+Required assets: both package tarballs, SHA256SUMS and release record
 (repository, full SHA, tag, version, filenames, checksums, exact CLI/core dependency).
 Keep existing package names and exact paired dependency; install both downloaded
 local tarballs together in an isolated consumer prefix and verify core resolution.

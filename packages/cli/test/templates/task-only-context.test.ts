@@ -16,28 +16,22 @@ afterEach(() => {
 });
 
 describe("task-only platform context", () => {
-  it.each(PLATFORM_IDS)("%s cannot regenerate retired workflow instructions", (platform) => {
+  it.each(PLATFORM_IDS)("%s provides task workflow instructions", (platform) => {
     const templates = collectPlatformTemplates(platform);
     expect(templates).toBeDefined();
     for (const [file, content] of templates ?? []) {
-      expect(file).not.toMatch(/record-session|workspace-index|workspace-memory/);
-      expect(content, `${platform}: ${file}`).not.toMatch(
-        /get_active_journal_file|get_developer\(|init_developer\.py|add_session\.py|--mode record|--mine\b|session_commit_message|max_journal_lines/,
-      );
       if (/finish-work/.test(file)) {
         expect(content).toContain("task.py archive");
         expect(content).toContain("--no-commit");
-        expect(content).not.toMatch(/journal|My active tasks/i);
       }
     }
   });
 
   it("ships only task archive configuration", () => {
     expect(configYamlTemplate).toContain("# task_auto_commit: true");
-    expect(configYamlTemplate).not.toMatch(/session_auto_commit|session_commit_message|max_journal_lines/);
   });
 
-  it("OpenCode compact state ignores history while reporting current work", () => {
+  it("OpenCode compact state reports current work", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-opencode-task-only-"));
     temporaryDirectories.push(directory);
     fs.mkdirSync(path.join(directory, ".trellis/tasks"), { recursive: true });
@@ -52,27 +46,12 @@ console.log(context);
 `, sessionUtils, directory], { encoding: "utf8" });
     const baseline = run();
     expect(baseline).toContain("Project tasks: 0");
-    expect(baseline).not.toMatch(/Developer:|Journal:/);
-    fs.mkdirSync(path.join(directory, ".trellis/workspace/alice"), { recursive: true });
-    fs.writeFileSync(path.join(directory, ".trellis/workspace/alice/journal-1.md"), "history\n");
-    fs.writeFileSync(path.join(directory, ".trellis/.developer"), "name=alice\n");
-    fs.mkdirSync(path.join(directory, ".trellis/agent-traces"));
-    fs.writeFileSync(path.join(directory, ".trellis/agent-traces/trace.md"), "predecessor history\n");
-    fs.mkdirSync(path.join(directory, ".trellis/.backup-old/nested"), { recursive: true });
-    const backup = path.join(directory, ".trellis/.backup-old/nested/arbitrary.md");
-    fs.writeFileSync(backup, "backup history\n");
-    expect(run()).toBe(baseline);
-    execFileSync("git", ["-C", directory, "add", ".trellis"]);
-    expect(run()).toBe(baseline);
-    fs.writeFileSync(backup, "changed backup history\n");
-    expect(run()).toBe(baseline);
-    expect(fs.readFileSync(backup, "utf8")).toBe("changed backup history\n");
     fs.writeFileSync(path.join(directory, "current.txt"), "current work\n");
     expect(run()).toContain("dirty 1 paths");
   });
 
   it.each(["shared-hooks", "codex/hooks", "copilot/hooks"])(
-    "%s compact state works without retired Python APIs and ignores dirty history",
+    "%s compact state reports current work",
     (hookDirectory) => {
       const directory = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-hook-task-only-"));
       temporaryDirectories.push(directory);
@@ -97,49 +76,14 @@ def iter_tasks(directory, repo_root):
 tasks.iter_active_tasks = iter_tasks
 sys.modules.update({"common": common, "common.paths": paths, "common.tasks": tasks})
 hook._resolve_active_task = lambda *args: types.SimpleNamespace(task_path=None)
-original_read = Path.read_text
-original_iter = Path.iterdir
-accesses = []
-def guard(path):
-    if path.name == ".developer" or "workspace" in path.parts or "agent-traces" in path.parts or any(part.startswith(".backup-") for part in path.parts):
-        accesses.append(str(path))
-def read(path, *args, **kwargs):
-    guard(path)
-    return original_read(path, *args, **kwargs)
-def iterate(path):
-    guard(path)
-    return original_iter(path)
-Path.read_text = read
-Path.iterdir = iterate
 print(hook._build_compact_current_state(Path(root) / ".trellis", {}, []))
-assert not accesses, accesses
 `, hook, directory], { encoding: "utf8" });
 
       const baseline = run();
       expect(baseline).toContain("Project tasks: 0");
       expect(baseline).toContain("Current task: none");
-      expect(baseline).not.toMatch(/Developer:|Journal:/);
-      fs.mkdirSync(path.join(directory, ".trellis/workspace/alice"), { recursive: true });
-      const journal = path.join(directory, ".trellis/workspace/alice/journal-1.md");
-      fs.writeFileSync(journal, "historical evidence\n");
-      fs.writeFileSync(path.join(directory, ".trellis/.developer"), "name=alice\n");
-      fs.mkdirSync(path.join(directory, ".trellis/agent-traces"));
-      const trace = path.join(directory, ".trellis/agent-traces/trace.md");
-      fs.writeFileSync(trace, "predecessor evidence\n");
-      fs.mkdirSync(path.join(directory, ".trellis/.backup-old/nested"), { recursive: true });
-      const backup = path.join(directory, ".trellis/.backup-old/nested/arbitrary.md");
-      fs.writeFileSync(backup, "backup history\n");
-      expect(run()).toBe(baseline);
-      execFileSync("git", ["-C", directory, "add", ".trellis"]);
-      expect(run()).toBe(baseline);
-      fs.writeFileSync(journal, "changed historical evidence\n");
-      fs.writeFileSync(trace, "changed predecessor evidence\n");
-      fs.writeFileSync(backup, "changed backup history\n");
-      expect(run()).toBe(baseline);
       fs.writeFileSync(path.join(directory, "current.txt"), "current work\n");
       expect(run()).toContain("dirty 1 paths");
-      expect(fs.readFileSync(journal, "utf8")).toBe("changed historical evidence\n");
-      expect(fs.readFileSync(backup, "utf8")).toBe("changed backup history\n");
     },
   );
 });

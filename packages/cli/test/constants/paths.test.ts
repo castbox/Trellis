@@ -39,12 +39,10 @@ describe("DIR_NAMES", () => {
 
 describe("FILE_NAMES", () => {
   it("has all expected keys", () => {
-    expect(FILE_NAMES).not.toHaveProperty("DEVELOPER");
     expect(FILE_NAMES).toHaveProperty("CURRENT_TASK");
     expect(FILE_NAMES).toHaveProperty("TASK_JSON");
     expect(FILE_NAMES).toHaveProperty("PRD");
     expect(FILE_NAMES).toHaveProperty("WORKFLOW_GUIDE");
-    expect(FILE_NAMES).not.toHaveProperty("JOURNAL_PREFIX");
   });
 
   it("all values are non-empty strings", () => {
@@ -84,10 +82,6 @@ describe("PATHS", () => {
 
   it("SCRIPTS is WORKFLOW/scripts", () => {
     expect(PATHS.SCRIPTS).toBe(`${DIR_NAMES.WORKFLOW}/${DIR_NAMES.SCRIPTS}`);
-  });
-
-  it("does not expose an identity runtime path", () => {
-    expect(PATHS).not.toHaveProperty("DEVELOPER_FILE");
   });
 
   it("CURRENT_TASK_FILE is WORKFLOW/.current-task", () => {

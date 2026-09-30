@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, statSync, readSync } from "node:fs";
-import { join, dirname, basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { join, dirname, basename, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -64,16 +64,6 @@ function isInsideRoot(root: string, candidate: string): boolean {
 // ---------------------------------------------------------------------------
 
 const AUTO_TRUST_ENTRIES = ["tasks"];
-
-function isRetiredDataPath(file: string, projectRoot: string): boolean {
-   if (/(?:^|\/)\.trellis\/(?:\.developer|workspace|agent-traces|\.backup-[^/]*)(?:\/|$)/.test(resolve(file).split("\\").join("/"))) return true;
-   try {
-      const entry = relative(realpathSync(join(projectRoot, ".trellis")), resolve(file)).split(sep)[0];
-      return [".developer", "workspace", "agent-traces"].includes(entry) || entry.startsWith(".backup-");
-   } catch {
-      return false;
-   }
-}
 
 function stripTrustValue(s: string): string {
    return s.trim().replace(/\s*#.*$/, "").trim().replace(/^['"]|['"]$/g, "");
@@ -147,10 +137,9 @@ function resolveTrustedRoots(projectRoot: string): string[] {
 
    const roots: string[] = [];
    for (const entry of config.trustedDirs) {
-      if (isRetiredDataPath(resolve(projectRoot, entry), projectRoot)) continue;
       try {
          const real = realpathSync(resolve(projectRoot, entry));
-         if (!isRetiredDataPath(real, projectRoot)) roots.push(real);
+         roots.push(real);
       } catch {
          // entry not found or invalid — skip
       }
@@ -162,7 +151,7 @@ function resolveTrustedRoots(projectRoot: string): string[] {
          try {
             if (lstatSync(entryPath).isSymbolicLink()) {
                const real = realpathSync(entryPath);
-               if (!isRetiredDataPath(real, projectRoot)) roots.push(real);
+               roots.push(real);
             }
          } catch {
             // missing / broken symlink — nothing to trust
@@ -178,14 +167,9 @@ function resolveProjectFile(
    file: string,
    trustedRoots: string[],
 ): string | null {
-   if (isRetiredDataPath(resolve(projectRoot, file), projectRoot)) {
-      process.stderr.write("Retired identity/history is not context; use task/spec context instead.\n");
-      return null;
-   }
    try {
       const rootReal = realpathSync(projectRoot);
       const targetReal = realpathSync(resolve(projectRoot, file));
-      if (isRetiredDataPath(targetReal, projectRoot)) return null;
       if (isInsideRoot(rootReal, targetReal)) return targetReal;
       if (trustedRoots.some((root) => isInsideRoot(root, targetReal))) return targetReal;
       return null;
@@ -219,12 +203,7 @@ function displayProjectPath(projectRoot: string, filePath: string, taskDir?: str
 // ---------------------------------------------------------------------------
 
 function isActiveDataPath(projectRoot: string, file: string): boolean {
-   if (isRetiredDataPath(file, projectRoot)) return false;
-   try {
-      return !isRetiredDataPath(realpathSync(file), projectRoot);
-   } catch {
-      return false;
-   }
+   try { return realpathSync(file).length > 0; } catch { return false; }
 }
 
 function readActiveText(projectRoot: string, file: string): string | null {
@@ -235,71 +214,50 @@ function readActiveText(projectRoot: string, file: string): string | null {
 function resolveActiveTaskStatus(
    projectRoot: string,
    contextKey: string | null,
-): { status: string; taskDir: string | null; taskTitle: string | null } {
-   const sessionsDir = join(projectRoot, ".trellis", ".runtime", "sessions");
-   if (!isActiveDataPath(projectRoot, sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
-   if (!existsSync(sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
-
-   // --- 通过 context key 解析 session 文件 ---
-   let sessionFilePath: string | null = null;
-
-   if (contextKey) {
-      const candidate = join(sessionsDir, `${contextKey}.json`);
-      if (existsSync(candidate)) {
-         sessionFilePath = candidate;
-      } else {
-         return { status: "no_task", taskDir: null, taskTitle: null };
-      }
-   } else {
-      // No identity: use single-session fallback only when there is exactly one session file.
-      let sessionFiles: string[];
-      try {
-         sessionFiles = readdirSync(sessionsDir).filter((f) => f.endsWith(".json"));
-      } catch {
-         return { status: "no_task", taskDir: null, taskTitle: null };
-      }
-      if (sessionFiles.length === 1) {
-         sessionFilePath = join(sessionsDir, sessionFiles[0]);
-      } else {
-         return { status: "no_task", taskDir: null, taskTitle: null };
-      }
-   }
-
-   // --- 读取 session 数据 ---
-   if (!isActiveDataPath(projectRoot, sessionFilePath)) return { status: "no_task", taskDir: null, taskTitle: null };
-   let sessionData: Record<string, unknown>;
+): { status: string; taskDir: string | null; taskTitle: string | null; taskRoot: string; error: string | null } {
+   const empty = { status: "no_task", taskDir: null, taskTitle: null, taskRoot: projectRoot, error: null };
+   if (!contextKey) return empty;
+   const invalid = (error: string) => ({ ...empty, status: "invalid_task", error });
+   const script = join(projectRoot, ".trellis", "scripts", "task.py");
+   if (!isActiveDataPath(projectRoot, script) || !existsSync(script)) return invalid("Task resolver unavailable");
    try {
-      sessionData = JSON.parse(readFileSync(sessionFilePath, "utf-8"));
-   } catch {
-      return { status: "no_task", taskDir: null, taskTitle: null };
+      // Reuse the runtime's live Git, common-dir, legacy and historical guards.
+      // A known key miss must never fall back to another session's pointer.
+      const result = spawnSync(process.platform === "win32" ? "python" : "python3", [script, "current", "--json"], {
+         cwd: projectRoot,
+         encoding: "utf-8",
+         env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey, PYTHONDONTWRITEBYTECODE: "1" },
+         timeout: SESSION_CONTEXT_TIMEOUT_MS,
+         windowsHide: true,
+      });
+      if (result.error) return invalid(result.error.message);
+      const data: unknown = JSON.parse(result.stdout ?? "");
+      if (!isObject(data) || typeof data.invocation_root !== "string" || typeof data.stale !== "boolean") {
+         return invalid("Invalid task resolver response; update the Trellis runtime");
+      }
+      if (data.error || data.stale) return invalid(JSON.stringify(data.error ?? "Stale task binding"));
+      if (data.current_task === null && data.source === "none" && result.status === 1) return empty;
+      if (result.status !== 0 || !isObject(data.current_task)) return invalid("Task resolver failed");
+      const status = data.current_task.status;
+      if (typeof status !== "string" || !status.trim()) return invalid("Invalid task status: expected a nonempty string");
+      const taskRoot = data.task_workspace_root;
+      const taskDir = data.resolved_task_path;
+      if (typeof taskRoot !== "string" || typeof taskDir !== "string" || !isAbsolute(taskRoot) || !isAbsolute(taskDir) || !isActiveDataPath(taskRoot, taskDir)) {
+         return invalid("Invalid task workspace response");
+      }
+      return {
+         status,
+         taskDir, taskRoot,
+         taskTitle: typeof data.current_task.title === "string" ? data.current_task.title : null,
+         error: null,
+      };
+   } catch (error) {
+      return invalid(error instanceof Error ? error.message : String(error));
    }
+}
 
-   const currentTask = sessionData.current_task;
-   if (typeof currentTask !== "string" || !currentTask)
-      return { status: "no_task", taskDir: null, taskTitle: null };
-
-   // Same jail the jsonl-referenced files already go through below. `task.py`
-   // now refuses to store a ref that leaves the project, but a session file
-   // written before that fix can still hold one, and `trellis update` does not
-   // rewrite session files — so a poisoned pointer outlives the upgrade that
-   // closed the writer.
-   const taskDir = resolveProjectFile(projectRoot, currentTask, resolveTrustedRoots(projectRoot));
-   if (!taskDir) return { status: "no_task", taskDir: null, taskTitle: null };
-   const taskJsonPath = resolveProjectFile(projectRoot, join(taskDir, "task.json"), resolveTrustedRoots(projectRoot));
-   if (!taskJsonPath) return { status: "no_task", taskDir: null, taskTitle: null };
-
-   let taskData: Record<string, unknown>;
-   try {
-      taskData = JSON.parse(readFileSync(taskJsonPath, "utf-8"));
-   } catch {
-      return { status: "no_task", taskDir: null, taskTitle: null };
-   }
-
-   return {
-      status: typeof taskData.status === "string" ? taskData.status : "planning",
-      taskDir,
-      taskTitle: typeof taskData.title === "string" ? taskData.title : null,
-   };
+function isObject(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +268,7 @@ const SESSION_CONTEXT_TIMEOUT_MS = 5000;
 
 function buildSessionContext(projectRoot: string, contextKey: string | null): string {
    const script = join(projectRoot, ".trellis", "scripts", "get_context.py");
-   if (!existsSync(script)) return "";
+   if (!isActiveDataPath(projectRoot, script) || !existsSync(script)) return "";
 
    try {
       const result = spawnSync("python3", [script], {
@@ -363,7 +321,7 @@ function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?:
             const row = JSON.parse(line.trim()) as Record<string, unknown>;
             const file = typeof row.file === "string" ? row.file.trim() : "";
             const candidatePath = file ? resolve(projectRoot, file) : "";
-            if (candidatePath && !isRetiredDataPath(candidatePath, projectRoot) && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
+            if (candidatePath && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
             const targetPath = file ? resolveProjectFile(projectRoot, file, trustedRoots) : null;
             if (targetPath) paths.add(targetPath);
          } catch {
@@ -371,7 +329,7 @@ function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?:
          }
       }
    }
-   return [...paths].filter((file) => !isRetiredDataPath(file, projectRoot));
+   return [...paths];
 }
 
 function taskContextSignature(projectRoot: string, taskDir: string, agentType?: AgentType): string {
@@ -561,10 +519,8 @@ function isUtf8(data: Buffer): boolean {
 }
 
 function readFilePrefix(filePath: string, maxBytes: number, projectRoot: string): { data: Buffer; size: number } | null {
-   if (isRetiredDataPath(filePath, projectRoot)) return null;
    let fd: number | null = null;
    try {
-      if (isRetiredDataPath(realpathSync(filePath), projectRoot)) return null;
       fd = openSync(filePath, "r");
       if (maxBytes <= 0) {
          const data = readFileSync(fd);
@@ -634,10 +590,8 @@ function materialize(
 }
 
 function readJsonlLines(jsonlPath: string, displayPath: string, projectRoot: string): { lines: string[]; omitted: string | null } {
-   if (isRetiredDataPath(jsonlPath, projectRoot)) return { lines: [], omitted: "Retired identity/history is not context; use task/spec context instead." };
    let fd: number | null = null;
    try {
-      if (isRetiredDataPath(realpathSync(jsonlPath), projectRoot)) return { lines: [], omitted: "Retired identity/history is not context; use task/spec context instead." };
       fd = openSync(jsonlPath, "r");
       const data = Buffer.allocUnsafe(MAX_JSONL_BYTES + 1);
       const bytesRead = readFully(fd, data);
@@ -666,7 +620,7 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
    // config.yaml for every jsonl row.
    const trustedRoots = resolveTrustedRoots(projectRoot);
    const limits = readContextInjectionLimits(projectRoot);
-   const prefix = "<task-context>\nContext is bounded by .trellis/config.yaml. Files marked [truncated] or [omitted] remain authoritative on disk; use their required_read path before relying on missing detail.\n\n";
+   const prefix = `<task-context>\nTask workspace: ${projectRoot}\nAll relative paths below, including required_read paths, are based on this task workspace.\nContext is bounded by .trellis/config.yaml. Files marked [truncated] or [omitted] remain authoritative on disk; use their required_read path before relying on missing detail.\n\n`;
    const suffix = "\n</task-context>";
    const wrapperBytes = Buffer.byteLength(prefix + suffix, "utf-8");
    if (limits.max_total_bytes > 0 && limits.max_total_bytes < wrapperBytes) return "";
@@ -859,12 +813,12 @@ class TurnContextCache {
          return { workflowMsg: this.workflowMsg };
       }
 
-      const { status } = resolveActiveTaskStatus(projectRoot, contextKey);
+      const { status, taskRoot, error } = resolveActiveTaskStatus(projectRoot, contextKey);
 
-      const workflowPath = join(projectRoot, ".trellis", "workflow.md");
-      const workflowMd = readActiveText(projectRoot, workflowPath);
+      const workflowPath = join(taskRoot, ".trellis", "workflow.md");
+      const workflowMd = error ? null : readActiveText(taskRoot, workflowPath);
 
-      let workflowBody = "";
+      let workflowBody = error ? `Status: invalid_task\n${error}` : "";
       if (workflowMd) {
          const blocks = parseWorkflowStateBlocks(workflowMd);
          const activeBlock = blocks.find((b) => b.status === status);
@@ -972,9 +926,10 @@ export default function(pi: ExtensionAPI): void {
 
       if (isSubAgent) {
          // Sub-agent: inject precise task context once
-         const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
+         const { taskDir, taskRoot, error } = resolveActiveTaskStatus(projectRoot, contextKey);
+         if (error) ctx.ui.notify(`Trellis task binding invalid: ${error}`, "error");
          if (taskDir) {
-            const taskContext = getTaskContext(taskDir, projectRoot);
+            const taskContext = getTaskContext(taskDir, taskRoot);
             if (taskContext) {
                await pi.sendMessage({
                   customType: "trellis-task-context",
@@ -994,9 +949,10 @@ export default function(pi: ExtensionAPI): void {
             });
          }
 
-         const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
+         const { taskDir, taskRoot, error } = resolveActiveTaskStatus(projectRoot, contextKey);
+         if (error) ctx.ui.notify(`Trellis task binding invalid: ${error}`, "error");
          if (taskDir) {
-            const taskContext = getTaskContext(taskDir, projectRoot);
+            const taskContext = getTaskContext(taskDir, taskRoot);
             if (taskContext) {
                await pi.sendMessage({
                   customType: "trellis-task-context",
@@ -1045,8 +1001,10 @@ export default function(pi: ExtensionAPI): void {
       const contextKey = rememberContextKey(ctx);
 
       const messages = event.messages as { role?: string; customType?: string; content?: string }[];
-      const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
-      const currentTaskContext = taskDir ? getTaskContext(taskDir, projectRoot) : "";
+      const { taskDir, taskRoot, error } = resolveActiveTaskStatus(projectRoot, contextKey);
+      const currentTaskContext = error
+         ? `Trellis task binding invalid: ${error}`
+         : taskDir ? getTaskContext(taskDir, taskRoot) : "";
       const taskContextIndexes = messages
          .map((message, index) => message.customType === "trellis-task-context" ? index : -1)
          .filter((index) => index >= 0);

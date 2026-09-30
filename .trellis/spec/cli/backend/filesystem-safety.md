@@ -40,9 +40,8 @@ def write_text_atomic(path: Path, text: str) -> bool
 # write_json serializes and delegates, so both share one implementation.
 ```
 
-`write_text_atomic` covers durable task Markdown as well as JSON. Historical
-journal/index atomic-write incidents motivated this helper, but those consumers
-are retired and must not be restored. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract.
+`write_text_atomic` covers durable task Markdown as well as JSON. See
+[Task Lifecycle](./task-lifecycle.md) for current task storage.
 
 ### Wrong vs Correct
 
@@ -99,7 +98,7 @@ one of these must hold. Pick by operation:
 | Delete a mixed-ownership file (e.g. `AGENTS.md`) | Strip only the managed block (`scrubManagedMarkdownBlock`); delete only if nothing user-authored remains. Never `unlinkSync` the whole file. |
 | Move a dir that may be user-owned (rename-dir) | Ownership check (`dirHasManifestEntries`); unowned + target-absent → **skip** (safe even under `--force`, since skip never executes). |
 | Overwrite a dir from a remote source | Download to a temp dir; `rm` + copy the old dir **only after** the download succeeds (`downloadWithStrategy` `overwrite`). Never delete-then-download. |
-| Rename onto a possibly-existing target | Check collision before moving; never clobber user content. Retired-data renames are forbidden regardless of collision state. |
+| Rename onto a possibly-existing target | Check collision before moving; never clobber user content. |
 | `rm -rf` a tree with user data (`uninstall`) | `collectUncommittedTrellisData(cwd)` (git status over `spec/tasks`); scripted `--yes` fails closed unless `TRELLIS_ALLOW_DIRTY_UNINSTALL=1`. Disclosure must name what user data is deleted. |
 
 **Env override precedent**: a fail-closed guard on a `--yes`/`--force` path gets
@@ -136,11 +135,11 @@ without the guard**:
 
 ## Related
 
-- [`trellis update` Command](./commands-update.md) — migration classification/apply
+- [`trellis update` Command](./commands-update.md) — managed-template classification/apply
 - [`trellis uninstall` Command](./commands-uninstall.md) — plan/execute phases
 - [`trellis channel` Command](./commands-channel.md) — store paths, project buckets
 - [Script Conventions](./script-conventions.md) — Python `io.py` contract
-- [Migrations](./migrations.md) — rename/rename-dir/delete semantics
+- [Installed Version Boundary](./installed-version.md) — exact-version update requirement
 
 ## Channel Context Trust Set (`channel.trusted_context_dirs`, #414)
 
@@ -164,9 +163,8 @@ template carries a standalone verbatim copy of the parser/resolver; changes
 must be mirrored there. Do not relax to lexical checks — realpath containment
 is the defense from the 2026-07-10 audit (#409 family).
 
-## Retired Data Boundary
+## Managed Data Boundary
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract. Prune protected paths before reads, hashing,
-recursion, backup, removal and restore. Explicit context trust does not override
-retirement. A whole `.trellis/` recursive operation is not a valid substitute for
-active-child operations. Guard Git subprocess arguments as well as language IO.
+See [Task Lifecycle](./task-lifecycle.md) for current path ownership. Limit
+backup, removal, and restore to explicitly managed files. Validate each path
+before language IO and Git subprocess calls.

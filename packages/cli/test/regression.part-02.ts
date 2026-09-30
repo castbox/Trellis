@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getStatuslineHook } from "../src/templates/claude/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
@@ -147,7 +148,7 @@ describe("regression: current-task path normalization", () => {
   function setupTaskRepo(): void {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -159,9 +160,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 106 task",
           status: "in_progress",
           package: null,
@@ -616,14 +619,14 @@ describe("regression: current-task path normalization", () => {
     // immediately when session identity is available.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-auto-active" --description "regression fixture" --slug r7-auto --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-auto-active" --description "regression fixture" --slug r7-auto`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -643,7 +646,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-397] task.py create stores the trimmed description and reports session activation", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -654,17 +657,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "described task",
         "--description",
         "  padded description  ",
         "--slug",
         "described",
-        "--assignee",
-        "test-dev",
       ],
       {
         cwd: tmpDir,
@@ -693,7 +691,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-397] task.py create --no-start does not move the session pointer", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -705,15 +703,10 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "batch backlog task",
         "--slug",
         "batch-backlog",
-        "--assignee",
-        "test-dev",
         "--description",
         "regression fixture",
         "--no-start",
@@ -748,7 +741,7 @@ describe("regression: current-task path normalization", () => {
     // written. Pre-R7 behavior parity for headless CLI usage.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -756,7 +749,7 @@ describe("regression: current-task path normalization", () => {
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     // sessionEnv() with no overrides drops every session-identity env var.
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-cli-only" --description "regression fixture" --slug r7-cli --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-cli-only" --description "regression fixture" --slug r7-cli`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -778,14 +771,14 @@ describe("regression: current-task path normalization", () => {
     // still flip planning → in_progress correctly.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "r7-idem" --description "regression fixture" --slug r7-idem --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "r7-idem" --description "regression fixture" --slug r7-idem`,
       {
         cwd: tmpDir,
         encoding: "utf-8",
@@ -908,7 +901,7 @@ describe("regression: current-task path normalization", () => {
   it("[task-lifecycle] task.py create refuses an archived task dir-name collision", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -918,17 +911,12 @@ describe("regression: current-task path normalization", () => {
     const createArgs = [
       taskScriptPath,
       "create",
-      "--creator",
-      "fixture-creator",
-      "--assignee",
-      "test-dev",
+
       "web auth retry",
       "--description",
       "regression fixture",
       "--slug",
       "web-auth-retry",
-      "--assignee",
-      "test-dev",
     ];
     const env = sessionEnv({ TRELLIS_CONTEXT_ID: "archive-collision" });
 
@@ -1018,13 +1006,12 @@ describe("regression: current-task path normalization", () => {
     const oldPrefix = new Date().getMonth() === 0 && new Date().getDate() === 1 ? "02-02" : "01-01";
     writeProjectFile(
       path.join(".trellis", "tasks", `${oldPrefix}-reused`, "task.json"),
-      JSON.stringify({ id: "old-task-id", name: "reused", lifecycle_generation: 0, status: "completed" }),
+      JSON.stringify(emptyTaskRecord({ id: "old-task-id", name: "reused", status: "completed" })),
     );
     const args = [
       path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
       "--slug", "reused", "--task-id", "new-task-id", "--description", "Distinct task",
-      "--creator", "test-dev",
-      "--assignee", "test-dev", "--no-start",
+       "--no-start",
     ];
     const created = spawnSync(pythonCmd, args, { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
     expect(created.status, created.stderr).toBe(0);
@@ -1059,7 +1046,7 @@ describe("regression: current-task path normalization", () => {
     const result = spawnSync(pythonCmd, [
       path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
       "--slug", "new-task", "--task-id", "stable-prior", "--description", "new task",
-      "--creator", "fixture-creator", "--assignee", "test-dev", "--no-start",
+       "--no-start",
     ], { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("task_id_collision");
@@ -1069,7 +1056,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1081,17 +1068,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         `${todayPrefix}-example-task`,
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -1112,7 +1094,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create rejects a --slug carrying a different date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1126,17 +1108,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         `${otherPrefix}-example-task`,
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -1152,7 +1129,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create leaves non-date numeric slug prefixes untouched", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1165,17 +1142,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "Example Task",
         "--description",
         "regression fixture",
         "--slug",
         "13-45-example-task",
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -1205,9 +1177,11 @@ describe("regression: current-task path normalization", () => {
         path.join(".trellis", "tasks", name, "task.json"),
         JSON.stringify(
           {
+            ...emptyTaskRecord({ id: name }),
             id: name,
             name,
             lifecycle_generation: 0,
+            children: [],
             title: `Task ${name}`,
             status: "in_progress",
             package: null,
@@ -1782,9 +1756,11 @@ print(json.dumps({
       path.join(".trellis", "tasks", "session-task", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "session-task" }),
           id: "session-task",
           name: "session-task",
           lifecycle_generation: 0,
+          children: [],
           title: "Session scoped task",
           status: "in_progress",
           priority: "P1",

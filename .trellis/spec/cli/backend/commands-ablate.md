@@ -53,7 +53,7 @@ Full ablation removes/scrubs:
 
 1. every current manifest-owned platform file;
 2. only Trellis fields/blocks in registered mixed files;
-3. active `.trellis/` children, including tasks/specs, excluding retired data;
+3. manifest-owned `.trellis/` files and current task/spec data;
 4. managed directories proven empty after planned deletions.
 
 Files outside the pruned manifest and non-Trellis mixed-file content are not
@@ -124,7 +124,7 @@ the transaction.
 | State root resolves inside project | Refuse before project/recovery mutation |
 | Unknown/extra/malformed state field | Strict parse error; no publication |
 | `schemaVersion: 1` | Explicit incompatible-recovery error before backup reads or mutation |
-| Entry is `.trellis` or a retired data path | Reject; only active children can be recovery entries |
+| Entry is an unowned project path | Reject; only current managed paths can be recovery entries |
 | Backup path differs from `backup/<relativePath>` | Parse/stage refusal |
 | Non-absent entry has no backup | Parse/stage refusal |
 | Absent entry claims a backup | Parse/stage refusal |
@@ -173,8 +173,8 @@ Every manifest/state path is validated before joining:
 - unsupported filesystem object types and manifest-owned directories fail
   closed.
 
-A linked `.trellis` root is rejected before mutation; it must not bypass the
-historical-data boundary. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract.
+A linked `.trellis` root is rejected before mutation. See
+[Task Lifecycle](./task-lifecycle.md) for current path ownership.
 
 ## Ablate transaction
 
@@ -233,7 +233,6 @@ reported path to its expected ablated state and rerunning `trellis restore`.
 ## Privacy and session boundary
 
 The transaction contains exact active task/spec bytes required for recovery.
-Retired identity/workspace/agent-traces data is never copied or fingerprinted.
 The active user-authored task/spec files may themselves
 contain prompts, responses, credentials, or other sensitive text; the CLI
 discloses this before mutation, stores the transaction under a private state
@@ -257,8 +256,7 @@ session. Global Trellis CLI data remains installed and explicitly callable.
 - all-path restore conflict with zero project writes;
 - complete existing uninstall scrubber/integration/dirty/over-delete suites.
 
-## Retirement Compatibility
+## Recovery Scope
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract. New transactions enumerate active children only.
-Old whole-tree transactions that cannot satisfy the retired-data exclusion are
-rejected before backup reads or mutation; restore never replays historical data.
+Transactions enumerate only current managed files. Recovery entries outside
+that ownership set are rejected before backup reads or mutation.

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
 import { getAllHooks as getCopilotHooks } from "../src/templates/copilot/index.js";
 import {
@@ -29,8 +30,6 @@ describe("regression: current-task path normalization", () => {
   const copilotSessionStart = getCopilotHooks().find(
     (hook) => hook.name === "session-start.py",
   )?.content;
-  const firstReplyNoticeSentence =
-    "Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。";
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-current-task-"));
@@ -172,8 +171,8 @@ describe("regression: current-task path normalization", () => {
   function setupTaskRepo(): void {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
-      "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
+      path.join(".trellis", "custom-note"),
+      "fixture=active\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
     writeProjectFile(
@@ -184,9 +183,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 106 task",
           status: "in_progress",
           package: null,
@@ -1015,9 +1016,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-107", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-107" }),
           id: "issue-107",
           name: "issue-107",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 107",
           status: "in_progress",
         },
@@ -1117,9 +1120,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "cursor-task", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "cursor-task" }),
           id: "cursor-task",
           name: "cursor-task",
           lifecycle_generation: 0,
+          children: [],
           title: "Cursor task",
           status: "in_progress",
         },
@@ -1315,7 +1320,6 @@ describe("regression: current-task path normalization", () => {
       expect(ctx).toContain("<task-status>");
       expect(ctx).not.toContain("say once in Chinese");
       expect(ctx).not.toContain("exactly one short Chinese sentence");
-      expect(ctx).not.toContain(firstReplyNoticeSentence);
     }
   });
 
@@ -1364,7 +1368,6 @@ describe("regression: current-task path normalization", () => {
     );
     expect(content).not.toContain("systemMessage");
     expect(content).not.toContain("Trellis context injected");
-    expect(content).not.toContain(firstReplyNoticeSentence);
   });
 
   it("[#248] Copilot SessionStart payload omits systemMessage and emits spec-compliant additionalContext", () => {
@@ -1396,9 +1399,6 @@ describe("regression: current-task path normalization", () => {
     );
     expect(payload.hookSpecificOutput.additionalContext).not.toContain(
       "<first-reply-notice>",
-    );
-    expect(payload.hookSpecificOutput.additionalContext).not.toContain(
-      firstReplyNoticeSentence,
     );
   });
 
@@ -1845,7 +1845,7 @@ describe("regression: current-task path normalization", () => {
 
   it("[workflow-state] no_task breadcrumb emitted when no session active task exists", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     // Post-R5: breadcrumb body is read exclusively from workflow.md tag
     // blocks. Provide a minimal no_task tag so the test can assert the
     // routing to trellis-brainstorm content surfaces.
@@ -1915,6 +1915,7 @@ describe("regression: current-task path normalization", () => {
         id: "issue-106",
         name: "issue-106",
         lifecycle_generation: 0,
+        children: [],
         title: "Missing status",
       }),
     );
@@ -1924,7 +1925,8 @@ describe("regression: current-task path normalization", () => {
       hookSpecificOutput: { additionalContext: string };
     };
     const context = parsed.hookSpecificOutput.additionalContext;
-    expect(context).toContain("Task: issue-106 (task_error)");
+    expect(context).toContain("Task: session binding (task_error)");
+    expect(context).toContain("Task binding error: task_metadata_invalid-task-schema:");
     expect(context).toContain("Refer to workflow.md for current step.");
     expect(context).not.toContain("Status: no_task");
   });
@@ -2084,7 +2086,7 @@ describe("regression: current-task path normalization", () => {
     setupTaskRepo();
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "dummy task" --description "regression fixture" --slug dummy-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "dummy task" --description "regression fixture" --slug dummy-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     // Locate the newly created task dir
@@ -2111,7 +2113,7 @@ describe("regression: current-task path normalization", () => {
     // setupTaskRepo does not create any .{platform}/ dir → agent-less mode
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "plain task" --description "regression fixture" --slug plain-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "plain task" --description "regression fixture" --slug plain-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const tasksDir = path.join(tmpDir, ".trellis", "tasks");
@@ -2130,7 +2132,7 @@ describe("regression: current-task path normalization", () => {
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     const output = execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seeded task" --description "regression fixture" --slug seeded-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seeded task" --description "regression fixture" --slug seeded-task`,
       { cwd: tmpDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     );
     expect(output).toBeDefined();

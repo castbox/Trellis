@@ -5,9 +5,4 @@
 
 export * from "./channel/index.js";
 export * from "./task/index.js";
-export {
-  assertActiveDataPath,
-  isRetiredDataPath,
-  resolveTrellisDataRoot,
-  RetiredDataAccessError,
-} from "./retired-data.js";
+export { assertProjectPath } from "./path-boundary.js";

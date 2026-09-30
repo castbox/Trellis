@@ -15,7 +15,6 @@ const VALID_ACTIONS: ReadonlySet<PostThreadOptions["action"]> = new Set([
   "comment",
   "status",
   "labels",
-  "assignees",
   "summary",
   "processed",
 ]);
@@ -58,7 +57,6 @@ export async function postThread(
         : {}),
       ...(opts.status !== undefined ? { status: opts.status } : {}),
       ...(opts.labels !== undefined ? { labels: opts.labels } : {}),
-      ...(opts.assignees !== undefined ? { assignees: opts.assignees } : {}),
       ...(opts.summary !== undefined ? { summary: opts.summary } : {}),
       ...(opts.context !== undefined && opts.context.length > 0
         ? { context: opts.context }

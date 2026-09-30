@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, statSync, readSync } from "node:fs";
-import { join, dirname, basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { join, dirname, basename, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -64,16 +64,6 @@ function isInsideRoot(root: string, candidate: string): boolean {
 // ---------------------------------------------------------------------------
 
 const AUTO_TRUST_ENTRIES = ["tasks"];
-
-function isRetiredDataPath(file: string, projectRoot: string): boolean {
-   if (/(?:^|\/)\.trellis\/(?:\.developer|workspace|agent-traces|\.backup-[^/]*)(?:\/|$)/.test(resolve(file).split("\\").join("/"))) return true;
-   try {
-      const entry = relative(realpathSync(join(projectRoot, ".trellis")), resolve(file)).split(sep)[0];
-      return [".developer", "workspace", "agent-traces"].includes(entry) || entry.startsWith(".backup-");
-   } catch {
-      return false;
-   }
-}
 
 function stripTrustValue(s: string): string {
    return s.trim().replace(/\s*#.*$/, "").trim().replace(/^['"]|['"]$/g, "");
@@ -147,10 +137,9 @@ function resolveTrustedRoots(projectRoot: string): string[] {
 
    const roots: string[] = [];
    for (const entry of config.trustedDirs) {
-      if (isRetiredDataPath(resolve(projectRoot, entry), projectRoot)) continue;
       try {
          const real = realpathSync(resolve(projectRoot, entry));
-         if (!isRetiredDataPath(real, projectRoot)) roots.push(real);
+         roots.push(real);
       } catch {
          // entry not found or invalid — skip
       }
@@ -162,7 +151,7 @@ function resolveTrustedRoots(projectRoot: string): string[] {
          try {
             if (lstatSync(entryPath).isSymbolicLink()) {
                const real = realpathSync(entryPath);
-               if (!isRetiredDataPath(real, projectRoot)) roots.push(real);
+               roots.push(real);
             }
          } catch {
             // missing / broken symlink — nothing to trust
@@ -178,14 +167,9 @@ function resolveProjectFile(
    file: string,
    trustedRoots: string[],
 ): string | null {
-   if (isRetiredDataPath(resolve(projectRoot, file), projectRoot)) {
-      process.stderr.write("Retired identity/history is not context; use task/spec context instead.\n");
-      return null;
-   }
    try {
       const rootReal = realpathSync(projectRoot);
       const targetReal = realpathSync(resolve(projectRoot, file));
-      if (isRetiredDataPath(targetReal, projectRoot)) return null;
       if (isInsideRoot(rootReal, targetReal)) return targetReal;
       if (trustedRoots.some((root) => isInsideRoot(root, targetReal))) return targetReal;
       return null;
@@ -219,12 +203,7 @@ function displayProjectPath(projectRoot: string, filePath: string, taskDir?: str
 // ---------------------------------------------------------------------------
 
 function isActiveDataPath(projectRoot: string, file: string): boolean {
-   if (isRetiredDataPath(file, projectRoot)) return false;
-   try {
-      return !isRetiredDataPath(realpathSync(file), projectRoot);
-   } catch {
-      return false;
-   }
+   try { return realpathSync(file).length > 0; } catch { return false; }
 }
 
 function readActiveText(projectRoot: string, file: string): string | null {
@@ -240,7 +219,7 @@ function resolveActiveTaskStatus(
    if (!contextKey) return empty;
    const invalid = (error: string) => ({ ...empty, status: "invalid_task", error });
    const script = join(projectRoot, ".trellis", "scripts", "task.py");
-   if (!isActiveDataPath(projectRoot, script) || !existsSync(script)) return invalid("Task resolver unavailable or historical");
+   if (!isActiveDataPath(projectRoot, script) || !existsSync(script)) return invalid("Task resolver unavailable");
    try {
       // Reuse the runtime's live Git, common-dir, legacy and historical guards.
       // A known key miss must never fall back to another session's pointer.
@@ -342,7 +321,7 @@ function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?:
             const row = JSON.parse(line.trim()) as Record<string, unknown>;
             const file = typeof row.file === "string" ? row.file.trim() : "";
             const candidatePath = file ? resolve(projectRoot, file) : "";
-            if (candidatePath && !isRetiredDataPath(candidatePath, projectRoot) && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
+            if (candidatePath && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
             const targetPath = file ? resolveProjectFile(projectRoot, file, trustedRoots) : null;
             if (targetPath) paths.add(targetPath);
          } catch {
@@ -350,7 +329,7 @@ function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?:
          }
       }
    }
-   return [...paths].filter((file) => !isRetiredDataPath(file, projectRoot));
+   return [...paths];
 }
 
 function taskContextSignature(projectRoot: string, taskDir: string, agentType?: AgentType): string {
@@ -540,10 +519,8 @@ function isUtf8(data: Buffer): boolean {
 }
 
 function readFilePrefix(filePath: string, maxBytes: number, projectRoot: string): { data: Buffer; size: number } | null {
-   if (isRetiredDataPath(filePath, projectRoot)) return null;
    let fd: number | null = null;
    try {
-      if (isRetiredDataPath(realpathSync(filePath), projectRoot)) return null;
       fd = openSync(filePath, "r");
       if (maxBytes <= 0) {
          const data = readFileSync(fd);
@@ -613,10 +590,8 @@ function materialize(
 }
 
 function readJsonlLines(jsonlPath: string, displayPath: string, projectRoot: string): { lines: string[]; omitted: string | null } {
-   if (isRetiredDataPath(jsonlPath, projectRoot)) return { lines: [], omitted: "Retired identity/history is not context; use task/spec context instead." };
    let fd: number | null = null;
    try {
-      if (isRetiredDataPath(realpathSync(jsonlPath), projectRoot)) return { lines: [], omitted: "Retired identity/history is not context; use task/spec context instead." };
       fd = openSync(jsonlPath, "r");
       const data = Buffer.allocUnsafe(MAX_JSONL_BYTES + 1);
       const bytesRead = readFully(fd, data);

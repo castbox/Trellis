@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assertActiveDataPath } from "../../retired-data.js";
+import { assertProjectPath } from "../../path-boundary.js";
 
 import {
   appendEvent,
@@ -84,7 +84,7 @@ async function forceCleanChannel(name: string, project: string, cwd: string = pr
   for (const f of entries) {
     if (!f.endsWith(".pid")) continue;
     const pidFile = path.join(dir, f);
-    assertActiveDataPath(pidFile, cwd);
+    assertProjectPath(pidFile, cwd);
     let pid = 0;
     try {
       pid = Number(fs.readFileSync(pidFile, "utf-8").trim());

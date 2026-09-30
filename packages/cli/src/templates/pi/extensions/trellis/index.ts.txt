@@ -424,19 +424,9 @@ function num(v: unknown): number {
 function hash(s: string) {
   return createHash("sha256").update(s).digest("hex").slice(0, 24);
 }
-function isHistoricalPath(root: string, p: string): boolean {
-  const full = resolve(root, p);
-  const protectedName = (name: string) => [".developer", "workspace", "agent-traces"].includes(name) || name.startsWith(".backup-");
-  const parts = full.split(/[\\/]/);
-  if (parts.some((name, index) => name === ".trellis" && protectedName(parts[index + 1] ?? ""))) return true;
-  try {
-    return protectedName(relative(realpathSync(join(root, ".trellis")), full).split(/[\\/]/)[0] ?? "");
-  } catch { return false; }
-}
 function activePath(root: string, p: string): string | null {
   const full = resolve(root, p);
-  if (isHistoricalPath(root, full)) return null;
-  try { return isHistoricalPath(root, realpathSync(full)) ? null : full; } catch { return null; }
+  try { realpathSync(full); return full; } catch { return null; }
 }
 function readText(p: string, root: string) {
   const file = activePath(root, p);
@@ -1108,7 +1098,7 @@ function readActiveTask(root: string, key: string | null): ActiveTask {
   if (!key) return empty;
   const invalid = (error: string): ActiveTask => ({ ...empty, status: "invalid_task", error });
   const script = join(root, ".trellis", "scripts", "task.py");
-  if (!activePath(root, script) || !exists(script)) return invalid("Task resolver unavailable or historical");
+  if (!activePath(root, script) || !exists(script)) return invalid("Task resolver unavailable");
   try {
     // The shared runtime owns live Git membership, common-dir storage, legacy
     // uniqueness and historical guards. Never infer a different session here.

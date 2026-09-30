@@ -12,6 +12,7 @@ import {
   getExtensionTemplate,
 } from "../../src/templates/omp/index.js";
 import { collectOmpTemplates } from "../../src/configurators/omp.js";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templateDir = path.resolve(__dirname, "../../src/templates/omp");
@@ -74,8 +75,10 @@ function makeOmpProject(): { root: string; taskDir: string; sessionId: string } 
   fs.mkdirSync(path.join(root, ".trellis", ".runtime", "sessions"), { recursive: true });
   fs.mkdirSync(taskDir, { recursive: true });
   fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({
+    ...emptyTaskRecord({ id: "08-13-context-limits" }),
     id: "08-13-context-limits",
     lifecycle_generation: 0,
+    children: [],
     status: "in_progress",
     title: "Context limits",
   }));
@@ -142,7 +145,6 @@ describe("omp cross-worktree callbacks", () => {
     common: string;
     git: (cwd: string, ...args: string[]) => string;
     bind: (workspace: string, key?: string) => string;
-    legacy: (workspace: string) => string;
   }> {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "trellis omp worktrees ")));
     const primary = path.join(root, "primary checkout");
@@ -166,8 +168,10 @@ describe("omp cross-worktree callbacks", () => {
       const task = path.join(workspace, ".trellis/tasks/same-name");
       fs.mkdirSync(task, { recursive: true });
       fs.writeFileSync(path.join(task, "task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: `${label.toLowerCase()}-task` }),
         id: `${label.toLowerCase()}-task`,
         lifecycle_generation: 0,
+        children: [],
         status: "in_progress",
       }));
       fs.writeFileSync(path.join(task, "prd.md"), `${label} PRD`);
@@ -187,20 +191,13 @@ describe("omp cross-worktree callbacks", () => {
       }));
       return file;
     };
-    const legacy = (workspace: string): string => {
-      const file = path.join(workspace, ".trellis/.runtime/sessions/omp_binding.json");
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify({ current_task: ".trellis/tasks/same-name" }));
-      return file;
-    };
-    return { root, primary, linked, common, git, bind, legacy };
+    return { root, primary, linked, common, git, bind };
   }
 
   it("#1 uses linked task/context/workflow despite conflicting primary content", async () => {
     const f = await fixture();
     try {
       f.bind(f.linked);
-      f.legacy(f.primary);
       const output = await invoke(f.primary);
       for (const label of ["PRD", "SPEC", "FLOW"]) {
         expect(output).toContain(`LINKED ${label}`);
@@ -220,24 +217,6 @@ describe("omp cross-worktree callbacks", () => {
     }
   });
 
-  it("#2 rejects legacy bindings read-only without promoting them", async () => {
-    const f = await fixture();
-    try {
-      const legacy = f.legacy(f.linked);
-      const bytes = fs.readFileSync(legacy);
-      expect(await invoke(f.primary)).toContain("invalid_task");
-      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
-      expect(fs.readFileSync(legacy)).toEqual(bytes);
-      expect(fs.existsSync(path.join(f.common, "trellis/sessions/omp_binding.json"))).toBe(false);
-      f.legacy(f.primary);
-      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
-      fs.writeFileSync(legacy, "{");
-      expect(await invoke(f.primary)).toContain("unsupported_binding_schema");
-    } finally {
-      fs.rmSync(f.root, { recursive: true, force: true });
-    }
-  });
-
   it.each([
     { label: "missing", status: undefined },
     { label: "null", status: null },
@@ -252,13 +231,15 @@ describe("omp cross-worktree callbacks", () => {
     try {
       f.bind(f.linked);
       fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: "linked-task" }),
         id: "linked-task",
         lifecycle_generation: 0,
+        children: [],
         status,
       }));
       const output = await invoke(f.primary);
       expect(output).toContain("invalid_task");
-      expect(output).toContain("Invalid task status");
+      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "stale_task_identity");
       expect(output).not.toContain("workflow-state:planning");
       expect(output).not.toContain("NO TASK");
       expect(output).not.toContain("LINKED PRD");
@@ -273,8 +254,10 @@ describe("omp cross-worktree callbacks", () => {
     try {
       f.bind(f.linked);
       fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: "linked-task" }),
         id: "linked-task",
         lifecycle_generation: 0,
+        children: [],
         status: "in-review",
       }));
       fs.writeFileSync(path.join(f.linked, ".trellis/workflow.md"), "[workflow-state:in-review]\nLINKED CUSTOM FLOW\n[/workflow-state:in-review]\n");
@@ -348,12 +331,11 @@ describe("omp cross-worktree callbacks", () => {
     }
   });
 
-  it.each(["malformed", "schema", "common", "unregistered", "metadata", "path", "historical-task", "historical-storage"] as const)(
+  it.each(["malformed", "schema", "common", "unregistered", "metadata", "path"] as const)(
     "#3 rejects %s before task reads and never substitutes no_task", async (failure) => {
       const f = await fixture();
       try {
         const binding = f.bind(f.linked);
-        f.legacy(f.primary);
         const data = JSON.parse(fs.readFileSync(binding, "utf8")) as Record<string, unknown>;
         if (failure === "malformed") fs.writeFileSync(binding, "{");
         if (failure === "schema") fs.writeFileSync(binding, JSON.stringify({ ...data, schema_version: 1 }));
@@ -361,14 +343,6 @@ describe("omp cross-worktree callbacks", () => {
         if (failure === "unregistered") f.git(f.primary, "worktree", "remove", "--force", f.linked);
         if (failure === "metadata") fs.writeFileSync(path.join(f.linked, ".trellis/tasks/same-name/task.json"), "[]");
         if (failure === "path") fs.writeFileSync(binding, JSON.stringify({ ...data, current_task: "../outside" }));
-        if (failure === "historical-task" || failure === "historical-storage") {
-          const history = path.join(f.linked, ".trellis/workspace");
-          fs.mkdirSync(history);
-          const target = failure === "historical-task" ? path.join(f.linked, ".trellis/tasks/same-name/task.json") : binding;
-          const historicalFile = path.join(history, "source.json");
-          fs.renameSync(target, historicalFile);
-          fs.symlinkSync(historicalFile, target);
-        }
         const reads = vi.spyOn(fs, "readFileSync");
         const output = await invoke(f.primary);
         expect(output).toContain("invalid_task");
@@ -385,199 +359,6 @@ describe("omp cross-worktree callbacks", () => {
 });
 
 describe("omp templates", () => {
-  it("ignores historical config/workflow sources while honoring active replacements", async () => {
-    const project = makeOmpProject();
-    try {
-      const history = path.join(project.root, ".trellis/workspace");
-      fs.mkdirSync(history);
-      const configText = "context_injection:\n  max_file_bytes: 17\n  max_artifact_bytes: 17\nprompt_injection:\n  skip_keyword: SKIP_ME\n";
-      const workflowText = "[workflow-state:in_progress]\nHISTORICAL WORKFLOW\n[/workflow-state:in_progress]\n";
-      fs.writeFileSync(path.join(history, "config.yaml"), configText);
-      fs.writeFileSync(path.join(history, "workflow.md"), workflowText);
-      const config = path.join(project.root, ".trellis/config.yaml");
-      const workflow = path.join(project.root, ".trellis/workflow.md");
-      fs.symlinkSync(path.join(history, "config.yaml"), config);
-      fs.symlinkSync(path.join(history, "workflow.md"), workflow);
-      fs.writeFileSync(path.join(project.taskDir, "prd.md"), `ACTIVE TASK\n${"x".repeat(200)}\nACTIVE TAIL`);
-      const context = { cwd: project.root, sessionManager: { getSessionId: () => project.sessionId } };
-      const runTurn = async (text: string): Promise<unknown> => {
-        const handlers = captureOmpHandlers();
-        await handlers.get("input")?.({ text }, context);
-        return handlers.get("before_agent_start")?.({}, context);
-      };
-      const target = fs.realpathSync(history);
-      const reads = vi.spyOn(fs, "readFileSync");
-      const stats = vi.spyOn(fs, "statSync");
-      expect(await runSessionStart(project.root, project.sessionId)).toContain("ACTIVE TAIL");
-      const turn = await runTurn("SKIP_ME");
-      expect(turn).toBeDefined();
-      expect(JSON.stringify(turn)).not.toContain("HISTORICAL WORKFLOW");
-      expect([...reads.mock.calls, ...stats.mock.calls].filter(([file]) => {
-        try { return fs.realpathSync(file as fs.PathLike).startsWith(target + path.sep); } catch { return false; }
-      })).toEqual([]);
-      vi.restoreAllMocks();
-      fs.unlinkSync(config);
-      fs.unlinkSync(workflow);
-      fs.writeFileSync(config, configText);
-      fs.writeFileSync(workflow, workflowText.replace("HISTORICAL", "ACTIVE"));
-      expect(await runTurn("SKIP_ME")).toBeUndefined();
-      expect(JSON.stringify(await runTurn("do work"))).toContain("ACTIVE WORKFLOW");
-      expect(await runSessionStart(project.root, project.sessionId)).not.toContain("ACTIVE TAIL");
-      expect(fs.readFileSync(path.join(history, "config.yaml"), "utf8")).toBe(configText);
-      expect(fs.readFileSync(path.join(history, "workflow.md"), "utf8")).toBe(workflowText);
-    } finally {
-      vi.restoreAllMocks();
-      fs.rmSync(project.root, { recursive: true, force: true });
-    }
-  });
-  for (const fallback of [false, true]) {
-    it.each(["file", "directory"])(`rejects historical session %s aliases (fallback=${fallback})`, async (mode) => {
-      const project = makeOmpProject();
-      try {
-        const sessions = path.join(project.root, ".trellis/.runtime/sessions");
-        const sessionFile = path.join(sessions, "omp_context_limits.json");
-        const history = path.join(project.root, ".trellis/workspace");
-        fs.mkdirSync(history);
-        fs.writeFileSync(path.join(project.taskDir, "prd.md"), "ACTIVE TASK");
-        const record = fs.readFileSync(sessionFile, "utf8");
-        let alias: string;
-        if (mode === "directory") {
-          fs.renameSync(sessions, path.join(history, "sessions"));
-          fs.symlinkSync(path.join(history, "sessions"), sessions, "dir");
-          alias = sessions;
-        } else {
-          fs.renameSync(sessionFile, path.join(history, "old.json"));
-          fs.symlinkSync(path.join(history, "old.json"), sessionFile);
-          alias = sessionFile;
-        }
-        const reads = vi.spyOn(fs, "readFileSync");
-        const lists = vi.spyOn(fs, "readdirSync");
-        const rootReal = fs.realpathSync(history);
-        const output = await runSessionStart(project.root, fallback ? "" : project.sessionId);
-        expect(output).not.toContain("ACTIVE TASK");
-        expect([...reads.mock.calls, ...lists.mock.calls].filter(([file]) => {
-          try { const real = fs.realpathSync(file as fs.PathLike); return real === rootReal || real.startsWith(rootReal + path.sep); } catch { return false; }
-        })).toEqual([]);
-        vi.restoreAllMocks();
-        fs.unlinkSync(alias);
-        fs.mkdirSync(sessions, { recursive: true });
-        fs.writeFileSync(sessionFile, record);
-        const restored = await runSessionStart(project.root, fallback ? "" : project.sessionId);
-        if (fallback) {
-          expect(restored).toBe(""); // No identity means no inference, even with one valid session.
-        } else {
-          expect(restored).toContain("ACTIVE TASK");
-        }
-      } finally {
-        vi.restoreAllMocks();
-        fs.rmSync(project.root, { recursive: true, force: true });
-      }
-    });
-  }
-  it("rejects a historical task.json alias before reading metadata", async () => {
-    const project = makeOmpProject();
-    try {
-      const metadata = path.join(project.taskDir, "task.json");
-      const history = path.join(project.root, ".trellis/workspace/old.json");
-      fs.mkdirSync(path.dirname(history), { recursive: true });
-      const original = JSON.stringify({ title: "HISTORICAL-TITLE", status: "in_progress" });
-      fs.writeFileSync(history, original);
-      fs.writeFileSync(path.join(project.taskDir, "prd.md"), "ACTIVE TASK");
-      fs.unlinkSync(metadata);
-      fs.symlinkSync(history, metadata);
-      const target = fs.realpathSync(history);
-      const reads = vi.spyOn(fs, "readFileSync");
-      const output = await runSessionStart(project.root, project.sessionId);
-      expect(output).not.toContain("HISTORICAL-TITLE");
-      expect(reads.mock.calls.filter(([file]) => {
-        try { return fs.realpathSync(file as fs.PathLike) === target; } catch { return false; }
-      })).toEqual([]);
-      reads.mockRestore();
-      fs.unlinkSync(metadata);
-      fs.writeFileSync(metadata, JSON.stringify({
-        id: "08-13-context-limits",
-        lifecycle_generation: 0,
-        title: "ACTIVE TASK",
-        status: "in_progress",
-      }));
-      expect(await runSessionStart(project.root, project.sessionId)).toContain("ACTIVE TASK");
-      expect(fs.readFileSync(history, "utf8")).toBe(original);
-    } finally {
-      vi.restoreAllMocks();
-      fs.rmSync(project.root, { recursive: true, force: true });
-    }
-  });
-  it.skipIf(process.platform === "win32")("rejects referenced and manifest aliases into an external root's history", async () => {
-    const project = makeOmpProject();
-    const backing = `${project.root}-backing-store`;
-    try {
-      fs.renameSync(path.join(project.root, ".trellis"), backing);
-      fs.symlinkSync(backing, path.join(project.root, ".trellis"), "dir");
-      fs.mkdirSync(path.join(backing, "workspace"));
-      fs.mkdirSync(path.join(backing, "spec"));
-      const history = path.join(backing, "workspace/history.md");
-      fs.writeFileSync(history, "PRIVATE HISTORY");
-      fs.writeFileSync(path.join(backing, "workspace/manifest.jsonl"), JSON.stringify({ file: ".trellis/spec/current.md" }));
-      fs.writeFileSync(path.join(backing, "spec/current.md"), "ACTIVE SPEC");
-      fs.symlinkSync("../workspace/history.md", path.join(backing, "spec/history-alias.md"));
-      fs.symlinkSync("../workspace", path.join(backing, "spec/history-dir"), "dir");
-      fs.symlinkSync("../../workspace/manifest.jsonl", path.join(project.taskDir, "check.jsonl"));
-      fs.writeFileSync(path.join(project.taskDir, "prd.md"), "ACTIVE TASK");
-      fs.writeFileSync(path.join(project.taskDir, "implement.jsonl"), [
-        { file: ".trellis/spec/current.md" },
-        { file: ".trellis/spec/history-alias.md" },
-        { file: ".trellis/spec/history-dir", type: "directory" },
-      ].map((entry) => JSON.stringify(entry)).join("\n"));
-      fs.writeFileSync(path.join(backing, "config.yaml"), "channel:\n  trusted_context_dirs:\n    - .trellis\n    - .trellis/spec/history-dir\n");
-      const read = vi.spyOn(fs, "readFileSync");
-      const open = vi.spyOn(fs, "openSync");
-      const list = vi.spyOn(fs, "readdirSync");
-      const context = await runSessionStart(project.root, project.sessionId);
-      expect(context).toContain("ACTIVE TASK");
-      expect(context).toContain("ACTIVE SPEC");
-      expect(context).not.toContain("PRIVATE HISTORY");
-      const attempts = [...read.mock.calls, ...open.mock.calls, ...list.mock.calls].filter(([file]) => /workspace|history-alias|history-dir|check\.jsonl/.test(String(file)));
-      expect(attempts).toEqual([]);
-      vi.restoreAllMocks();
-      expect(fs.readFileSync(history, "utf8")).toBe("PRIVATE HISTORY");
-    } finally {
-      vi.restoreAllMocks();
-      fs.rmSync(project.root, { recursive: true, force: true });
-      fs.rmSync(backing, { recursive: true, force: true });
-    }
-  });
-
-  it.each(["workspace", "agent-traces", ".backup-old", ".developer"])("never opens retired %s task-context references even with explicit trust", async (historicalDir) => {
-    const project = makeOmpProject();
-    try {
-      const historical = `.trellis/${historicalDir}`;
-      const isIdentity = historicalDir === ".developer";
-      if (!isIdentity) fs.mkdirSync(path.join(project.root, historical));
-      const evidence = path.join(project.root, historical, ...(isIdentity ? [] : ["arbitrary.md"]));
-      fs.writeFileSync(evidence, "PRIVATE HISTORY");
-      fs.writeFileSync(path.join(project.root, ".trellis", "config.yaml"), `channel:\n  trusted_context_dirs:\n    - ${historical}\n`);
-      fs.writeFileSync(path.join(project.taskDir, "prd.md"), "ACTIVE TASK");
-      fs.writeFileSync(path.join(project.taskDir, "implement.jsonl"), [
-        { file: isIdentity ? historical : `${historical}/arbitrary.md` },
-        ...(!isIdentity ? [{ file: `${historical}/`, type: "directory" }] : []),
-      ].map((entry) => JSON.stringify(entry)).join("\n"));
-      const open = vi.spyOn(fs, "openSync");
-      const read = vi.spyOn(fs, "readFileSync");
-      const enumerate = vi.spyOn(fs, "readdirSync");
-      const context = await runSessionStart(project.root, project.sessionId);
-      expect(context).toContain("ACTIVE TASK");
-      expect(context).not.toContain("PRIVATE HISTORY");
-      for (const calls of [open.mock.calls, read.mock.calls, enumerate.mock.calls]) {
-        expect(calls.every(([file]) => !String(file).includes(historical))).toBe(true);
-      }
-      vi.restoreAllMocks();
-      expect(fs.readFileSync(evidence, "utf8")).toBe("PRIVATE HISTORY");
-    } finally {
-      vi.restoreAllMocks();
-      fs.rmSync(project.root, { recursive: true, force: true });
-    }
-  });
-
   it("provides the three Trellis sub-agent definitions", () => {
     const agents = getAllAgents();
     expect(agents.map((agent) => agent.name).sort()).toEqual([
@@ -727,8 +508,10 @@ describe("omp templates", () => {
       fs.writeFileSync(
         path.join(taskDir, "task.json"),
         JSON.stringify({
+          ...emptyTaskRecord({ id: "demo-task" }),
           id: "demo-task",
           lifecycle_generation: 0,
+          children: [],
           title: "OMP context dedupe",
           status: "in_progress",
         }),
@@ -794,8 +577,10 @@ describe("omp templates", () => {
       fs.mkdirSync(sessionsDir, { recursive: true });
       fs.mkdirSync(path.dirname(referencedFile), { recursive: true });
       fs.writeFileSync(path.join(taskDir, "task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: "demo-task" }),
         id: "demo-task",
         lifecycle_generation: 0,
+        children: [],
         status: "in_progress",
       }));
       fs.writeFileSync(referencedFile, "old context body");

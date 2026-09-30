@@ -67,8 +67,7 @@ import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 import { toPosix } from "../utils/posix.js";
 import { updateHashes } from "../utils/template-hash.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
-import { hasRetiredInstructions } from "../migrations/retirement.js";
-import { assertActiveDataPath } from "../utils/retired-data.js";
+import { assertProjectPath } from "../utils/path-boundary.js";
 
 const MIN_PYTHON_MAJOR = 3;
 const MIN_PYTHON_MINOR = 9;
@@ -323,13 +322,7 @@ function writeTaskSkeleton(
   }
 }
 
-/**
- * Compute the bootstrap checklist items (previously stored as structured
- * `subtasks: [{name, status}]` in task.json). Per task 04-21-task-schema-unify
- * (D1), these live as markdown `- [ ]` items in prd.md instead, so task.json
- * stays canonical with `subtasks: string[]` (child task dir names, same as
- * task_store.py).
- */
+/** Compute bootstrap checklist items rendered in prd.md. */
 function getBootstrapChecklistItems(
   projectType: ProjectType,
   packages?: DetectedPackage[],
@@ -552,23 +545,14 @@ etc.) I can pull from, or should I scan the codebase from scratch?"
   return content;
 }
 
-interface TaskOwnership {
-  creator: string;
-  assignee: string;
-}
-
 function getBootstrapTaskJson(
-  ownership: TaskOwnership,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): TaskJson {
   const today = new Date().toISOString().split("T")[0];
   const relatedFiles = getBootstrapRelatedFiles(projectType, packages);
 
-  // Canonical 24-field shape via emptyTaskJson factory.
-  // Checklist items (previously stored as structured `subtasks`) are now
-  // rendered as `- [ ]` items in prd.md; task.json.subtasks is always
-  // string[] (child task dir names) per the canonical schema.
+  // Canonical task shape via emptyTaskJson factory. Checklist items live in prd.md.
   return emptyTaskJson({
     id: BOOTSTRAP_TASK_NAME,
     name: BOOTSTRAP_TASK_NAME,
@@ -577,8 +561,6 @@ function getBootstrapTaskJson(
     status: "in_progress",
     dev_type: "docs",
     priority: "P1",
-    creator: ownership.creator,
-    assignee: ownership.assignee,
     createdAt: today,
     relatedFiles,
     notes: `First-time setup task created by trellis init (${projectType} project)`,
@@ -590,12 +572,11 @@ function getBootstrapTaskJson(
  */
 function createBootstrapTask(
   cwd: string,
-  ownership: TaskOwnership,
   pythonCmd: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
 ): boolean {
-  const taskJson = getBootstrapTaskJson(ownership, projectType, packages);
+  const taskJson = getBootstrapTaskJson(projectType, packages);
   const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
   return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
 }
@@ -793,10 +774,6 @@ interface InitOptions {
   kimi?: boolean;
   snow?: boolean;
   yes?: boolean;
-  /** Retired identity option; accepted only to emit migration guidance. */
-  user?: string;
-  creator?: string;
-  assignee?: string;
   force?: boolean;
   skipExisting?: boolean;
   template?: string;
@@ -824,7 +801,7 @@ const _cliFlagCheck: _AssertCliFlagsInOptions = true;
  */
 function writeMonorepoConfig(cwd: string, packages: DetectedPackage[]): void {
   const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
-  assertActiveDataPath(configPath, cwd);
+  assertProjectPath(configPath, cwd);
   let content = "";
 
   try {
@@ -871,12 +848,6 @@ interface InitAnswers {
 }
 
 export async function init(options: InitOptions): Promise<void> {
-  if (options.user !== undefined) {
-    console.error(
-      "--user/-u is retired. Use --creator and --assignee for a new bootstrap task; no global identity is created.",
-    );
-    process.exit(2);
-  }
   // Refuse to run in $HOME — running here would scoop platform runtime data
   // (Claude/Codex/OpenCode session histories etc.) into the trellis hash
   // manifest, and a subsequent `trellis uninstall` would wipe it.
@@ -895,17 +866,20 @@ export async function init(options: InitOptions): Promise<void> {
 
   const cwd = process.cwd();
   const isFirstInit = !fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
-  const existingWorkflow = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
-  assertActiveDataPath(existingWorkflow, cwd);
-  if (
-    !options.force &&
-    fs.existsSync(existingWorkflow) &&
-    hasRetiredInstructions(fs.readFileSync(existingWorkflow, "utf8"))
-  ) {
-    throw new Error(
-      "Existing workflow still requires retired identity or workspace operations. Reconcile it with trellis update --migrate, or explicitly approve replacement with init --force before adding platforms.",
-    );
+  if (!isFirstInit) {
+    const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
+    assertProjectPath(versionPath, cwd);
+    const installedVersion = fs.existsSync(versionPath)
+      ? fs.readFileSync(versionPath, "utf8").trim()
+      : "unknown";
+    if (installedVersion !== VERSION) {
+      throw new Error(
+        `Unsupported installed Trellis version ${installedVersion}. Initialize a new project with Trellis ${VERSION}; this version does not reinitialize earlier installations.`,
+      );
+    }
   }
+  const existingWorkflow = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
+  assertProjectPath(existingWorkflow, cwd);
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
   console.log(chalk.cyan(`\n${banner.trimEnd()}`));
@@ -948,7 +922,7 @@ export async function init(options: InitOptions): Promise<void> {
   // to the full flow so the main-dispatch tasksEmpty fallback fires —
   // the add-platform fast path would otherwise skip bootstrap recovery.
   const tasksDirEarly = path.join(cwd, PATHS.TASKS);
-  assertActiveDataPath(tasksDirEarly, cwd);
+  assertProjectPath(tasksDirEarly, cwd);
   const tasksEmptyEarly =
     !fs.existsSync(tasksDirEarly) || fs.readdirSync(tasksDirEarly).length === 0;
   const hasTemplateRequest = !!options.template || !!options.registry;
@@ -968,22 +942,6 @@ export async function init(options: InitOptions): Promise<void> {
   const needsBootstrap =
     (isFirstInit || tasksEmptyEarly) &&
     !fs.existsSync(path.join(cwd, PATHS.TASKS, BOOTSTRAP_TASK_NAME));
-  let ownership: TaskOwnership | undefined;
-  if (needsBootstrap) {
-    let creator = options.creator?.trim();
-    let assignee = options.assignee?.trim();
-    if ((!creator || !assignee) && !options.yes && process.stdin.isTTY) {
-      creator ??= (await askInput("Bootstrap task creator: ")).trim();
-      assignee ??= (await askInput("Bootstrap task assignee: ")).trim();
-    }
-    if (!creator || !assignee) {
-      console.error(
-        "Bootstrap task requires explicit --creator and --assignee. No identity is initialized.",
-      );
-      process.exit(2);
-    }
-    ownership = { creator, assignee };
-  }
 
   // Detect project type (silent - no output)
   const detectedType = detectProjectType(cwd);
@@ -1688,7 +1646,7 @@ export async function init(options: InitOptions): Promise<void> {
 
     // Write version file for update tracking
     const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
-    assertActiveDataPath(versionPath, cwd);
+    assertProjectPath(versionPath, cwd);
     fs.writeFileSync(versionPath, VERSION);
 
     // Configure selected tools by copying entire directories (dogfooding)
@@ -1732,7 +1690,7 @@ export async function init(options: InitOptions): Promise<void> {
   if (useRemoteTemplate) {
     const specFilesToHash = new Map<string, string>();
     for (const relativePath of collectSpecPaths(cwd)) {
-      assertActiveDataPath(path.join(cwd, relativePath), cwd);
+      assertProjectPath(path.join(cwd, relativePath), cwd);
       const content = fs.readFileSync(path.join(cwd, relativePath), "utf-8");
       specFilesToHash.set(relativePath, content);
     }
@@ -1755,14 +1713,8 @@ export async function init(options: InitOptions): Promise<void> {
   }
 
   if (
-    ownership &&
-    !createBootstrapTask(
-      cwd,
-      ownership,
-      pythonCmd,
-      projectType,
-      monorepoPackages,
-    )
+    needsBootstrap &&
+    !createBootstrapTask(cwd, pythonCmd, projectType, monorepoPackages)
   ) {
     throw new Error("Could not create bootstrap task.");
   }

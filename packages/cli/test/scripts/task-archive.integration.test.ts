@@ -13,7 +13,7 @@
  *      working tree stays clean against HEAD).
  *   3. Commit-failure visibility — if the archive move succeeds but git
  *      cannot create the bookkeeping commit, `task.py archive` must fail
- *      loudly so callers do not continue to journal over dirty deletes.
+ *      loudly so callers do not continue after dirty deletes.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,6 +21,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 
 const TEMPLATE_SCRIPTS = path.resolve(
   __dirname,
@@ -71,21 +72,9 @@ function makeTask(repo: string, name: string, prdBody: string): void {
   fs.writeFileSync(path.join(dir, "prd.md"), prdBody);
   fs.writeFileSync(
     path.join(dir, "task.json"),
-    JSON.stringify({
-      id: name,
-      name,
-      lifecycle_generation: 0,
-      title: name,
-      status: "in_progress",
-      priority: "P2",
-      createdAt: "2026-05-13",
-      assignee: "test",
-      creator: "test",
-      subtasks: [],
-      children: [],
-      relatedFiles: [],
-      meta: {},
-    }) + "\n",
+    JSON.stringify(emptyTaskRecord({
+      id: name, name, title: name, status: "in_progress", createdAt: "2026-05-13",
+    })) + "\n",
   );
 }
 

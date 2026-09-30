@@ -22,19 +22,16 @@ describe("managed-removal strict planning", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("preserves all retired data without reading or enumerating it", () => {
+  it("preserves unknown files outside the managed inventory", () => {
     const root = path.join(tmpDir, ".trellis");
-    fs.mkdirSync(path.join(root, "workspace", "arbitrary"), {
+    fs.mkdirSync(path.join(root, "custom", "arbitrary"), {
       recursive: true,
     });
-    fs.mkdirSync(path.join(root, "agent-traces"), { recursive: true });
-    const history = [
-      ".developer",
-      "workspace/index.md",
-      "workspace/arbitrary/data.bin",
-      "agent-traces/raw",
+    const unknown = [
+      "custom/index.md",
+      "custom/arbitrary/data.bin",
     ];
-    for (const file of history)
+    for (const file of unknown)
       fs.writeFileSync(path.join(root, file), `keep:${file}`);
     fs.writeFileSync(path.join(root, "workflow.md"), "active");
     const read = vi.spyOn(fs, "readFileSync");
@@ -42,7 +39,7 @@ describe("managed-removal strict planning", () => {
     const plan = buildManagedRemovalPlan(
       tmpDir,
       Object.fromEntries(
-        [...history, "workflow.md"].map((file) => [`.trellis/${file}`, "hash"]),
+        [[".trellis/workflow.md", "hash"]],
       ),
     );
     executeManagedRemovalPlan(tmpDir, plan);
@@ -50,13 +47,13 @@ describe("managed-removal strict planning", () => {
     expect(
       list.mock.calls.every(
         ([dir]) =>
-          !history.some((file) =>
+          !unknown.some((file) =>
             String(dir).startsWith(path.join(root, file)),
           ),
       ),
     ).toBe(true);
     vi.restoreAllMocks();
-    for (const file of history)
+    for (const file of unknown)
       expect(fs.readFileSync(path.join(root, file), "utf-8")).toBe(
         `keep:${file}`,
       );

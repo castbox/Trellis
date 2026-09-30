@@ -7,7 +7,7 @@
  *   - init's manifest only contains paths trellis actually wrote
  *   - uninstall does not touch user-owned files under platform-managed dirs
  *   - homedir guard refuses init/uninstall in $HOME
- *   - poisoned-manifest self-heal works on both update and uninstall entry
+ *   - uninstall preserves files outside current managed ownership
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -33,7 +33,6 @@ vi.mock("node:child_process", () => ({
 
 import { init } from "../../src/commands/init.js";
 import { uninstall } from "../../src/commands/uninstall.js";
-import { update } from "../../src/commands/update.js";
 import { loadHashes, saveHashes } from "../../src/utils/template-hash.js";
 import { agentsMdContent } from "../../src/templates/markdown/index.js";
 
@@ -77,7 +76,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     fs.mkdirSync(path.dirname(userSession), { recursive: true });
     fs.writeFileSync(userSession, "user-chat-data\n");
 
-    await init({ creator: "test", assignee: "test", yes: true, codex: true, force: true });
+    await init({ yes: true, codex: true, force: true });
 
     const hashes = loadHashes(tmpDir);
     expect(hashes).not.toHaveProperty(".codex/sessions/2026/x.jsonl");
@@ -101,7 +100,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     fs.mkdirSync(path.dirname(userChat), { recursive: true });
     fs.writeFileSync(userChat, '{"role":"user"}\n');
 
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+    await init({ yes: true, claude: true, force: true });
 
     const hashes = loadHashes(tmpDir);
     expect(hashes).not.toHaveProperty(
@@ -113,7 +112,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // User's pre-existing AGENTS.md must not be hashed when init skips it.
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), "my own AGENTS.md\n");
 
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, skipExisting: true });
+    await init({ yes: true, claude: true, skipExisting: true });
 
     const hashes = loadHashes(tmpDir);
     expect(hashes).not.toHaveProperty("AGENTS.md");
@@ -124,7 +123,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // track actual writes, not ownership inferred from content equality.
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), agentsMdContent);
 
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+    await init({ yes: true, claude: true, force: true });
 
     const hashes = loadHashes(tmpDir);
     expect(hashes).not.toHaveProperty("AGENTS.md");
@@ -143,7 +142,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     fs.mkdirSync(path.dirname(userSession), { recursive: true });
     fs.writeFileSync(userSession, "user-chat-data\n");
 
-    await init({ creator: "test", assignee: "test", yes: true, codex: true, force: true });
+    await init({ yes: true, codex: true, force: true });
     await uninstall({ yes: true });
 
     // The user's session JSONL survives.
@@ -154,7 +153,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
   it("#R1.5 init --skip-existing → uninstall preserves user's AGENTS.md", async () => {
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), "my own AGENTS.md\n");
 
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, skipExisting: true });
+    await init({ yes: true, claude: true, skipExisting: true });
     await uninstall({ yes: true });
 
     expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
@@ -171,7 +170,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // OUTSIDE the <!-- TRELLIS:START/END --> block — a supported layout that
     // update.ts explicitly preserves. Uninstall must not unlink the whole
     // file and take the user content with it.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+    await init({ yes: true, claude: true, force: true });
     const agentsPath = path.join(tmpDir, "AGENTS.md");
     // Sanity: Trellis tracked it and wrote the managed block.
     expect(loadHashes(tmpDir)).toHaveProperty("AGENTS.md");
@@ -194,7 +193,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
   it("#R1.7 uninstall still deletes a tracked AGENTS.md that is only the Trellis block", async () => {
     // Normal case: user never edited AGENTS.md, so once the block is stripped
     // nothing user-authored remains and the file is removed.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+    await init({ yes: true, claude: true, force: true });
     const agentsPath = path.join(tmpDir, "AGENTS.md");
     expect(fs.existsSync(agentsPath)).toBe(true);
 
@@ -203,39 +202,11 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     expect(fs.existsSync(agentsPath)).toBe(false);
   });
 
-  // ----- R3: poisoned-manifest self-heal -----
+  // ----- R3: unknown manifest ownership -----
 
-  it("#R3.1 update silently prunes orphan manifest entries", async () => {
-    // First, run a clean init.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
-
-    // Then poison the manifest by hand: add an entry for a user-owned file
-    // that no platform configurator owns. This simulates the state created
-    // by a buggy pre-fix init version.
-    const userFile = path.join(tmpDir, ".codex", "sessions", "user.jsonl");
-    fs.mkdirSync(path.dirname(userFile), { recursive: true });
-    fs.writeFileSync(userFile, "user data\n");
-
-    const hashes = loadHashes(tmpDir);
-    hashes[".codex/sessions/user.jsonl"] = "fake-hash";
-    saveHashes(tmpDir, hashes);
-
-    expect(loadHashes(tmpDir)).toHaveProperty(".codex/sessions/user.jsonl");
-
-    await update({});
-
-    // The orphan entry is silently pruned; user file is untouched.
-    expect(loadHashes(tmpDir)).not.toHaveProperty(
-      ".codex/sessions/user.jsonl",
-    );
-    expect(fs.existsSync(userFile)).toBe(true);
-  });
-
-  it("#R3.2 uninstall self-heals + preserves user file even without prior update", async () => {
-    // Most catastrophic path: user has poisoned manifest from old install
-    // and runs `trellis uninstall` directly. Prune must fire before plan
-    // build, otherwise the user file gets unlinked.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+  it("#R3.2 uninstall preserves unknown file despite an unowned manifest entry", async () => {
+    // Prune must fire before plan build, otherwise the unknown file is unlinked.
+    await init({ yes: true, claude: true, force: true });
 
     const userFile = path.join(
       tmpDir,
@@ -258,8 +229,8 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     expect(fs.readFileSync(userFile, "utf-8")).toBe("chat history\n");
   });
 
-  it("#R3.2b uninstall self-heals poisoned pre-existing AGENTS.md", async () => {
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+  it("#R3.2b uninstall preserves AGENTS.md without a managed block", async () => {
+    await init({ yes: true, claude: true, force: true });
 
     const agentsPath = path.join(tmpDir, "AGENTS.md");
     fs.writeFileSync(agentsPath, "my own AGENTS.md\n");
@@ -272,27 +243,6 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
 
     expect(fs.existsSync(agentsPath)).toBe(true);
     expect(fs.readFileSync(agentsPath, "utf-8")).toBe("my own AGENTS.md\n");
-  });
-
-  it("#R3.3 prune keeps migration-referenced paths even if not in collectTemplates", async () => {
-    // Some migration manifests reference old paths that no current
-    // configurator owns (they're being renamed/deleted). The prune helper
-    // must not strip those, otherwise legitimate pending migrations lose
-    // their hash records and the migration logic regresses.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
-
-    // We can't easily fabricate a real migration entry in this test, but we
-    // CAN assert the prune behavior preserves .trellis/ entries which is the
-    // most common "not-in-collectTemplates-but-important" case. (Migration
-    // paths share the same preservation logic in pruneOrphanManifestKeys.)
-    const hashes = loadHashes(tmpDir);
-    hashes[".trellis/workflow.md"] = "ok";
-    saveHashes(tmpDir, hashes);
-
-    await update({});
-
-    // .trellis/* entries are kept.
-    expect(loadHashes(tmpDir)).toHaveProperty(".trellis/workflow.md");
   });
 
   // ----- R2: homedir guard -----
@@ -333,7 +283,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
         }) as never);
 
       await withFakeHome(fakeHome, async () => {
-        await expect(init({ creator: "test", assignee: "test", yes: true, force: true })).rejects.toThrow(
+        await expect(init({ yes: true, force: true })).rejects.toThrow(
           "process.exit(1)",
         );
       });
@@ -348,7 +298,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
 
   it("#R2.2 uninstall refuses to run when cwd === $HOME", async () => {
     // Set up a valid trellis project, then pretend its cwd is the homedir.
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+    await init({ yes: true, claude: true, force: true });
 
     const exitSpy = vi
       .spyOn(process, "exit")
@@ -374,7 +324,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
       process.env.TRELLIS_ALLOW_HOMEDIR = "1";
 
       await withFakeHome(fakeHome, async () => {
-        await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+        await init({ yes: true, claude: true, force: true });
       });
 
       expect(fs.existsSync(path.join(fakeHome, ".trellis"))).toBe(true);
@@ -392,7 +342,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
       vi.spyOn(process, "cwd").mockReturnValue(subDir);
 
       await withFakeHome(fakeHome, async () => {
-        await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+        await init({ yes: true, claude: true, force: true });
       });
 
       expect(fs.existsSync(path.join(subDir, ".trellis"))).toBe(true);

@@ -16,7 +16,7 @@ import { z } from "zod";
 
 import { VERSION } from "../constants/version.js";
 import { writeFileAtomic } from "./atomic-write.js";
-import { assertActiveDataPath, isRetiredDataPath } from "./retired-data.js";
+import { assertProjectPath } from "./path-boundary.js";
 import {
   assertSafeManagedPath,
   lstatIfPresent,
@@ -196,7 +196,6 @@ function hashDirectory(absPath: string): string {
 
   for (const name of entries) {
     const child = path.join(absPath, name);
-    if (isRetiredDataPath(child)) continue;
     const fingerprint = fingerprintPath(child);
     hash.update(name, "utf-8");
     hash.update("\0", "utf-8");
@@ -209,9 +208,6 @@ function hashDirectory(absPath: string): string {
 
 /** Fingerprint one path without dereferencing a symlink leaf. */
 export function fingerprintPath(absPath: string): PathFingerprint {
-  if (isRetiredDataPath(absPath)) {
-    throw new Error("Retired identity/history cannot be fingerprinted.");
-  }
   const stat = lstatIfPresent(absPath);
   if (!stat) return { kind: "absent" };
 
@@ -319,7 +315,7 @@ export function getTransactionPaths(
     paths.backupDir,
     paths.lockFile,
   ]) {
-    assertActiveDataPath(candidate, canonical);
+    assertProjectPath(candidate, canonical);
   }
   return paths;
 }
@@ -363,7 +359,7 @@ export function assertExternalStateRoot(
   projectRoot: string,
   stateRoot: string,
 ): void {
-  assertActiveDataPath(stateRoot, projectRoot);
+  assertProjectPath(stateRoot, projectRoot);
   const projectedStateRoot = projectedCanonicalPath(stateRoot);
   if (isWithinPath(projectRoot, projectedStateRoot)) {
     throw new Error(
@@ -381,7 +377,6 @@ function copyPath(
   destination: string,
   privateParents: boolean,
 ): void {
-  if (isRetiredDataPath(source) || isRetiredDataPath(destination)) return;
   const stat = fs.lstatSync(source);
   if (privateParents) {
     ensurePrivateDirectory(path.dirname(destination));
@@ -453,12 +448,9 @@ function validateStatePaths(state: AblationStateV2): void {
 
   for (const entry of state.entries) {
     validateStoredRelativePath(entry.relativePath);
-    if (
-      entry.relativePath === ".trellis" ||
-      isRetiredDataPath(entry.relativePath)
-    ) {
+    if (entry.relativePath === ".trellis") {
       throw new Error(
-        "Incompatible recovery record: retired identity/history must remain in place.",
+        "Ablation entries must identify files below the project root.",
       );
     }
     if (seen.has(entry.relativePath)) {
@@ -489,16 +481,6 @@ function validateStatePaths(state: AblationStateV2): void {
 
 /** Parse and validate an external state file. Unknown schemas fail closed. */
 export function parseAblationState(value: unknown): AblationStateV2 {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "schemaVersion" in value &&
-    value.schemaVersion === 1
-  ) {
-    throw new Error(
-      "Incompatible recovery record: version 1 may contain retired identity/history; restore refused before mutation.",
-    );
-  }
   const parsed = ablationStateSchema.parse(value) as AblationStateV2;
   validateStatePaths(parsed);
   return parsed;

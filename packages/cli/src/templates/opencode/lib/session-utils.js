@@ -300,7 +300,7 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
   const lines = []
 
   const branch = runGit(directory, ["branch", "--show-current"]) || "(detached)"
-  const dirtyCount = runGit(directory, ["status", "--porcelain", "--", ".", ":(exclude).trellis/workspace", ":(exclude).trellis/agent-traces", ":(exclude).trellis/.developer", ":(exclude).trellis/.backup-*"])
+  const dirtyCount = runGit(directory, ["status", "--porcelain", "--", "."])
     .split(/\r?\n/)
     .filter(line => line.trim()).length
   lines.push(`Git: branch ${branch}; ${dirtyCount === 0 ? "clean" : `dirty ${dirtyCount} paths`}.`)

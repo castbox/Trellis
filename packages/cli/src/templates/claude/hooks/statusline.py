@@ -39,19 +39,19 @@ if sys.platform == "win32":
             reconfigure(encoding="utf-8", errors="replace")
 
 
-def _is_active_path(root: Path, path: Path) -> bool:
+def _is_project_path(root: Path, path: Path) -> bool:
     scripts_dir = root / ".trellis" / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     try:
-        from common.history_paths import is_active_path  # type: ignore[import-not-found]
-        return is_active_path(path, root)
+        from common.path_boundary import is_project_path  # type: ignore[import-not-found]
+        return is_project_path(path, root)
     except Exception:
         return False
 
 
 def _read_text(path: Path, root: Path) -> str:
-    if not _is_active_path(root, path):
+    if not _is_project_path(root, path):
         return ""
     try:
         return path.read_text(encoding="utf-8").strip()
@@ -152,12 +152,12 @@ def _count_active_tasks(trellis_dir: Path) -> int:
     """Count non-archived task directories with valid task.json."""
     root = trellis_dir.parent
     tasks_dir = trellis_dir / "tasks"
-    if not _is_active_path(root, tasks_dir) or not tasks_dir.is_dir():
+    if not _is_project_path(root, tasks_dir) or not tasks_dir.is_dir():
         return 0
     return sum(
         1 for directory in tasks_dir.iterdir()
-        if directory.name != "archive" and _is_active_path(root, directory)
-        and directory.is_dir() and _is_active_path(root, directory / "task.json")
+        if directory.name != "archive" and _is_project_path(root, directory)
+        and directory.is_dir() and _is_project_path(root, directory / "task.json")
         and (directory / "task.json").is_file()
     )
 

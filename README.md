@@ -58,10 +58,10 @@
 npm install -g @mindfoldhq/trellis@latest
 
 # 2. Initialize in your repo
-trellis init --creator your-name --assignee your-name
+trellis init
 
 # 3. Or initialize with the platforms you actually use
-trellis init --cursor --opencode --codex --creator your-name --assignee your-name
+trellis init --cursor --opencode --codex
 ```
 
 See the [Quick Start](https://docs.trytrellis.app/start/install-and-first-task) and [Supported Platforms](https://docs.trytrellis.app/advanced/multi-platform) guides for setup details.
@@ -127,7 +127,7 @@ No. Many teams start by letting AI draft specs from existing code and then tight
 <details>
 <summary><strong>Can teams use this without constant conflicts?</strong></summary>
 
-Yes. New tasks take explicit creator and assignee inputs, while current-task bindings stay isolated per session. Shared specs and task artifacts remain reviewable in the repo.
+Yes. Current-task bindings stay isolated per session. Shared specs and task artifacts remain reviewable in the repo.
 
 </details>
 
@@ -139,7 +139,7 @@ surfaces after creating a verified recovery transaction outside the project.
 Start a fresh agent session for the comparison, then run `trellis restore` to
 recover the exact prior state. Use `--dry-run` to preview either operation.
 The private recovery transaction includes exact managed `.trellis` task and spec bytes, which may contain user-authored sensitive text, and is kept
-until restore verifies successfully. Retired identity and historical workspace trees remain untouched in place; they are not included in snapshots or restored.
+until restore verifies successfully. Files outside the verified transaction remain untouched.
 
 This is different from `trellis uninstall` (permanent removal) and
 `TRELLIS_HOOKS=0` (hooks only). Ablation does not launch agents, manage

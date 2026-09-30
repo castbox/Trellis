@@ -57,24 +57,6 @@ describe("ablate()/restore() integration", () => {
     });
   });
 
-  it("rejects a historical recovery root before ablate or restore writes", async () => {
-    await init({ yes: true, force: true, creator: "fixture", assignee: "fixture" });
-    const history = path.join(stateRoot, ".trellis/workspace");
-    fs.mkdirSync(history, { recursive: true });
-    fs.writeFileSync(path.join(history, "journal.md"), "historical bytes");
-    process.env[ABLATION_STATE_ROOT_ENV] = history;
-    const receipt = loadHashes(projectDir);
-    const mkdir = vi.spyOn(fs, "mkdirSync");
-    const open = vi.spyOn(fs, "openSync");
-    await expect(ablate({ yes: true })).rejects.toThrow("Retired identity/history");
-    await expect(restore({ yes: true })).rejects.toThrow("Retired identity/history");
-    expect(mkdir).not.toHaveBeenCalled();
-    expect(open).not.toHaveBeenCalled();
-    expect(loadHashes(projectDir)).toEqual(receipt);
-    expect(fs.readdirSync(history)).toEqual(["journal.md"]);
-    expect(fs.readFileSync(path.join(history, "journal.md"), "utf8")).toBe("historical bytes");
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
     if (originalStdinIsTtyDescriptor) {
@@ -98,8 +80,6 @@ describe("ablate()/restore() integration", () => {
   async function initialize(): Promise<void> {
     fs.writeFileSync(path.join(projectDir, "application.txt"), "unchanged\n");
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       codex: true,
       claude: true,
@@ -111,65 +91,18 @@ describe("ablate()/restore() integration", () => {
     return fingerprintPath(projectDir);
   }
 
-  it("preserves historical bytes and links in place without snapshotting or replaying them", async () => {
+  it("preserves unknown project files through ablate and restore", async () => {
     await initialize();
-    const history = [
-      ".developer",
-      "workspace/index.md",
-      "workspace/custom/nested.bin",
-      "agent-traces/raw.jsonl",
-      ".backup-old/.trellis/.developer",
-      ".backup-old/.trellis/workspace/arbitrary.bin",
-      ".backup-old/other.txt",
-    ];
-    for (const file of history) {
-      const target = path.join(projectDir, ".trellis", file);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, `unchanged:${file}`);
-    }
-    const link = path.join(projectDir, ".trellis", "workspace", "pointer");
-    if (process.platform !== "win32") fs.symlinkSync("custom/nested.bin", link);
-    const read = vi.spyOn(fs, "readFileSync");
-    const list = vi.spyOn(fs, "readdirSync");
-    const copy = vi.spyOn(fs, "copyFileSync");
-    const remove = vi.spyOn(fs, "rmSync");
+    const unknown = path.join(projectDir, ".trellis", "custom", "note.txt");
+    fs.mkdirSync(path.dirname(unknown), { recursive: true });
+    fs.writeFileSync(unknown, "user content");
     await ablate({ yes: true });
-    expect(fs.existsSync(path.join(projectDir, ".trellis", "workspace"))).toBe(
-      true,
-    );
+    expect(fs.readFileSync(unknown, "utf8")).toBe("user content");
     const transaction = getTransactionPaths(projectDir);
-    for (const file of history)
-      expect(
-        fs.existsSync(path.join(transaction.backupDir, ".trellis", file)),
-      ).toBe(false);
+    expect(fs.existsSync(path.join(transaction.backupDir, ".trellis/custom/note.txt"))).toBe(false);
     await restore({ yes: true });
-    for (const calls of [
-      read.mock.calls,
-      list.mock.calls,
-      copy.mock.calls,
-      remove.mock.calls,
-    ]) {
-      expect(
-        calls.every(
-          ([file]) =>
-            !/[\\/]\.trellis[\\/](?:workspace|agent-traces|\.developer|\.backup-[^\\/]*)(?:[\\/]|$)/.test(
-              String(file),
-            ),
-        ),
-      ).toBe(true);
-    }
-    read.mockRestore();
-    list.mockRestore();
-    copy.mockRestore();
-    remove.mockRestore();
-    for (const file of history)
-      expect(
-        fs.readFileSync(path.join(projectDir, ".trellis", file), "utf-8"),
-      ).toBe(`unchanged:${file}`);
-    if (process.platform !== "win32")
-      expect(fs.readlinkSync(link)).toBe("custom/nested.bin");
+    expect(fs.readFileSync(unknown, "utf8")).toBe("user content");
   });
-
   it("#1 performs a complete exact round trip while preserving user neighbors", async () => {
     await initialize();
     if (process.platform !== "win32")
@@ -293,8 +226,6 @@ describe("ablate()/restore() integration", () => {
     "#7 refuses parent-symlink traversal without touching the target",
     async () => {
       await init({
-        creator: "test",
-        assignee: "test",
         yes: true,
         codex: true,
         force: true,
@@ -357,8 +288,6 @@ describe("ablate()/restore() integration", () => {
     "#10 apply failure rolls back exactly and removes the unused transaction",
     async () => {
       await init({
-        creator: "test",
-        assignee: "test",
         yes: true,
         codex: true,
         force: true,

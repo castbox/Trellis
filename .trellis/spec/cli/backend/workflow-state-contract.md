@@ -6,7 +6,7 @@ Resolve the session before reading task-specific workflow state. Task metadata,
 workflow blocks, manifest files and relative context references belong to the
 validated task workspace, not necessarily the invocation checkout. Invalid
 bindings produce explicit error/stale breadcrumbs, never normal no_task.
-See identity-free-task-lifecycle.md, Cross-Worktree Session Contract, for storage,
+See task-lifecycle.md, Cross-Worktree Session Contract, for storage,
 live Git membership, legacy precedence and lifecycle rules.
 
 > Runtime contract for the per-turn `<workflow-state>` breadcrumb that
@@ -293,12 +293,11 @@ a new writer requires updating this spec.**
 
 | # | Writer | File:Line | Value | Trigger |
 |---|--------|-----------|-------|---------|
-| 1 | `cmd_create` | `packages/cli/src/templates/trellis/scripts/common/task_store.py:206` | `"planning"` | `task.py create "<title>" --creator <creator> --assignee <assignee>` (also visibly auto-sets the session active-task pointer when session identity is available; `--no-start` skips pointer movement for backlog batching — see R7 in 04-30-workflow-state-commit-gap PRD) |
+| 1 | `cmd_create` | `packages/cli/src/templates/trellis/scripts/common/task_store.py` | `"planning"` | `task.py create "<title>" --description "<summary>"` (also visibly auto-sets the session active-task pointer when session identity is available; `--no-start` skips pointer movement for backlog batching — see R7 in 04-30-workflow-state-commit-gap PRD) |
 | 2 | `_record_start_state` (called from both `cmd_start` branches) | `packages/cli/src/templates/trellis/scripts/task.py` | `"in_progress"` (gated on prior `"planning"`; does not infer branch identity) | `task.py start <dir>` |
 | 3 | `cmd_archive` | `packages/cli/src/templates/trellis/scripts/common/task_store.py` | `"completed"` (flip + archive `mv`; preserves TaskId, source and generation without branch gating) | `task.py archive <dir>` |
 | 4 | `emptyTaskJson` factory | `packages/cli/src/utils/task-json.ts:54` | `"planning"` (default) | TS callers (init, update) |
-| 5 | `getBootstrapTaskJson` | `packages/cli/src/commands/init.ts:535` | `"in_progress"` (override) | `trellis init` (creator path) |
-| 6 | migration-task via `emptyTaskJson` | `packages/cli/src/commands/update.ts:2483-2494` | `"planning"` (override on factory) | `trellis update --migrate` for breaking-change manifest |
+| 5 | `getBootstrapTaskJson` | `packages/cli/src/commands/init.ts:535` | `"in_progress"` (override) | `trellis init` |
 
 **No other writer exists.** No hook script writes `task.json.status` — verified
 by `grep -rn '"status"' .trellis/scripts/`. Linear-sync hook (`linear_sync.py`)

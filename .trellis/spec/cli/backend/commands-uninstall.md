@@ -15,7 +15,7 @@ How the uninstall command removes every Trellis-written file from a project, scr
 - **Two file classes.** Manifest entries fall into:
   1. *Opaque content files* (most `.py`, `.md`, `.toml`, `.json` agents, etc.) — unlinked outright.
   2. *Structured config files* (`settings.json`, `hooks.json`, `package.json`, `config.toml`, and mixed-ownership markdown like `AGENTS.md`) — passed through a scrubber that removes only the trellis-owned fields/block and writes the trimmed result back. If nothing meaningful remains, the scrubber returns `fullyEmpty: true` and the file is deleted instead of rewritten.
-- **Only active `.trellis/` data is removed.** Retired identity/workspace/history stays in place without traversal. Active tasks/specs remain subject to the dirty-data guard. See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract.
+- **Only owned `.trellis/` data is removed.** Current tasks/specs remain subject to the dirty-data guard. See [Task Lifecycle](./task-lifecycle.md) for current ownership.
 - **Idempotent.** Re-running with no `.trellis/`, an empty directory, or only retained historical entries is a friendly no-op. No historical descendants are inspected. Remaining active files without an ownership manifest still require explicit reconciliation.
 - **Best-effort cleanup.** Permission errors on individual `unlink`/`rmdir` calls are swallowed; the command never aborts halfway. The summary at the end reports counts but does not enumerate per-file failures.
 
@@ -144,9 +144,9 @@ While deleting, the parent directory of each deleted file is added to a `Set<str
 
 ### Phase 3 — Remove Active `.trellis/` Children
 
-`removeActiveTrellisData(trellisDir)` excludes retired names before any descent.
-It removes only active children and removes the root only when empty. Historical
-identity/workspace/agent-traces remain in place, never backed up or deleted.
+`removeActiveTrellisData(trellisDir)` removes only managed children and removes
+the root only when empty. Unknown files remain in place without special naming
+or content checks.
 A linked `.trellis` root is refused before execution; an opaque tasks symlink
 remains supported without traversing its target. Installation/manifest checks,
 confirmation and the dirty-data guard still precede execution.
@@ -170,18 +170,17 @@ Returns `{ deletedFiles, modifiedFiles, deletedDirs }` for the green summary lin
 
 ## `.trellis/` Handling
 
-Active scripts, specs, tasks, runtime, config and management receipts are removed;
-there is no `--keep-tasks` flag. `.trellis/.developer`, `.trellis/workspace/` and
-`.trellis/agent-traces/` remain unchanged in place. Removal refuses a linked
-`.trellis` root rather than traversing it. A remaining historical-only root is
-not an active installation, and output must not claim whole-tree deletion.
+Owned scripts, specs, tasks, runtime, config and management receipts are removed;
+there is no `--keep-tasks` flag. Unknown children remain in place. Removal
+refuses a linked `.trellis` root rather than traversing it. Output must not
+claim whole-tree deletion when unknown children remain.
 
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current retirement contract.
+See [Task Lifecycle](./task-lifecycle.md) for current ownership.
 
 ### Dirty-Data Guard — `collectUncommittedTrellisData`
 
-`collectUncommittedTrellisData(cwd)` checks active specs/tasks with scoped Git
-status before execution. It never probes retired workspace history. Non-Git
+`collectUncommittedTrellisData(cwd)` checks current specs/tasks with scoped Git
+status before execution. Non-Git
 repositories or unavailable Git retain the existing empty-result behavior.
 
 - **Any hits** print a red warning (up to 20 paths, then a "`… and N more`" tail) before the prompt/dry-run message.

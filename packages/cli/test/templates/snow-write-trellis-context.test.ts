@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 
 const __filename = fileURLToPath(import.meta.url);
 const HOOK_SCRIPT = path.join(
@@ -67,8 +68,10 @@ function writeFixtureRepo(root: string, contextKey: string): void {
   fs.writeFileSync(
     path.join(taskDir, "task.json"),
     JSON.stringify({
+      ...emptyTaskRecord({ id: "demo-task" }),
       id: "demo-task",
       lifecycle_generation: 0,
+      children: [],
       title: "Demo task",
       status: "in_progress",
     }),
@@ -132,7 +135,6 @@ function runHook(
   opts: {
     stdin?: string;
     env?: Record<string, string | undefined>;
-    auditHistory?: string;
   } = {},
 ): HookResult {
   if (!PYTHON) {
@@ -149,25 +151,7 @@ function runHook(
     ...opts.env,
   };
 
-  const args = opts.auditHistory ? ["-B", "-c", `
-import importlib.util, os, sys
-spec = importlib.util.spec_from_file_location("hook", ${JSON.stringify(HOOK_SCRIPT)})
-hook = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(hook)
-history = os.path.realpath(${JSON.stringify(opts.auditHistory)})
-accesses = []
-def audit(event, args):
-    if event in ("open", "os.listdir", "os.scandir", "os.mkdir", "os.remove", "os.rename"):
-        for value in args[:2]:
-            if isinstance(value, (str, bytes)):
-                actual = os.path.realpath(os.fsdecode(value))
-                if actual == history or actual.startswith(history + os.sep):
-                    accesses.append((event, actual))
-sys.addaudithook(audit)
-sys.argv = [${JSON.stringify(HOOK_SCRIPT)}, ${JSON.stringify(mode)}]
-assert hook.main() == 0
-assert accesses == [], accesses
-`] : ["-X", "utf8", HOOK_SCRIPT, mode];
+  const args = ["-X", "utf8", HOOK_SCRIPT, mode];
   const result = spawnSync(
     PYTHON,
     args,
@@ -220,43 +204,6 @@ describe("snow write-trellis-context.py execution", () => {
     writeFixtureRepo(root, contextKey);
     return root;
   }
-
-  it.skipIf(!PYTHON).each([
-    ".trellis/workflow.md",
-    ".trellis/.runtime/sessions/snow_review.json",
-    ".trellis/tasks/demo-task/task.json",
-    ".trellis/tasks/demo-task/prd.md",
-    ".trellis/tasks/demo-task/implement.jsonl",
-    ".trellis/identity.md",
-    ".snow/log/trellis-context.txt",
-  ])("never consumes or mutates historical source aliases: %s", (relativePath) => {
-    const root = makeRepo();
-    const history = path.join(root, ".trellis/workspace");
-    fs.mkdirSync(history);
-    const target = path.join(history, "source");
-    const source = path.join(root, relativePath);
-    const original = relativePath.endsWith(".json")
-      ? '{"marker":"HISTORICAL VALUE"}'
-      : "HISTORICAL VALUE";
-    fs.writeFileSync(target, original);
-    fs.mkdirSync(path.dirname(source), { recursive: true });
-    fs.rmSync(source, { force: true });
-    fs.symlinkSync(target, source);
-    const result = runHook(root, "session", {
-      stdin: JSON.stringify({ sessionId: "review" }), auditHistory: history,
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.payload?.additionalContext).not.toContain("HISTORICAL VALUE");
-    expect(result.payload?.additionalContext).toContain("Trellis context");
-    if (relativePath === ".trellis/.runtime/sessions/snow_review.json") {
-      expect(result.payload?.additionalContext).toContain("Trellis context unavailable (hook error)");
-      expect(result.payload?.additionalContext).not.toContain("Source: none");
-    } else if (relativePath === ".trellis/tasks/demo-task/task.json") {
-      expect(result.payload?.additionalContext).toContain("Task binding error:");
-      expect(result.payload?.additionalContext).not.toContain("Source: none");
-    }
-    expect(fs.readFileSync(target, "utf8")).toBe(original);
-  });
 
   it.skipIf(!PYTHON)(
     "session mode emits full inject JSON and writes full log",

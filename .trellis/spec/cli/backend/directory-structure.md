@@ -416,13 +416,6 @@ Packages that received a remote template download (tracked via `remoteSpecPackag
 
 ---
 
-## Retired Workspace Layout
-
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md) for the current ownership, preservation and compatibility contract.
-
-Fresh generation and packaging omit workspace/index assets and journal merge
-attributes. Existing user merge rules and historical data remain untouched.
-
 ## Design Decisions
 
 ### Remote Template Download (giget)

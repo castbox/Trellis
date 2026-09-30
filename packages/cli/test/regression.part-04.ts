@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
 import { getAllScripts } from "../src/templates/trellis/index.js";
 describe("regression: current-task path normalization", () => {
@@ -126,7 +127,7 @@ describe("regression: current-task path normalization", () => {
   function setupTaskRepo(): void {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -138,9 +139,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 106 task",
           status: "in_progress",
           package: null,
@@ -288,17 +291,12 @@ describe("regression: current-task path normalization", () => {
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "curation hint task",
         "--description",
         "regression fixture",
         "--slug",
         "curation-hint-task",
-        "--assignee",
-        "test-dev",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
@@ -313,7 +311,7 @@ describe("regression: current-task path normalization", () => {
     fs.mkdirSync(path.join(tmpDir, ".grok"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "grok task" --description "regression fixture" --slug grok-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "grok task" --description "regression fixture" --slug grok-task`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -336,7 +334,7 @@ describe("regression: current-task path normalization", () => {
     fs.mkdirSync(path.join(tmpDir, ".kimi-code"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "kimi task" --description "regression fixture" --slug kimi-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "kimi task" --description "regression fixture" --slug kimi-task`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -360,7 +358,7 @@ describe("regression: current-task path normalization", () => {
     writeConfigYaml("codex:\n  dispatch_mode: inline\n");
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex inline task" --description "regression fixture" --slug codex-inline-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex inline task" --description "regression fixture" --slug codex-inline-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -385,7 +383,7 @@ describe("regression: current-task path normalization", () => {
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "codex subagent task" --description "regression fixture" --slug codex-subagent-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "codex subagent task" --description "regression fixture" --slug codex-subagent-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
 
@@ -470,7 +468,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-only" --description "regression fixture" --slug seed-only-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-only" --description "regression fixture" --slug seed-only-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -779,7 +777,7 @@ print(len(entries))
     fs.mkdirSync(path.join(tmpDir, ".claude"), { recursive: true });
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "seed-list" --description "regression fixture" --slug seed-list-task --assignee test-dev`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "seed-list" --description "regression fixture" --slug seed-list-task`,
       { cwd: tmpDir, encoding: "utf-8" },
     );
     const taskDir = fs
@@ -957,7 +955,7 @@ print(len(entries))
         "utf-8",
       );
       expect(content, relativePath).toContain(
-        "Sub-agent-dispatch tasks have real curated entries in both `implement.jsonl` and `check.jsonl`; seed-only manifests are not ready.",
+        "The caller manages any task manifests and activation checks.",
       );
     }
   });
@@ -1145,7 +1143,7 @@ print(len(entries))
 
   it("[workflow-v2] get_context.py --mode phase returns compact Phase Index only", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1173,7 +1171,7 @@ print(len(entries))
 
   it("[workflow-v2] --mode phase --platform codex (sub-agent mode) filters out generic before-dev routing", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1202,7 +1200,7 @@ print(len(entries))
 
   it("[pi] --mode phase --platform pi uses sub-agent routing", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1229,7 +1227,7 @@ print(len(entries))
 
   it("[workflow-v2] step 2.1 for Codex describes native hook injection with child-side fallback", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1257,7 +1255,7 @@ print(len(entries))
 
   it("[pi] step 2.1 describes extension-backed sub-agent context path", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1284,7 +1282,7 @@ print(len(entries))
     // Symmetric to the codex filter test: agent-less platforms MUST still
     // see `trellis-before-dev` because they write code in the main session.
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1311,7 +1309,7 @@ print(len(entries))
 
   it("[workflow-v2] session-start.py <trellis-workflow> block contains compact Phase Index", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1350,7 +1348,7 @@ print(len(entries))
 
   it("[workflow-v2] session-start.py <guidelines> block lists context order and spec paths", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1404,7 +1402,7 @@ print(len(entries))
     )?.content;
 
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Minimal\n");
     // Session active task WITHOUT current_phase field (post-migration state)
     writeSessionContext("claude_phase-a", ".trellis/tasks/issue-106");
@@ -1412,6 +1410,7 @@ print(len(entries))
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
@@ -1590,7 +1589,7 @@ print(len(entries))
 
   it("[issue-codex-dispatch-mode] get_context.py --platform codex swaps to inline block content", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1848,7 +1847,6 @@ print(len(entries))
         title: string;
         status: string;
         priority: string;
-        assignee: string | null;
         parent: string | null;
         children: string[];
       }[];
@@ -1937,7 +1935,7 @@ print(len(entries))
 
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
     execSync(
-      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create --creator fixture-creator "base branch test" --description "regression fixture" --slug base-branch-test --assignee test-dev --no-start`,
+      `${pythonCmd} ${JSON.stringify(taskScriptPath)} create "base branch test" --description "regression fixture" --slug base-branch-test --no-start`,
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
     );
 
@@ -1971,17 +1969,12 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "no remote test",
         "--description",
         "regression fixture",
         "--slug",
         "no-remote-test",
-        "--assignee",
-        "test-dev",
         "--no-start",
       ],
       { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() },
@@ -2021,17 +2014,12 @@ print(len(entries))
       [
         taskScriptPath,
         "create",
-        "--creator",
-        "fixture-creator",
-        "--assignee",
-        "test-dev",
+
         "explicit base branch test",
         "--description",
         "regression fixture",
         "--slug",
         "explicit-base-branch-test",
-        "--assignee",
-        "test-dev",
         "--base-branch",
         "release/1.0",
         "--no-start",

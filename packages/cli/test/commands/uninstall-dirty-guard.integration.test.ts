@@ -2,7 +2,7 @@
  * Integration tests for the uninstall uncommitted-data guard (audit 🔴-7).
  *
  * `trellis uninstall` deletes the whole .trellis/ tree — including
- * user-authored specs, task PRDs, and journals — with no backup. When those
+ * user-authored specs and task PRDs — with no backup. When those
  * hold uncommitted work, a scripted `--yes` run must fail closed rather than
  * silently destroy them.
  *
@@ -68,8 +68,6 @@ describe.skipIf(!canRun)("uninstall uncommitted-data guard", () => {
     });
     delete process.env.TRELLIS_ALLOW_DIRTY_UNINSTALL;
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,
@@ -103,27 +101,27 @@ describe.skipIf(!canRun)("uninstall uncommitted-data guard", () => {
   });
 
   it.each([false, true])(
-    "ignores and preserves retired history (tracked=%s)",
+    "ignores and preserves unknown files (tracked=%s)",
     async (tracked) => {
       git(tmpDir, "add", "-A");
       git(tmpDir, "commit", "-q", "-m", "trellis");
       const file = path.join(
         tmpDir,
         ".trellis",
-        "workspace",
+        "custom",
         "arbitrary",
         "data.md",
       );
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, "old history");
+      fs.writeFileSync(file, "original data");
       if (tracked) {
-        git(tmpDir, "add", "-f", "--", ".trellis/workspace/arbitrary/data.md");
-        git(tmpDir, "commit", "-q", "-m", "fixture history");
+        git(tmpDir, "add", "-f", "--", ".trellis/custom/arbitrary/data.md");
+        git(tmpDir, "commit", "-q", "-m", "fixture data");
       }
-      fs.writeFileSync(file, "changed history");
+      fs.writeFileSync(file, "changed data");
       expect(collectUncommittedTrellisData(tmpDir)).toEqual([]);
       await uninstall({ yes: true });
-      expect(fs.readFileSync(file, "utf-8")).toBe("changed history");
+      expect(fs.readFileSync(file, "utf-8")).toBe("changed data");
       expect(fs.existsSync(path.join(tmpDir, ".trellis", "scripts"))).toBe(
         false,
       );

@@ -34,7 +34,7 @@ CLI owns:
 - help text and terminal output (including `tl mem` row formatting and `--json` shaping)
 - prompts, confirmations, exit codes, and `process.exit`
 - the OpenCode-unavailable stderr notice for `tl mem` (a presentation concern, not a core one)
-- template copying, dogfooding paths, migration manifest application, and update UX
+- template copying, dogfooding paths, and current-version update UX
 - release scripts and CI-specific package orchestration
 
 When logic starts in the CLI but is needed by another package or embedding app, move the reusable part into core and leave only CLI rendering and option translation in the CLI package.
@@ -204,6 +204,5 @@ Rule of thumb when changing task behavior:
   injection (Python shared hook ↔ Pi extension) — see the Context Injection
   Limits Contract in platform-integration.md.
 
-Task creator and assignee are explicit caller fields; no core or CLI fallback
-may infer a person from Git, environment or retired storage.
-See [Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).
+Unknown task properties are rejected by the canonical SDK record and Python
+task readers. See [Task Lifecycle](./task-lifecycle.md).

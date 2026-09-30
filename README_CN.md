@@ -58,10 +58,10 @@
 npm install -g @mindfoldhq/trellis@latest
 
 # 2. 在仓库中初始化
-trellis init --creator your-name --assignee your-name
+trellis init
 
 # 3. 或仅初始化你实际使用的平台
-trellis init --cursor --opencode --codex --creator your-name --assignee your-name
+trellis init --cursor --opencode --codex
 ```
 
 查看 [快速开始](https://docs.trytrellis.app/zh/start/install-and-first-task) 与 [支持平台](https://docs.trytrellis.app/zh/advanced/multi-platform) 指南以了解详细配置步骤。
