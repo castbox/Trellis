@@ -121,6 +121,15 @@ describe("target-owned retirement contract", () => {
     "python3 .trellis/scripts/task.py list --assignee bob",
     "trellis update --migrate --assignee bob",
     "New tasks require creator and assignee values.",
+    "Migration tasks require an assignee input.",
+    "Bootstrap tasks need creator input.",
+    "Bootstrap task requires explicit --creator and --assignee.",
+    "New task requires creator and assignee input.",
+    "Migration task needs an assignee.",
+    "Migration task requires an assignee.",
+    "New task requires not only a creator but also an assignee.",
+    "Task creation requires explicit creator and assignee input.",
+    "Task creation needs an assignee.",
     "Use list_tasks_by_assignee to find work.",
   ])("rejects obsolete instruction: %s", (text) => {
     expect(hasRetiredInstructions(text)).toBe(true);
@@ -138,6 +147,15 @@ describe("target-owned retirement contract", () => {
     "Do not run get_context.py --mode record.",
     "Do not run grep -r task .trellis/.",
     "Remove --creator and --assignee from task callers.",
+    "Task creation no longer requires creator or assignee input.",
+    "Task creation requires no creator or assignee input.",
+    "New tasks require no creator or assignee input.",
+    "Migration tasks require no assignee input.",
+    "Bootstrap tasks need neither creator nor assignee.",
+    "New tasks do not require creator or assignee input.",
+    "Bootstrap task requires no creator or assignee input.",
+    "New task needs neither creator nor assignee.",
+    "Migration task requires not an assignee but a title.",
   ])("accepts retirement explanation: %s", (text) => {
     expect(hasRetiredInstructions(text)).toBe(false);
   });

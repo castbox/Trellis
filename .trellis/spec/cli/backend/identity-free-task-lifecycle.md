@@ -171,6 +171,15 @@ Generic workspace/journal nouns are not retirement evidence: pnpm/Cargo workspac
 commands and database journal diagnostics remain valid in imported and customized
 workflows. Match explicit Trellis paths/APIs or direct legacy recording actions;
 force update must preserve these compatible custom workflows too.
+Task-personnel detection must also match the formerly installed instruction
+`Task creation requires explicit creator and assignee input.` in customized
+workflows. It must allow explicit retirement explanations such as `Task creation
+requires no creator or assignee input.` and `New tasks require no creator or
+assignee input.` The same negation rule applies to migration/bootstrap task
+instructions; positive personnel requirements still block upgrade. Match both
+`task require` and `task requires` forms, including the former init diagnostic
+`Bootstrap task requires explicit --creator and --assignee.` A `not only ... but
+also` personnel requirement is positive, not an exemption.
 
 No workspace/index creation, inherited identity, trace rename, journal rotation,
 recording, merge-rule provisioning, or replacement global journal/index remains.
@@ -223,6 +232,7 @@ authorization for implicit downgrades, and does not generate a migration task.
 | Status filter has no matches | Empty result, never broaden to all tasks |
 | Retired context/trust path | Reject before content access |
 | Required customized runtime cannot converge | Nonzero before writes; files/tasks/hashes/version unchanged |
+| Customized workflow still requires task creator/assignee | Reject upgrade until reconciled; preserve workflow, version and hash receipt |
 | Old recovery transaction includes retired data | Refuse before historical access or mutation |
 | Tracked archive commit fails while enabled | Nonzero; report remaining task move, no false completion |
 
@@ -244,6 +254,10 @@ authorization for implicit downgrades, and does not generate a migration task.
 - Init/update/workflow suites: fresh/repeated init, both init paths, no joiner,
   customized required conflicts, same-version retry, and cumulative instructions
   crossing 0.3.0-beta.0 plus the immediate predecessor. Old manifests stay identical.
+- Retirement detector and installed-update tests: recognize the exact old task
+  creation and bootstrap personnel instructions, allow explicit negations, and
+  block a skipped customized workflow until that instruction is reconciled
+  without changing files, task directories, receipts or version.
 - Context, channel trust, template hash, ablate/restore and uninstall suites:
   retired paths pruned before access, including symlinks and generic tree operations.
 - Registry-derived platform collection/install/update and runnable hook smoke;

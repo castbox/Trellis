@@ -178,7 +178,7 @@ export function hasRetiredInstructions(content: string): boolean {
           clause,
         );
       const taskPersonnelInstruction =
-        /(?:task\.py\s+(?:create|list)\b|\btrellis\s+(?:init|update)\b)[^\n]*--(?:creator|assignee)\b|\blist_tasks_by_assignee\b|\b(?:new|migration|bootstrap)\s+tasks?\s+(?:require|need)\s+[^\n.!?]*\b(?:creator|assignee)\b/i.test(
+        /(?:task\.py\s+(?:create|list)\b|\btrellis\s+(?:init|update)\b)[^\n]*--(?:creator|assignee)\b|\blist_tasks_by_assignee\b|\b(?:new|migration|bootstrap)\s+tasks?\s+(?:requires?|needs?)\s+(?!no\b|neither\b|not\b(?!\s+only\b))[^\n.!?]*\b(?:creator|assignee)\b|\btask\s+creation\s+(?:requires?|needs?)\s+(?!no\b|neither\b|not\b(?!\s+only\b))[^\n.!?]*\b(?:creator|assignee)\b/i.test(
           clause,
         );
       return (

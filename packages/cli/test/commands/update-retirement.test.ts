@@ -198,6 +198,35 @@ describe("retirement update transaction", () => {
     expect(loadHashes(root)[".trellis/workflow.md"]).toBe(receipt);
   });
 
+  it("keeps an installed personnel requirement unresolved until the workflow is reconciled", async () => {
+    const staleWorkflow =
+      "# Custom workflow\nBootstrap task requires explicit --creator and --assignee.\n";
+    write(".trellis/workflow.md", staleWorkflow);
+    write(".trellis/.version", "0.6.15");
+    const receipt = read(".trellis/.template-hashes.json");
+    const entries = fs.readdirSync(path.join(root, ".trellis"));
+    const tasks = fs.readdirSync(path.join(root, ".trellis/tasks"));
+
+    await expect(update({ skipAll: true, migrate: true })).rejects.toThrow(
+      "Retirement requires reconciliation",
+    );
+    expect(read(".trellis/workflow.md")).toBe(staleWorkflow);
+    expect(read(".trellis/.version")).toBe("0.6.15");
+    expect(read(".trellis/.template-hashes.json")).toBe(receipt);
+    expect(fs.readdirSync(path.join(root, ".trellis"))).toEqual(entries);
+    expect(fs.readdirSync(path.join(root, ".trellis/tasks"))).toEqual(tasks);
+
+    const reconciledWorkflow =
+      "# Custom workflow\nBootstrap task requires no creator or assignee input.\n";
+    write(".trellis/workflow.md", reconciledWorkflow);
+    await update({ skipAll: true, migrate: true });
+    expect(read(".trellis/workflow.md")).toBe(reconciledWorkflow);
+    expect(loadHashes(root)[".trellis/workflow.md"]).not.toBe(
+      computeHash(reconciledWorkflow),
+    );
+    expect(read(".trellis/.version")).toBe(VERSION);
+  });
+
   it.each([
     "Run pnpm test from the workspace root.",
     "Use pnpm --filter @acme/api build in this workspace.",
