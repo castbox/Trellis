@@ -16,11 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { DIR_NAMES } from "../../constants/paths.js";
-import {
-  assertActiveDataPath,
-  isRetiredDataPath,
-  resolveTrellisDataRoot,
-} from "../../utils/retired-data.js";
+import { assertProjectPath } from "../../utils/path-boundary.js";
 
 /** Top-level `.trellis/*` entries eligible for symlink auto-trust. */
 const AUTO_TRUST_ENTRIES = ["tasks"] as const;
@@ -111,7 +107,7 @@ function stripTrustValue(s: string): string {
 
 function loadChannelTrustConfig(cwd: string): ChannelTrustConfig {
   const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
-  assertActiveDataPath(configPath, cwd);
+  assertProjectPath(configPath, cwd);
   if (!fs.existsSync(configPath)) return { trustedDirs: [] };
   let content: string;
   try {
@@ -132,16 +128,9 @@ export function resolveTrustedRoots(cwd: string): string[] {
 
   for (const entry of config.trustedDirs) {
     const resolved = path.resolve(cwd, entry);
-    if (isRetiredDataPath(resolved, resolveTrellisDataRoot(cwd))) {
-      process.stderr.write(
-        "[channel] Retired identity/history is not context; use task/spec context instead.\n",
-      );
-      continue;
-    }
     try {
       const real = fs.realpathSync(resolved);
-      if (!isRetiredDataPath(real, resolveTrellisDataRoot(cwd)))
-        roots.push(real);
+      roots.push(real);
     } catch {
       process.stderr.write(
         `[channel] channel.trusted_context_dirs: entry not found or invalid, skipping: ${entry}\n`,
@@ -161,8 +150,7 @@ export function resolveTrustedRoots(cwd: string): string[] {
       if (!lstat.isSymbolicLink()) continue;
       try {
         const real = fs.realpathSync(entryPath);
-        if (!isRetiredDataPath(real, resolveTrellisDataRoot(cwd)))
-          roots.push(real);
+        roots.push(real);
       } catch {
         // Broken symlink — nothing to trust.
       }

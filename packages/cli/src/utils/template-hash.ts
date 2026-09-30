@@ -18,10 +18,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
-import type { TemplateHashes } from "../types/migration.js";
+import type { TemplateHashes } from "../types/template-hashes.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import { toPosix } from "./posix.js";
-import { assertActiveDataPath } from "./retired-data.js";
+import { assertProjectPath } from "./path-boundary.js";
 
 /** File name for storing template hashes */
 const HASHES_FILE = ".template-hashes.json";
@@ -51,7 +51,7 @@ export function computeHash(content: string): string {
  */
 function getHashesPath(cwd: string): string {
   const filePath = path.join(cwd, DIR_NAMES.WORKFLOW, HASHES_FILE);
-  assertActiveDataPath(filePath, cwd);
+  assertProjectPath(filePath, cwd);
   return filePath;
 }
 
@@ -141,7 +141,7 @@ export function updateHashes(cwd: string, files: Map<string, string>): void {
  */
 export function updateHashFromFile(cwd: string, relativePath: string): void {
   const fullPath = path.join(cwd, relativePath);
-  assertActiveDataPath(fullPath, cwd);
+  assertProjectPath(fullPath, cwd);
   if (!fs.existsSync(fullPath)) {
     return;
   }
@@ -194,7 +194,7 @@ export function isTemplateModified(
   hashes: TemplateHashes,
 ): boolean {
   const fullPath = path.join(cwd, relativePath);
-  assertActiveDataPath(fullPath, cwd);
+  assertProjectPath(fullPath, cwd);
 
   // If file doesn't exist, can't be modified
   if (!fs.existsSync(fullPath)) {
@@ -232,7 +232,7 @@ export function matchesOriginalTemplate(
   originalContent: string,
 ): boolean {
   const fullPath = path.join(cwd, relativePath);
-  assertActiveDataPath(fullPath, cwd);
+  assertProjectPath(fullPath, cwd);
 
   if (!fs.existsSync(fullPath)) {
     return false;
@@ -271,9 +271,6 @@ const EXCLUDE_FROM_HASH = [
   ".template-hashes.json", // Hash file itself
   ".version", // Version file
   ".gitignore", // Git ignore files
-  ".developer", // Retired user data: never hash or consume
-  "workspace/", // Retired user data: never hash or consume
-  "agent-traces/", // Retired predecessor directory
   "tasks/", // Task files (user data)
   ".current-task", // Current task marker (file, not directory)
   ".trellis/spec/", // User-customized spec files
@@ -380,7 +377,7 @@ export function initializeHashes(
         continue;
       }
       const fullPath = path.join(cwd, ...relativePath.split("/"));
-      assertActiveDataPath(fullPath, cwd);
+      assertProjectPath(fullPath, cwd);
       if (!fs.existsSync(fullPath)) continue;
       try {
         const content = fs.readFileSync(fullPath, "utf-8");
@@ -398,7 +395,7 @@ export function initializeHashes(
   const files = collectFiles(cwd, ".trellis");
   for (const relativePath of files) {
     const fullPath = path.join(cwd, relativePath);
-    assertActiveDataPath(fullPath, cwd);
+    assertProjectPath(fullPath, cwd);
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
       hashes[relativePath] = computeHash(content);
@@ -415,7 +412,7 @@ export function initializeHashes(
     for (const relativePath of [FILE_NAMES.AGENTS]) {
       if (shouldExcludeFromHash(relativePath)) continue;
       const fullPath = path.join(cwd, relativePath);
-      assertActiveDataPath(fullPath, cwd);
+      assertProjectPath(fullPath, cwd);
       if (!fs.existsSync(fullPath)) continue;
       try {
         const content = fs.readFileSync(fullPath, "utf-8");

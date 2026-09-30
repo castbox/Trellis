@@ -155,7 +155,6 @@ export interface ThreadChannelEvent extends BaseChannelEvent<"thread"> {
   description?: string;
   status?: string;
   labels?: string[];
-  assignees?: string[];
   summary?: string;
   context?: ContextEntry[];
   /** Legacy alias on old event logs. */

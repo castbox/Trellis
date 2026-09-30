@@ -15,10 +15,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import {
-  isRetiredDataPath,
-  resolveTrellisDataRoot,
-} from "../../utils/retired-data.js";
 
 interface ContextBlock {
   path: string; // display path (relative to cwd if possible)
@@ -51,12 +47,6 @@ function jailedRealpath(
   cwd: string,
   trustedRoots: string[] = [],
 ): string | null {
-  if (isRetiredDataPath(target, resolveTrellisDataRoot(cwd))) {
-    process.stderr.write(
-      "[channel spawn] Retired identity/history is not context; use task/spec context instead.\n",
-    );
-    return null;
-  }
   const cwdReal = fs.realpathSync(cwd);
   let real: string;
   try {
@@ -67,7 +57,6 @@ function jailedRealpath(
     // form is inside the jail.
     real = path.resolve(target);
   }
-  if (isRetiredDataPath(real, resolveTrellisDataRoot(cwd))) return null;
   if (
     !isUnderRoot(real, cwdReal) &&
     !trustedRoots.some((root) => isUnderRoot(real, root))
@@ -257,7 +246,7 @@ function expandGlob(
   }
 
   const matches: string[] = [];
-  walkGlob(baseDir, globSegs, matches, resolveTrellisDataRoot(cwd));
+  walkGlob(baseDir, globSegs, matches);
   if (matches.length === 0) {
     process.stderr.write(
       `[channel spawn] --file: glob matched no files: ${spec}\n`,
@@ -266,13 +255,7 @@ function expandGlob(
   return matches;
 }
 
-function walkGlob(
-  dir: string,
-  segs: string[],
-  out: string[],
-  trellisRoot: string,
-): void {
-  if (isRetiredDataPath(dir, trellisRoot)) return;
+function walkGlob(dir: string, segs: string[], out: string[]): void {
   if (segs.length === 0) return;
   const [head, ...rest] = segs;
   let entries: fs.Dirent[];
@@ -285,11 +268,11 @@ function walkGlob(
   if (head === "**") {
     // ** matches zero or more directories.
     // Zero case: try matching `rest` from current dir.
-    if (rest.length > 0) walkGlob(dir, rest, out, trellisRoot);
+    if (rest.length > 0) walkGlob(dir, rest, out);
     // Recurse into subdirs with ** still in front.
     for (const e of entries) {
       if (e.isDirectory()) {
-        walkGlob(path.join(dir, e.name), segs, out, trellisRoot);
+        walkGlob(path.join(dir, e.name), segs, out);
       }
     }
     return;
@@ -299,11 +282,10 @@ function walkGlob(
   for (const e of entries) {
     if (!re.test(e.name)) continue;
     const child = path.join(dir, e.name);
-    if (isRetiredDataPath(child, trellisRoot)) continue;
     if (rest.length === 0) {
       if (e.isFile()) out.push(child);
     } else if (e.isDirectory()) {
-      walkGlob(child, rest, out, trellisRoot);
+      walkGlob(child, rest, out);
     }
   }
 }
@@ -326,7 +308,6 @@ function readFileBlock(
   reason?: string,
   trustedRoots: string[] = [],
 ): ContextBlock | null {
-  if (isRetiredDataPath(absPath, resolveTrellisDataRoot(cwd))) return null;
   if (!fs.existsSync(absPath)) {
     process.stderr.write(
       `[channel spawn] --${source}: file not found, skipping: ${path.relative(cwd, absPath)}\n`,
@@ -354,7 +335,6 @@ function readFileBlock(
       real = absPath;
     }
     const cwdReal = fs.realpathSync(cwd);
-    if (isRetiredDataPath(real, resolveTrellisDataRoot(cwd))) return null;
     if (
       !isUnderRoot(real, cwdReal) &&
       !trustedRoots.some((root) => isUnderRoot(real, root))

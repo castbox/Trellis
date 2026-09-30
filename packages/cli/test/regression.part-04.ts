@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
 import { getAllScripts } from "../src/templates/trellis/index.js";
 describe("regression: current-task path normalization", () => {
@@ -126,7 +127,7 @@ describe("regression: current-task path normalization", () => {
   function setupTaskRepo(): void {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -138,9 +139,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 106 task",
           status: "in_progress",
           package: null,
@@ -1140,7 +1143,7 @@ print(len(entries))
 
   it("[workflow-v2] get_context.py --mode phase returns compact Phase Index only", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1168,7 +1171,7 @@ print(len(entries))
 
   it("[workflow-v2] --mode phase --platform codex (sub-agent mode) filters out generic before-dev routing", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1197,7 +1200,7 @@ print(len(entries))
 
   it("[pi] --mode phase --platform pi uses sub-agent routing", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1224,7 +1227,7 @@ print(len(entries))
 
   it("[workflow-v2] step 2.1 for Codex describes native hook injection with child-side fallback", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1252,7 +1255,7 @@ print(len(entries))
 
   it("[pi] step 2.1 describes extension-backed sub-agent context path", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1279,7 +1282,7 @@ print(len(entries))
     // Symmetric to the codex filter test: agent-less platforms MUST still
     // see `trellis-before-dev` because they write code in the main session.
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1306,7 +1309,7 @@ print(len(entries))
 
   it("[workflow-v2] session-start.py <trellis-workflow> block contains compact Phase Index", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1345,7 +1348,7 @@ print(len(entries))
 
   it("[workflow-v2] session-start.py <guidelines> block lists context order and spec paths", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1399,7 +1402,7 @@ print(len(entries))
     )?.content;
 
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Minimal\n");
     // Session active task WITHOUT current_phase field (post-migration state)
     writeSessionContext("claude_phase-a", ".trellis/tasks/issue-106");
@@ -1407,6 +1410,7 @@ print(len(entries))
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
@@ -1585,7 +1589,7 @@ print(len(entries))
 
   it("[issue-codex-dispatch-mode] get_context.py --platform codex swaps to inline block content", () => {
     writeTrellisScripts();
-    writeProjectFile(path.join(".trellis", ".developer"), "name=test\n");
+    writeProjectFile(path.join(".trellis", "custom-note"), "name=test\n");
     writeProjectFile(
       path.join(".trellis", "workflow.md"),
       templateWorkflowMd(),
@@ -1848,7 +1852,6 @@ print(len(entries))
       }[];
     };
     expect(parsed.tasks).toHaveLength(1);
-    expect(parsed.tasks[0]).not.toHaveProperty("assignee");
     expect(parsed.tasks[0]).toMatchObject({
       dir: ".trellis/tasks/issue-106",
       title: "Issue 106 task",

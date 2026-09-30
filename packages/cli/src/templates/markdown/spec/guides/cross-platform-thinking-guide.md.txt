@@ -572,28 +572,6 @@ subprocess.run(cmd, capture_output=True, text=True)  # Garbled Chinese/Unicode
 
 ---
 
-## Release Checklist: Versioned Files
-
-When releasing a new version, ensure **all versioned files** are created/updated:
-
-- [ ] `src/migrations/manifests/{version}.json` - Migration manifest exists
-- [ ] Manifest has correct version, description, changelog
-- [ ] `pnpm build` copies manifests to `dist/`
-- [ ] Test upgrade path from older versions (not just adjacent)
-
-**Why this matters**: Missing manifests cause "path undefined" errors when users upgrade from older versions.
-
-```bash
-# Verify all expected manifests exist
-ls src/migrations/manifests/
-
-# Test upgrade path
-node -e "
-const { getMigrationsForVersion } = require('./dist/migrations/index.js');
-console.log('From 0.2.12:', getMigrationsForVersion('0.2.12', 'CURRENT').length);
-"
-```
-
 ## Release Checklist: Bundled Assets
 
 When release notes or docs claim an asset is bundled, installed automatically, or

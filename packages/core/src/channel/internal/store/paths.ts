@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  assertActiveDataPath,
-  resolveTrellisDataRoot,
-  RetiredDataAccessError,
-} from "../../../retired-data.js";
+import { assertProjectPath } from "../../../path-boundary.js";
 
 import {
   GLOBAL_PROJECT_KEY,
@@ -24,9 +20,9 @@ export function channelRoot(cwd: string = process.cwd()): string {
 }
 
 function assertChannelStoragePath(value: string, cwd: string): void {
-  const resolved = assertActiveDataPath(value, cwd);
-  if (path.basename(resolved) === ".trellis" || resolved === resolveTrellisDataRoot(cwd)) {
-    throw new RetiredDataAccessError(value);
+  assertProjectPath(value, cwd);
+  if (path.resolve(value) === path.resolve(cwd, ".trellis")) {
+    throw new Error(`Channel storage root cannot be the project data root: ${value}`);
   }
 }
 
@@ -154,7 +150,7 @@ export function workerLockPath(
 
 function activeStorageFile(dir: string, filename: string, cwd: string): string {
   const file = path.join(dir, filename);
-  assertActiveDataPath(file, cwd);
+  assertProjectPath(file, cwd);
   return file;
 }
 

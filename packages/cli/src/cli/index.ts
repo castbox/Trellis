@@ -99,7 +99,6 @@ program
     "Install the Trellis statusLine for Claude Code (off by default)",
   )
   .option("-y, --yes", "Skip prompts and use defaults")
-  .option("-u, --user <name>", "Retired identity option")
   .option("-f, --force", "Overwrite existing files without asking")
   .option("-s, --skip-existing", "Skip existing files without asking")
   .option("--monorepo", "Force monorepo mode")
@@ -157,8 +156,6 @@ program
   .option("-f, --force", "Overwrite all changed files without asking")
   .option("-s, --skip-all", "Skip all changed files without asking")
   .option("-n, --create-new", "Create .new copies for all changed files")
-  .option("--allow-downgrade", "Allow downgrading to an older version")
-  .option("--migrate", "Apply pending file migrations (renames/deletions)")
   .action(async (options: Record<string, unknown>) => {
     try {
       await update({
@@ -166,8 +163,6 @@ program
         force: options.force as boolean,
         skipAll: options.skipAll as boolean,
         createNew: options.createNew as boolean,
-        allowDowngrade: options.allowDowngrade as boolean,
-        migrate: options.migrate as boolean,
       });
     } catch (error) {
       console.error(

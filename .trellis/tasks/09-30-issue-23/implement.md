@@ -10,33 +10,37 @@
 
 ## Ordered Work
 
-1. Inspect relevant backend, Python, SDK, migration and unit-test specs; record any Issue-authoritative changes to old ownership guidance.
-2. Remove Python/TypeScript task personnel contracts and runtime consumers. Adapt init/update, deprecated diagnostics and task-derived external hook mappings. Keep raw legacy field preservation.
-3. Rewrite canonical brainstorm behavior and descriptions. Move lifecycle requirements to workflow/start/continue and preserve normal Trellis planning approval.
-4. Synchronize generated platform assets, dogfood scripts, maintained specs/docs/examples and affected tests. Classify scan matches without changing historic artifacts or unrelated assignment semantics.
-5. Choose an unused paired castbox candidate version using live release evidence; add breaking migration guide and AI instructions. Verify installed update/reapply with conflict cases.
-6. Dispatch independent Trellis check agent, repair verified findings, update specs and record verification evidence.
-7. Report exact local completion, installation/publication gates and Guru #481 handoff. Execute remote delivery only when authorized.
+1. Keep the completed task and brainstorm changes, then audit every active caller of the cumulative retirement and history-path modules.
+2. Remove the cumulative retirement module, old-version upgrade path, generated migration task and compatibility detectors. Leave historical manifest and task files unchanged and unread by current code.
+3. Replace name-based history guards with generic project-boundary checks and ownership-based deletion. Remove old path exclusions from Python, hooks and platform templates while preserving unrelated path safety.
+4. Remove remaining task and channel personnel contracts and references from active code, generated assets, local platform copies, maintained documentation and tests. Preserve ordinary package/current-task workspace behavior.
+5. Test fresh init, same-version reapply, old-version rejection before historical access, current task flow, channel behavior and generated platform parity. Run classified scans excluding only inert historical files.
+6. Dispatch independent Trellis check, repair concrete findings, synchronize specs and report local evidence. Remote delivery remains separate.
 
 ## Verification
 
-- Core task schema/record suites: no personnel schema; old fields ignored on structured reads and preserved by generic existing-record writes.
-- Python script integration suites: create/list/context/continue/archive without personnel fields; legacy records remain usable; old flags rejected.
-- CLI init/update integration suites: no ownership prompts/options, bootstrap and migration record shape, preserved existing task data.
-- Template/regression suites: taskless brainstorm, outer lifecycle ownership, registry-wide generated coverage and installed update/reapply.
-- Classified `rg` scan across canonical source, generated assets, dogfood and maintained docs. Exclude only documented historic data and unrelated assignment contracts.
+- Core task and channel suites: current schema has no personnel contracts or channel assignment field.
+- Python script suites: current create/list/context/continue/archive work without former identity/history data; unsupported old options reject.
+- CLI init/update suites: fresh init, same-version reapply and early rejection of old installed versions.
+- Template/regression suites: taskless brainstorm, outer lifecycle ownership and registry-wide generated coverage.
+- Classified `rg` scan across active source, templates, dogfood and maintained docs. Exclude only untouched historical files and unrelated generic workspace terminology.
 - `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm test` after targeted regression coverage. Record environment-blocked checks distinctly.
 - Do not infer published installation or live Guru reuse from a source/template test.
 
 ## Risk and Rollback Points
 
-Shared task schema and Python queue helpers are public API breaks; enumerate callers before removal. Prompt changes can accidentally weaken the outer planning review gate; verify both taskless and ordinary workflows. Preserve existing archive defaults and session source/binding semantics. Review all diff paths before synchronization and before delivery.
+This is a broader public break than the first implementation. Enumerate callers before deleting modules. Preserve archive defaults, session source/binding and general project-path safety; remove only historical compatibility and personnel assignment. Review every changed path before delivery.
 
 ## Local Evidence and Remaining Gates
 
 - Branch `codex/issue-23-retire-task-personnel` began at refreshed `upstream/main` `8336e78b`; the task remains bound to this session.
-- Implement and independent check agents completed source, template, local installed-copy, migration-helper, documentation and test changes. The checker repaired missing manifest `aiInstructions` and stale installed skill behavior.
-- Final serial verification: `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm test`, `bash -n packages/cli/scripts/migrate-features-to-tasks.sh`, `git diff --check`; core 425 passed/1 skipped, CLI 2321 passed. Copilot/Trellis template tests were repeated after restoring Copilot prompt frontmatter: 38 passed.
-- Classified active-source scan: no remaining task personnel CLI calls or reads; matches are retirement guidance/tests, historical data, and unrelated channel-thread assignment. `task.py validate 09-30-issue-23` passes with context-injection size warnings for two large specs.
-- Candidate `0.7.0-castbox.1` and its breaking manifest are local only. No package publication, global install, downstream Guru #481 run, PR, merge or Issue closure is proven.
+- Earlier compatibility-oriented checks passed, but the user's later no-compatibility direction supersedes that evidence. Re-run all relevant verification after the removal.
+- Candidate `0.7.0-castbox.1` is local only. No package publication, global install, downstream Guru #481 run, merge or Issue closure is proven.
 - The user approved one local commit on `codex/issue-23-retire-task-personnel` after reviewing the 89-file Issue #23 scope. Remote delivery remains a separate authorization gate. Do not archive this task as complete before any required fixed-version handoff is resolved.
+- Final local check after strict task-record validation: `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `pnpm test` pass. Core: 406 passed, 1 skipped; CLI: 1856 passed. A missing `lifecycle_generation` now rejects mutation without rewriting task metadata.
+- Current source, tests, templates, specs, marketplace, and local platform hooks were scanned for former person fields, paths, commands, and compatibility modules. The remaining `developerInstructions` is a Codex protocol property; a Windows `C:\\Users\\...` fixture is a generic OS path. Both Cursor local hooks match their distributed templates, the CLI build contains no deleted migration modules, and `git diff --check` passes.
+- These changes remain uncommitted on the current branch; no push, publication, submodule pointer change, PR, or Issue closure was performed in this check.
+- Final strict-schema pass removed the old task-tree alias and aligned Python task-record reads and writes with Core required fields and types. The active Issue #23 task record was brought to the current shape; historical task records were not rewritten.
+- Final independent check after those changes: `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `git diff --check` pass. Core: 406 passed, 1 skipped; CLI: 1865 passed. Generated Python scripts and local platform copies were checked against their templates.
+- Marketplace documentation is proposed in `mindfold-ai/marketplace` PR #19 from a `wesleywu` fork. Its checks pass, but GitHub denied `wesleywu` merge permission. The main repository's submodule pointer remains at its original SHA, so external marketplace publication is outstanding.
+- The live Issue #23 body now states the no-compatibility contract. Main Trellis PR #24 remains the source delivery path; npm publication and downstream Guru #481 remain separate.

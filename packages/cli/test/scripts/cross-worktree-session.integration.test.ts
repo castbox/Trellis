@@ -51,11 +51,16 @@ def worktree(root, name):
     target = base / name
     git(root, 'worktree', 'add', '--detach', str(target), 'HEAD')
     return target
-def task(root, name='same', title=None, task_id=None, generation=None):
+def task(root, name='same', title=None, task_id=None, generation=0):
     directory = root / '.trellis/tasks' / name
     directory.mkdir(parents=True)
-    data = dict(id=task_id or name, name=name, title=title or name, description='Fixture task', status='planning', creator='fixture', assignee='fixture', children=[], parent=None)
-    if generation is not None: data['lifecycle_generation'] = generation
+    data = dict(id=task_id or name, name=name, lifecycle_generation=generation,
+                source=dict(kind='no_issue'), title=title or name,
+                description='Fixture task', status='planning', dev_type=None,
+                scope=None, package=None, priority='P2', createdAt='2026-10-01',
+                completedAt=None, base_branch=None, worktree_path=None,
+                commit=None, pr_url=None, children=[], parent=None,
+                relatedFiles=[], notes='', meta={})
     (directory / 'task.json').write_text(json.dumps(data))
     (directory / 'prd.md').write_text('Fixture requirement\\n')
     for manifest in ('implement.jsonl', 'check.jsonl'):

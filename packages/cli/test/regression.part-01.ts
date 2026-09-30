@@ -6,13 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  clearManifestCache,
-  getAllMigrations,
-  getAllMigrationVersions,
-  getMigrationsForVersion,
-  hasPendingMigrations,
-} from "../src/migrations/index.js";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { isManagedPath } from "../src/configurators/index.js";
 import { PATHS } from "../src/constants/paths.js";
 import {
@@ -31,9 +25,6 @@ import {
   getAllScripts,
 } from "../src/templates/trellis/index.js";
 import { collectPlatformTemplates } from "../src/configurators/index.js";
-afterEach(() => {
-  clearManifestCache();
-});
 
 // =============================================================================
 // 1. Windows / Encoding Regressions
@@ -136,12 +127,12 @@ describe("regression: Windows path separator (beta.12)", () => {
 // =============================================================================
 
 describe("regression: task directory paths (0.2.14, 0.2.15, beta.13)", () => {
-  it("[0.2.15] PATHS.TASKS is .trellis/tasks (not .trellis/workspace/*/tasks)", () => {
+  it("[0.2.15] PATHS.TASKS is .trellis/tasks (not .trellis/custom/*/tasks)", () => {
     expect(PATHS.TASKS).toBe(".trellis/tasks");
     expect(PATHS.TASKS).not.toContain("workspace");
   });
 
-  it("[0.2.14] Claude agent templates do not contain hardcoded .trellis/workspace/*/tasks/ paths", () => {
+  it("[0.2.14] Claude agent templates do not contain hardcoded .trellis/custom/*/tasks/ paths", () => {
     const agents = getClaudeAgents();
     for (const agent of agents) {
       expect(agent.content).not.toMatch(/\.trellis\/workspace\/[^/]+\/tasks\//);
@@ -206,7 +197,7 @@ describe("regression: resolve_task_dir containment chokepoint", () => {
     fs.mkdirSync(taskDir(name), { recursive: true });
     fs.writeFileSync(
       path.join(taskDir(name), "task.json"),
-      JSON.stringify({ id: name, meta: {}, children: [] }) + "\n",
+      JSON.stringify(emptyTaskRecord({ id: name, name })) + "\n",
     );
   }
 
@@ -219,7 +210,7 @@ describe("regression: resolve_task_dir containment chokepoint", () => {
       fs.writeFileSync(absPath, content, "utf-8");
     }
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=tester\n",
     );
     fs.mkdirSync(taskDir("archive"), { recursive: true });
@@ -354,7 +345,7 @@ describe("regression: resolve_task_dir containment chokepoint", () => {
     });
     fs.writeFileSync(
       path.join(taskDir("archive", "2026-07", "08-09-old"), "task.json"),
-      JSON.stringify({ id: "old", meta: {} }) + "\n",
+      JSON.stringify(emptyTaskRecord({ id: "old", name: "08-09-old" })) + "\n",
     );
 
     expect(runTask("set-meta", "08-09-real", "by-name", "1").status).toBe(0);
@@ -437,7 +428,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
       fs.writeFileSync(absPath, content, "utf-8");
     }
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=tester\n",
     );
     fs.mkdirSync(taskDir("archive"), { recursive: true });
@@ -541,7 +532,7 @@ describe("regression: task lifecycle overwrite and collision safety", () => {
     fs.mkdirSync(destDir, { recursive: true });
     fs.writeFileSync(
       path.join(destDir, "task.json"),
-      JSON.stringify({ id: "previously-archived" }),
+      JSON.stringify(emptyTaskRecord({ id: "previously-archived", name: dirName })),
     );
 
     const r = runTask("archive", dirName, "--no-commit");
@@ -811,7 +802,7 @@ describe("regression: JSON read/write failure reporting", () => {
       fs.writeFileSync(absPath, content, "utf-8");
     }
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=tester\n",
     );
     fs.mkdirSync(taskDir("archive"), { recursive: true });
@@ -1589,7 +1580,7 @@ describe("regression: task auto-activation failure diagnostics (issue #430)", ()
       recursive: true,
     });
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=test-dev\n",
       "utf-8",
     );
@@ -1681,147 +1672,6 @@ describe("regression: task auto-activation failure diagnostics (issue #430)", ()
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain("Warning: session activation failed");
     expect(result.stderr).not.toContain("Activated task for this session");
-  });
-});
-
-// =============================================================================
-// 3. Semver / Migration Engine Regressions
-// =============================================================================
-
-describe("regression: semver prerelease handling (beta.5)", () => {
-  it("[beta.5] prerelease version sorts before release version", () => {
-    // 0.3.0-beta.1 < 0.3.0 (prerelease is less than release)
-    const versions = getAllMigrationVersions();
-    const betaVersions = versions.filter((v) => v.includes("beta"));
-    const releaseVersions = versions.filter(
-      (v) => !v.includes("beta") && !v.includes("alpha"),
-    );
-
-    if (betaVersions.length > 0 && releaseVersions.length > 0) {
-      // All beta versions should appear before their corresponding release versions
-      const lastBeta = betaVersions[betaVersions.length - 1];
-      const firstRelease = releaseVersions[0];
-      const lastBetaIdx = versions.indexOf(lastBeta);
-      const firstReleaseIdx = versions.indexOf(firstRelease);
-      // Only compare if they share the same base version
-      if (lastBeta.startsWith(firstRelease.split("-")[0])) {
-        expect(lastBetaIdx).toBeLessThan(firstReleaseIdx);
-      }
-    }
-  });
-
-  it("[beta.5] prerelease numeric parts compare numerically (beta.2 < beta.10)", () => {
-    // getMigrationsForVersion relies on correct version ordering
-    // beta.2 should be before beta.10 (numeric, not lexicographic)
-    const versions = getAllMigrationVersions();
-    const beta2Idx = versions.indexOf("0.3.0-beta.2");
-    const beta10Idx = versions.indexOf("0.3.0-beta.10");
-    if (beta2Idx !== -1 && beta10Idx !== -1) {
-      expect(beta2Idx).toBeLessThan(beta10Idx);
-    }
-  });
-
-  it("[beta.5] getMigrationsForVersion returns empty for equal versions", () => {
-    expect(getMigrationsForVersion("0.3.0-beta.5", "0.3.0-beta.5")).toEqual([]);
-  });
-
-  it("[beta.5] getMigrationsForVersion correctly handles beta range", () => {
-    // beta.0 to beta.2 should include beta.1 and beta.2 migrations
-    getMigrationsForVersion("0.3.0-beta.0", "0.3.0-beta.2");
-    // Should not include beta.0 itself (only > fromVersion)
-    const versions = getAllMigrationVersions();
-    if (versions.includes("0.3.0-beta.1")) {
-      expect(
-        hasPendingMigrations("0.3.0-beta.0", "0.3.0-beta.2"),
-      ).toBeDefined();
-    }
-  });
-});
-
-describe("regression: migration data integrity (beta.14)", () => {
-  it("[beta.14] all migrations have non-undefined 'from' field", () => {
-    const allMigrations = getAllMigrations();
-    for (const m of allMigrations) {
-      expect(
-        m.from,
-        `migration should have 'from' field defined`,
-      ).toBeDefined();
-      expect(typeof m.from).toBe("string");
-      expect(m.from.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("[beta.14] all migrations have valid type field", () => {
-    const allMigrations = getAllMigrations();
-    const validTypes = ["rename", "rename-dir", "delete", "safe-file-delete"];
-    for (const m of allMigrations) {
-      expect(validTypes).toContain(m.type);
-    }
-  });
-
-  it("[beta.1-040] safe-file-delete migrations have allowed_hashes", () => {
-    const allMigrations = getAllMigrations();
-    const safeDeletes = allMigrations.filter(
-      (m) => m.type === "safe-file-delete",
-    );
-    for (const m of safeDeletes) {
-      expect(
-        m.allowed_hashes,
-        `safe-file-delete for '${m.from}' should have allowed_hashes`,
-      ).toBeDefined();
-      expect(Array.isArray(m.allowed_hashes)).toBe(true);
-      expect(
-        (m.allowed_hashes as string[]).length,
-        `safe-file-delete for '${m.from}' should have at least one hash`,
-      ).toBeGreaterThan(0);
-      for (const hash of m.allowed_hashes as string[]) {
-        expect(hash).toMatch(/^[a-f0-9]{64}$/);
-      }
-    }
-  });
-
-  it("[beta.15] Claude Code statusline is not safe-deleted on update", () => {
-    const claudeStatusLineDeletes = getAllMigrations().filter(
-      (m) =>
-        m.type === "safe-file-delete" &&
-        m.from === ".claude/hooks/statusline.py",
-    );
-
-    expect(claudeStatusLineDeletes).toEqual([]);
-  });
-
-  it("[statusline-opt-in] statusline.py is not in claude's collected templates (update must not force-install it)", () => {
-    // The opt-in statusline (`trellis init --with-statusline`) must stay out
-    // of the unconditional template walk: analyzeChanges() classifies any
-    // collected-but-absent file as `newFiles` and installs it on update,
-    // which would force statusline onto opted-out projects.
-    const templates = collectPlatformTemplates("claude-code");
-    expect(templates).toBeDefined();
-    expect([...(templates?.keys() ?? [])]).not.toContain(
-      ".claude/hooks/statusline.py",
-    );
-  });
-
-  it("[beta.14] rename/rename-dir migrations have 'to' field", () => {
-    const allMigrations = getAllMigrations();
-    const renames = allMigrations.filter(
-      (m) => m.type === "rename" || m.type === "rename-dir",
-    );
-    for (const m of renames) {
-      expect(
-        m.to,
-        `rename migration from '${m.from}' should have 'to'`,
-      ).toBeDefined();
-      expect(typeof m.to).toBe("string");
-      expect((m.to as string).length).toBeGreaterThan(0);
-    }
-  });
-
-  it("[beta.14] all manifest versions are valid semver-like strings", () => {
-    const versions = getAllMigrationVersions();
-    for (const v of versions) {
-      expect(v).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)?$/);
-    }
   });
 });
 
@@ -1927,9 +1777,6 @@ describe("regression: shell to Python migration (beta.0)", () => {
     // Known exclusions: files intentionally not in getAllScripts()
     const excluded = new Set([
       "hooks/linear_sync.py",
-      "add_session.py",
-      "init_developer.py",
-      "get_developer.py",
     ]);
 
     for (const file of fsFiles) {
@@ -2017,7 +1864,7 @@ describe("regression: agent-session Trellis update hint", () => {
     }
     fs.mkdirSync(path.join(tmpDir, ".trellis", "tasks"), { recursive: true });
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-05-09T00:00:00Z\n",
       "utf-8",
     );
@@ -2143,7 +1990,7 @@ describe("regression: agent-session Trellis update hint", () => {
     ).toBe(true);
   });
 
-  it("keeps the update hint out of JSON, record, packages, and phase paths", () => {
+  it("keeps the update hint out of JSON, packages, and phase paths", () => {
     expect(pythonFunctionBody(commonSessionContext, "output_text")).toContain(
       "get_update_hint",
     );
@@ -2153,8 +2000,7 @@ describe("regression: agent-session Trellis update hint", () => {
         `${functionName} should not check Trellis updates`,
       ).not.toContain("get_update_hint");
     }
-    expect(commonGitContext).toContain('if args.mode == "record":');
-    expect(commonGitContext).toContain('elif args.mode == "packages":');
+    expect(commonGitContext).toContain('if args.mode == "packages":');
     expect(commonGitContext).toContain('elif args.mode == "phase":');
     expect(commonGitContext).toContain("else:");
     expect(commonGitContext).toContain("output_text()");
@@ -2178,7 +2024,7 @@ describe("regression: issue #252 polyrepo Git context", () => {
       recursive: true,
     });
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=test-dev\n",
       "utf-8",
     );

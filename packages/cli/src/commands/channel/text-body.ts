@@ -1,8 +1,5 @@
 import fs from "node:fs";
-import {
-  isRetiredDataPath,
-  resolveTrellisDataRoot,
-} from "../../utils/retired-data.js";
+import { assertProjectPath } from "../../utils/path-boundary.js";
 
 export interface ChannelTextBodyOptions {
   text?: string;
@@ -36,17 +33,7 @@ async function readChannelTextBody(
 ): Promise<string | undefined> {
   if (opts.text !== undefined && opts.text !== "") return opts.text;
   if (opts.textFile) {
-    if (
-      isRetiredDataPath(opts.textFile, resolveTrellisDataRoot(process.cwd())) ||
-      isRetiredDataPath(
-        fs.realpathSync(opts.textFile),
-        resolveTrellisDataRoot(process.cwd()),
-      )
-    ) {
-      throw new Error(
-        "Retired identity/history is not context; use task/spec context instead.",
-      );
-    }
+    assertProjectPath(opts.textFile, process.cwd());
     return fs.readFileSync(opts.textFile, "utf-8");
   }
   if (opts.stdin) return await readStdin();

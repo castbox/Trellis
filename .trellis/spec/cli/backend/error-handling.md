@@ -80,7 +80,7 @@ try {
 
 Optional advisory checks may warn and continue. Required task title and
 description validation must reject invalid input before writes. See
-[Identity-Free Task Lifecycle](./identity-free-task-lifecycle.md).
+[Task Lifecycle](./task-lifecycle.md).
 
 ### Pattern 4: Return-Based Error Signaling
 

@@ -44,9 +44,9 @@ import {
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import { loadHashes } from "../utils/template-hash.js";
 import {
-  activeTrellisChildren,
-  removeActiveTrellisData,
-} from "../utils/retired-data.js";
+  ownedTrellisChildren,
+  removeOwnedTrellisData,
+} from "../utils/trellis-owned-data.js";
 
 export interface AblateOptions {
   yes?: boolean;
@@ -111,9 +111,7 @@ function renderAblatePlan(
   );
   for (const entry of deletions)
     console.log(`  ${chalk.red("-")} ${entry.posixPath}`);
-  console.log(
-    `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/ (active data only; retired history preserved in place)`,
-  );
+  console.log(`  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/ (managed entries)`);
   if (plan.modifications.length > 0) {
     console.log(
       chalk.yellow.bold(
@@ -287,7 +285,7 @@ function buildAblationEntries(
   }
 
   const trellisPath = path.join(projectRoot, DIR_NAMES.WORKFLOW);
-  for (const name of activeTrellisChildren(trellisPath)) {
+  for (const name of ownedTrellisChildren(trellisPath)) {
     const relativePath = `${DIR_NAMES.WORKFLOW}/${name}`;
     addEntry(
       entries,
@@ -331,7 +329,7 @@ function applyAblationPlan(
   }
 
   const trellisPath = path.join(projectRoot, DIR_NAMES.WORKFLOW);
-  removeActiveTrellisData(trellisPath);
+  removeOwnedTrellisData(trellisPath);
 
   for (const relativeDir of prunableDirectories) {
     const directory = path.join(projectRoot, ...relativeDir.split("/"));
@@ -457,11 +455,7 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
     }
   });
 
-  console.log(
-    chalk.green(
-      "Active Trellis surfaces ablated; retired history remains in place.",
-    ),
-  );
+  console.log(chalk.green("Active Trellis surfaces ablated."));
   console.log(
     chalk.yellow("Start a fresh agent session before comparing behavior."),
   );

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 
 const templates = path.resolve(import.meta.dirname, "../../src/templates");
 let sandbox: string;
@@ -67,7 +68,7 @@ beforeEach(() => {
   expect(absent.status).toBe(1);
   git("worktree", "add", "--detach", linked, "HEAD");
   write(linked, ".trellis/workflow.md", "# Workflow\n## Phase Index\nLinked-only workflow\n## Phase 1: Plan\n[workflow-state:in_progress]\nLINKED-WORKFLOW\n[/workflow-state:in_progress]\n[trellis-continuation]\nLINKED-CONTINUATION\n[/trellis-continuation]\n");
-  write(linked, ".trellis/tasks/cross/task.json", JSON.stringify({ id: "cross", name: "cross", title: "Linked task title", description: "Fixture", status: "planning", creator: "fixture", assignee: "fixture" }));
+  write(linked, ".trellis/tasks/cross/task.json", JSON.stringify(emptyTaskRecord({ id: "cross", name: "cross", title: "Linked task title", description: "Fixture", status: "planning" })));
   write(linked, ".trellis/tasks/cross/prd.md", "Linked task requirements\n");
   for (const name of ["implement", "check"]) {
     write(linked, `.trellis/tasks/cross/${name}.jsonl`, `${JSON.stringify({ file: ".trellis/tasks/cross/prd.md", reason: "Fixture requirement" })}\n`);

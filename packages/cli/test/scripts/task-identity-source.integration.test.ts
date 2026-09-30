@@ -162,27 +162,27 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
     }
   });
 
-  it("rejects a legacy invalid TaskId before session binding or archive", () => {
-    const created = task(repo, "create", "Legacy", "--description", "Legacy task", "--slug", "legacy", "--no-start");
+  it("rejects an invalid TaskId before session binding or archive", () => {
+    const created = task(repo, "create", "Invalid ID", "--description", "Invalid task ID", "--slug", "invalid-id", "--no-start");
     expect(created.status, created.stderr).toBe(0);
-    const name = taskDir(repo, "legacy");
+    const name = taskDir(repo, "invalid-id");
     const file = path.join(repo, ".trellis/tasks", name, "task.json");
     const data = metadata(repo, name);
-    data.id = "legacy task";
+    data.id = "invalid task";
     fs.writeFileSync(file, `${JSON.stringify(data)}\n`);
     const started = spawnSync("python3", [".trellis/scripts/task.py", "start", name, "--allow-empty-context"], {
       cwd: repo, encoding: "utf-8", env: { ...process.env, TRELLIS_CONTEXT_ID: "identity-test" },
     });
     expect(started.status).toBe(1);
-    expect(started.stdout + started.stderr).toContain("invalid_task_id");
+    expect(started.stdout + started.stderr).toContain("invalid-task-schema");
     expect(fs.existsSync(path.join(repo, ".git/trellis/sessions"))).toBe(false);
     const contextless = task(repo, "start", name, "--allow-empty-context");
     expect(contextless.status).toBe(1);
-    expect(contextless.stdout + contextless.stderr).toContain("invalid_task_id");
+    expect(contextless.stdout + contextless.stderr).toContain("invalid-task-schema");
     expect(metadata(repo, name).status).toBe("planning");
     const archived = task(repo, "archive", name, "--no-commit");
     expect(archived.status).toBe(1);
-    expect(archived.stderr).toContain("invalid_task_id");
+    expect(archived.stderr).toContain("invalid-task-schema");
     expect(fs.existsSync(file)).toBe(true);
   });
 

@@ -37,22 +37,23 @@ const noop = () => {};
 describe("uninstall() integration", () => {
   let tmpDir: string;
 
-  it("refuses structured settings linked to historical data before scrub or read", async () => {
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+  it("refuses structured settings linked outside the project before scrub or read", async () => {
+    await init({ yes: true, claude: true, force: true });
     const settings = path.join(tmpDir, ".claude/settings.json");
-    const history = path.join(tmpDir, ".trellis/workspace/settings.json");
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-external-"));
+    const external = path.join(externalDir, "settings.json");
     const content = fs.readFileSync(settings, "utf8");
-    fs.mkdirSync(path.dirname(history), { recursive: true });
-    fs.writeFileSync(history, content);
+    fs.writeFileSync(external, content);
     fs.unlinkSync(settings);
-    fs.symlinkSync(history, settings);
+    fs.symlinkSync(external, settings);
     const read = vi.spyOn(fs, "readFileSync");
-    await expect(uninstall({ yes: true })).rejects.toThrow(/retired/i);
-    expect(read.mock.calls.some(([name]) => String(name) === settings || String(name) === history)).toBe(false);
+    await expect(uninstall({ yes: true })).rejects.toThrow(/outside the project/i);
+    expect(read.mock.calls.some(([name]) => String(name) === settings || String(name) === external)).toBe(false);
     read.mockRestore();
-    expect(fs.readFileSync(history, "utf8")).toBe(content);
-    expect(fs.readlinkSync(settings)).toBe(history);
+    expect(fs.readFileSync(external, "utf8")).toBe(content);
+    expect(fs.readlinkSync(settings)).toBe(external);
     expect(fs.existsSync(path.join(tmpDir, ".trellis/.version"))).toBe(true);
+    fs.rmSync(externalDir, { recursive: true, force: true });
   });
 
   beforeEach(() => {
@@ -81,20 +82,14 @@ describe("uninstall() integration", () => {
     expect(fs.readdirSync(tmpDir)).toEqual([]);
   });
 
-  it("preserves old backup boundaries without reading or traversing them", async () => {
+  it("preserves unknown backup files without reading or traversing them", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,
     });
-    const backup = path.join(tmpDir, ".trellis", ".backup-old");
-    const files = [
-      ".trellis/.developer",
-      ".trellis/workspace/arbitrary.bin",
-      "other.txt",
-    ];
+    const backup = path.join(tmpDir, ".trellis", "custom-backup");
+    const files = ["notes.txt", "nested/arbitrary.bin"];
     for (const file of files) {
       const target = path.join(backup, file);
       fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -112,7 +107,7 @@ describe("uninstall() integration", () => {
       remove.mock.calls,
     ]) {
       expect(
-        calls.every(([file]) => !String(file).includes(".backup-old")),
+        calls.every(([file]) => !String(file).includes("custom-backup")),
       ).toBe(true);
     }
     read.mockRestore();
@@ -140,13 +135,11 @@ describe("uninstall() integration", () => {
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW, "scripts"))).toBe(true);
   });
 
-  it.each([{ yes: true }, { dryRun: true }])("keeps a history-only directory opaque on repeated uninstall (%j)", async (options) => {
-    await init({ creator: "test", assignee: "test", yes: true, claude: true, force: true });
+  it.each([{ yes: true }, { dryRun: true }])("keeps unknown files opaque on repeated uninstall (%j)", async (options) => {
+    await init({ yes: true, claude: true, force: true });
     const files = [
-      ".trellis/.developer",
-      ".trellis/workspace/person/journal.md",
-      ".trellis/agent-traces/index.md",
-      ".trellis/.backup-old/.trellis/workspace/index.md",
+      ".trellis/custom/note.md",
+      ".trellis/custom/nested/data.bin",
     ];
     for (const file of files) {
       fs.mkdirSync(path.dirname(path.join(tmpDir, file)), { recursive: true });
@@ -165,7 +158,7 @@ describe("uninstall() integration", () => {
     expect(inquirer.prompt).not.toHaveBeenCalled();
     for (const [file] of [...reads.mock.calls, ...lists.mock.calls]) {
       const relative = path.relative(tmpDir, String(file)).replaceAll("\\", "/");
-      expect(relative).not.toMatch(/^\.trellis\/(?:workspace|agent-traces|\.developer|\.backup-)/);
+      expect(relative).not.toMatch(/^\.trellis\/custom\//);
     }
     reads.mockRestore();
     lists.mockRestore();
@@ -184,8 +177,6 @@ describe("uninstall() integration", () => {
 
   it("#3 init → uninstall → project is clean", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       cursor: true,
@@ -244,8 +235,6 @@ describe("uninstall() integration", () => {
 
   it("#4 dry-run does not modify anything", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,
@@ -275,8 +264,6 @@ describe("uninstall() integration", () => {
 
   it("#5 user input 'no' aborts without modification", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,
@@ -291,8 +278,6 @@ describe("uninstall() integration", () => {
 
   it("#6 user-modified trellis file is still deleted (manifest defines scope)", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       cursor: true,
       force: true,
@@ -318,8 +303,6 @@ describe("uninstall() integration", () => {
 
   it("#7 user-added file in a managed dir is NOT deleted", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,
@@ -345,8 +328,6 @@ describe("uninstall() integration", () => {
     // tree should disappear, demonstrating both nested-subdir cleanup and
     // empty-platform-root cleanup.
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       kilo: true,
       force: true,
@@ -373,8 +354,6 @@ describe("uninstall() integration", () => {
     // empty per the scrubber, so the file (and therefore .cursor/) survive.
     // This documents the boundary of the cleanup contract.
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       cursor: true,
       force: true,
@@ -394,8 +373,6 @@ describe("uninstall() integration", () => {
 
   it("#8 .claude/settings.json with extra user fields keeps user fields, strips trellis hooks", async () => {
     await init({
-      creator: "test",
-      assignee: "test",
       yes: true,
       claude: true,
       force: true,

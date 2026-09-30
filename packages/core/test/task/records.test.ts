@@ -106,16 +106,12 @@ describe("loadTaskRecord / writeTaskRecord", () => {
     );
   });
 
-  it("preserves unknown on-disk fields across writeTaskRecord", () => {
+  it("rejects unknown on-disk fields before replacing a record", () => {
     const dir = path.join(tmp, "05-13-unknown");
     fs.mkdirSync(dir, { recursive: true });
     const original = {
       ...emptyTaskRecord({ id: "u", name: "u", title: "U" }),
-      // Simulate a field added by an external tool / future version.
-      external_tracker: { id: "external-42", system: "external" },
-      legacy_flag: true,
-      creator: "old-creator",
-      assignee: "old-assignee",
+      extra: "unexpected",
     };
     fs.writeFileSync(
       path.join(dir, "task.json"),
@@ -123,7 +119,8 @@ describe("loadTaskRecord / writeTaskRecord", () => {
       "utf-8",
     );
 
-    writeTaskRecord({
+    const before = fs.readFileSync(path.join(dir, "task.json"), "utf-8");
+    expect(() => writeTaskRecord({
       taskDir: dir,
       record: emptyTaskRecord({
         id: "u",
@@ -131,51 +128,22 @@ describe("loadTaskRecord / writeTaskRecord", () => {
         title: "U updated",
         status: "in_progress",
       }),
-    });
-
-    const raw = JSON.parse(
-      fs.readFileSync(path.join(dir, "task.json"), "utf-8"),
-    ) as Record<string, unknown>;
-    expect(raw.title).toBe("U updated");
-    expect(raw.status).toBe("in_progress");
-    expect(raw.external_tracker).toEqual({
-      id: "external-42",
-      system: "external",
-    });
-    expect(raw.legacy_flag).toBe(true);
-    expect(raw.creator).toBe("old-creator");
-    expect(raw.assignee).toBe("old-assignee");
-    expect(loadTaskRecord({ taskDir: dir })).not.toHaveProperty("assignee");
-
-    // Canonical fields come first, unknown fields trail in original order.
-    const keys = Object.keys(raw);
-    const canonicalCount = TASK_RECORD_FIELD_ORDER.length;
-    expect(keys.slice(0, canonicalCount)).toEqual([...TASK_RECORD_FIELD_ORDER]);
-    expect(keys.slice(canonicalCount)).toEqual([
-      "external_tracker",
-      "legacy_flag",
-      "creator",
-      "assignee",
-    ]);
+    })).toThrow(/task.extra is not a supported field/);
+    expect(fs.readFileSync(path.join(dir, "task.json"), "utf-8")).toBe(before);
   });
 
-  it("keeps legacy source unresolved and preserves a legacy branch on write", () => {
-    const dir = path.join(tmp, "05-13-legacy");
-    fs.mkdirSync(dir, { recursive: true });
-    const legacy = { ...emptyTaskRecord({ id: "old", name: "old" }), branch: "feature/old" } as Record<string, unknown>;
-    delete legacy.source;
-    delete legacy.lifecycle_generation;
-    fs.writeFileSync(path.join(dir, "task.json"), `${JSON.stringify(legacy)}\n`);
-
+  it("preserves branch and meta through a current-schema write", () => {
+    const dir = path.join(tmp, "05-13-current");
+    const record = { ...emptyTaskRecord({ id: "current", name: "current", meta: { link: "A-1" } }), branch: "feature/current" };
+    writeTaskRecord({ taskDir: dir, record });
     const loaded = loadTaskRecord({ taskDir: dir });
-    expect(loaded.lifecycle_generation).toBe(0);
-    expect(loaded).not.toHaveProperty("source");
+    expect(loaded.branch).toBe("feature/current");
     writeTaskRecord({ taskDir: dir, record: loaded });
 
     const written = JSON.parse(fs.readFileSync(path.join(dir, "task.json"), "utf8"));
     expect(written.lifecycle_generation).toBe(0);
-    expect(written).not.toHaveProperty("source");
-    expect(written.branch).toBe("feature/old");
+    expect(written.branch).toBe("feature/current");
+    expect(written.meta).toEqual({ link: "A-1" });
   });
 
   it("refuses to overwrite corrupt existing task.json files", () => {
@@ -205,7 +173,7 @@ describe("loadTaskRecord / writeTaskRecord", () => {
         taskDir: dir,
         record: emptyTaskRecord({ id: "a", name: "a", title: "A" }),
       }),
-    ).toThrow(/Refusing to overwrite non-object task record/);
+    ).toThrow(/Refusing to overwrite invalid task record/);
 
     expect(fs.readFileSync(file, "utf-8")).toBe("[]\n");
   });

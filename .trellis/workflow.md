@@ -67,7 +67,7 @@ python3 ./.trellis/scripts/task.py create-pr [name] [--dry-run]
 
 > Run `python3 ./.trellis/scripts/task.py --help` to see the authoritative, up-to-date list.
 
-**Current-task mechanism**: `task.py create` creates the task directory and, when session identity is available, binds the session to it. `task.py start` keeps that binding and changes `planning` to `in_progress`. Git projects store one current TaskId and lifecycle generation per session under `<git-common-dir>/trellis/sessions/`; registered worktrees resolve the task's current ref from that identity and live Git facts. Non-Git projects keep `.trellis/.runtime/sessions/`. Conflicting, corrupt or stale bindings produce explicit errors, not normal `no_task`. `task.py finish` clears the selected session without changing task status. Archive completes and moves the exact task, then clears bindings to that TaskId and generation; rename changes the task ref without repointing sessions. No repository-global current task or developer identity is used.
+**Current-task mechanism**: `task.py create` creates the task directory and, when session identity is available, binds the session to it. `task.py start` keeps that binding and changes `planning` to `in_progress`. Git projects store one current TaskId and lifecycle generation per session under `<git-common-dir>/trellis/sessions/`; registered worktrees resolve the task's current ref from that identity and live Git facts. Non-Git projects keep `.trellis/.runtime/sessions/`. Conflicting, corrupt or stale bindings produce explicit errors, not normal `no_task`. `task.py finish` clears the selected session without changing task status. Archive completes and moves the exact task, then clears bindings to that TaskId and generation; rename changes the task ref without repointing sessions.
 
 ### Context Script
 
@@ -430,7 +430,7 @@ After artifact review, flip the task status to `in_progress`:
 python3 ./.trellis/scripts/task.py start <task-dir>
 ```
 
-For lightweight tasks, `prd.md` can be enough. For complex tasks, `prd.md`, `design.md`, and `implement.md` must exist and be reviewed before start. On sub-agent-dispatch platforms, `implement.jsonl` and `check.jsonl` must both have real curated entries before start. Runtime consumers tolerate missing or seed-only manifests for compatibility, but that tolerance is not a planning-ready state.
+For lightweight tasks, `prd.md` can be enough. For complex tasks, `prd.md`, `design.md`, and `implement.md` must exist and be reviewed before start. On sub-agent-dispatch platforms, `implement.jsonl` and `check.jsonl` must both have real curated entries before start.
 
 After this command succeeds, the breadcrumb auto-switches to `[workflow-state:in_progress]`, and the rest of Phase 2 / 3 follows.
 
@@ -585,7 +585,7 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
 
 1. **Inspect dirty state**:
    ```bash
-   git status --porcelain -- . ':(exclude).trellis/workspace' ':(exclude).trellis/agent-traces' ':(exclude).trellis/.developer' ':(exclude).trellis/.backup-*'
+   git status --porcelain -- .
    ```
    Snapshot every dirty path. If the working tree is clean, skip to 3.5.
 

@@ -13,8 +13,7 @@
  *      fields, leaving user-added neighbors intact. If the scrubber says the
  *      file is fully empty afterwards, we delete it.
  *
- * Whether the user has modified a manifest-listed file or not, it is removed
- * except retired identity/history, which remains untouched in place.
+ * Managed files are removed even when their content has changed.
  */
 
 import { execFileSync } from "node:child_process";
@@ -26,7 +25,7 @@ import inquirer from "inquirer";
 
 import { DIR_NAMES } from "../constants/paths.js";
 import { loadHashes } from "../utils/template-hash.js";
-import { activeTrellisChildren } from "../utils/retired-data.js";
+import { ownedTrellisChildren } from "../utils/trellis-owned-data.js";
 import { getConfiguredPlatforms } from "../configurators/index.js";
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import {
@@ -68,7 +67,7 @@ function renderPlan(cwd: string, plan: UninstallPlan): void {
   if (plan.removeTrellisDir && fs.existsSync(trellisDir)) {
     console.log(
       `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/  ${chalk.gray(
-        "(active data including specs and tasks; retired identity/history preserved in place)",
+        "(managed data including specs and tasks)",
       )}`,
     );
   }
@@ -182,10 +181,10 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
   // platform files are trellis-owned vs user-owned.
   const hashes = loadHashes(cwd);
   if (Object.keys(hashes).length === 0) {
-    if (activeTrellisChildren(trellisDir).length === 0) {
+    if (ownedTrellisChildren(trellisDir).length === 0) {
       console.log(
         chalk.gray(
-          "No active files remain under .trellis/. Retained historical data is preserved; no files were removed.",
+          "No managed files remain under .trellis/; no files were removed.",
         ),
       );
       return;
@@ -193,16 +192,14 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
     console.error(
       chalk.red(
         "Active Trellis files remain but the ownership manifest is missing or unreadable. " +
-          "Reconcile the manifest before uninstalling active files. Historical data must remain untouched.",
+          "Reconcile the manifest before uninstalling managed files.",
       ),
     );
     process.exit(1);
   }
 
-  // Self-heal poisoned manifests from buggy init versions: prune any manifest
-  // entry that no current configurator owns. Runs BEFORE buildPlan so the
-  // user-owned paths (.codex/sessions/, .claude/projects/, pre-existing
-  // AGENTS.md, etc.) never reach the deletion list. See PRD R3.
+  // Remove entries without current template ownership before building the
+  // deletion plan, so user-owned files cannot enter it.
   //
   // Dry-run: still compute the pruned hashes (so the plan reflects post-prune
   // reality) but pass `persist: false` so no disk write happens. The actual
@@ -217,8 +214,7 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
     { persist: false },
   );
   if (pruned.length > 0) {
-    // Surface counts only — listing every poisoned entry would alarm users
-    // without giving them an actionable signal.
+    // Surface the count without overwhelming the plan with unowned paths.
     console.log(
       chalk.gray(
         `   Pruned ${pruned.length} orphan manifest entries (user-owned files trellis did not write).`,

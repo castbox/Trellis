@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assertActiveDataPath } from "@mindfoldhq/trellis-core";
+import { assertProjectPath } from "@mindfoldhq/trellis-core";
 import {
   resolveChannelStorageRoot,
   resolveChannelStorageProjectDir,
@@ -137,7 +137,7 @@ export function workerLockPath(
 
 function activeStorageFile(dir: string, filename: string): string {
   const file = path.join(dir, filename);
-  assertActiveDataPath(file, process.cwd());
+  assertProjectPath(file, process.cwd());
   return file;
 }
 
@@ -188,7 +188,7 @@ export function migrateLegacyChannels(): void {
     if (!fs.existsSync(path.join(dir, "events.jsonl"))) continue;
     // It's legacy — move it to _legacy/<name>/.
     const target = path.join(legacy, entry);
-    assertActiveDataPath(target, process.cwd());
+    assertProjectPath(target, process.cwd());
     fs.mkdirSync(legacy, { recursive: true });
     try {
       fs.renameSync(dir, target);

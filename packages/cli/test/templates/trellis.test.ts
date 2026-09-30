@@ -140,8 +140,6 @@ describe("trellis template constants", () => {
     const workflow = fs.readFileSync(path.join(repoRoot, ".trellis/workflow.md"), "utf-8");
     for (const content of [workflow, workflowMdTemplate]) {
       expect(content).toContain("task.py create \"<task title>\" --description \"<summary>\"");
-      expect(content).not.toContain("--creator <creator> --assignee <assignee>");
-      expect(content).not.toMatch(/init_developer|add_session|--mine|### Workspace System/);
     }
   });
 
@@ -420,7 +418,6 @@ describe("trellis template constants", () => {
   });
 
   it("gitignoreTemplate contains ignore patterns", () => {
-    expect(gitignoreTemplate).toContain(".developer");
     expect(gitignoreTemplate).toContain("__pycache__");
   });
 });
@@ -442,10 +439,6 @@ describe("getAllScripts", () => {
     expect(scripts.has("common/paths.py")).toBe(true);
     expect(scripts.has("common/active_task.py")).toBe(true);
     expect(scripts.has("task.py")).toBe(true);
-    expect(scripts.has("get_developer.py")).toBe(false);
-    expect(scripts.has("init_developer.py")).toBe(false);
-    expect(scripts.has("add_session.py")).toBe(false);
-    expect(scripts.has("common/developer.py")).toBe(false);
   });
 
   it("has at least one entry", () => {

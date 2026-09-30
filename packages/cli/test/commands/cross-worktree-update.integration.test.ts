@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 
 // Requires an approved core-then-CLI build before execution. This suite never
 // installs dependencies or builds; source worktrees are accessed read-only.
@@ -185,8 +186,7 @@ function prepareLinkedTask(fixture: Fixture): void {
     "worktree", "add", "-b", "fixture-linked", fixture.linked,
   ]);
   write(fixture.linked, `${taskRef}/task.json`, JSON.stringify({
-    id: "installed-binding",
-    lifecycle_generation: 0,
+    ...emptyTaskRecord({ id: "installed-binding", name: "09-14-installed-binding" }),
     title: taskTitle,
     description: "Installed runtime resolves this linked-worktree task from primary",
     status: "planning",
@@ -232,9 +232,9 @@ afterEach(() => {
 });
 
 describe("installed CLI cross-worktree update smoke", () => {
-  it.each(["fresh", "legacy"] as const)(
-    "%s installation resolves linked tasks after repeated same-version updates",
-    (mode) => {
+  it(
+    "current installation resolves linked tasks after repeated same-version updates",
+    () => {
       const packagePaths = ["packages/cli/package.json", "packages/core/package.json"];
       const versions = packagePaths.map((file) => {
         const contents = fs.readFileSync(path.join(repository, file), "utf8");
@@ -246,27 +246,6 @@ describe("installed CLI cross-worktree update smoke", () => {
       expect(cli(fixture, fixture.primary, ["--version"]).trim()).toBe(versions[0].version);
       prepareLinkedTask(fixture);
 
-      const legacyFile = path.join(fixture.linked, ".trellis/.runtime/sessions", `${contextKey}.json`);
-      let legacyBytes: string | undefined;
-      if (mode === "legacy") {
-        // Seed the historical storage format without requiring old Git objects
-        // that are absent in shallow CI clones. Runtime membership stays real.
-        write(fixture.linked, `.trellis/.runtime/sessions/${contextKey}.json`,
-          JSON.stringify({ current_task: taskRef, platform: "codex", current_run: null }));
-        fs.unlinkSync(path.join(fixture.primary, ".git/trellis/sessions", `${contextKey}.json`));
-        legacyBytes = fs.readFileSync(legacyFile, "utf8");
-        expect(JSON.parse(legacyBytes)).toMatchObject({ current_task: taskRef });
-        const unsupported = JSON.parse(script(fixture, fixture.primary,
-          ".trellis/scripts/task.py", ["current", "--json"], { status: 1 })) as CurrentTaskOutput;
-        expect(unsupported).toMatchObject({
-          current_task: null,
-          stale: true,
-          source: `session:${contextKey}`,
-        });
-        expect(String(unsupported.error)).toContain("unsupported_binding_schema");
-        expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
-        script(fixture, fixture.linked, ".trellis/scripts/task.py", ["start", taskRef]);
-      }
       assertPrimaryConsumers(fixture);
 
       const taskBefore = fs.readFileSync(path.join(fixture.linked, taskRef, "task.json"), "utf8");
@@ -286,16 +265,6 @@ describe("installed CLI cross-worktree update smoke", () => {
         assertPrimaryConsumers(fixture);
         expect(fs.readFileSync(path.join(fixture.linked, taskRef, "task.json"), "utf8"))
           .toBe(taskBefore);
-        if (legacyBytes !== undefined) {
-          // Upgrade and hook reads must not rewrite the checkout-local legacy file.
-          expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
-          expect(JSON.parse(fs.readFileSync(path.join(fixture.primary,
-            ".git/trellis/sessions", `${contextKey}.json`), "utf8"))).toEqual({
-            schema_version: 2,
-            task_id: "installed-binding",
-            lifecycle_generation: 0,
-          });
-        }
       }
       script(fixture, fixture.primary, ".trellis/scripts/task.py", ["finish"]);
       for (let read = 0; read < 2; read++) {
@@ -303,19 +272,10 @@ describe("installed CLI cross-worktree update smoke", () => {
           const cleared = JSON.parse(script(fixture, root,
             ".trellis/scripts/task.py", ["current", "--json"], { status: 1 })) as CurrentTaskOutput;
           expect(cleared.current_task).toBeNull();
-          if (legacyBytes === undefined) {
-            expect(cleared.stale).toBe(false);
-            expect(cleared.error).toBeUndefined();
-            expect(cleared.source).toBe("none");
-          } else {
-            expect(cleared.stale).toBe(true);
-            expect(String(cleared.error)).toContain("unsupported_binding_schema");
-            expect(cleared.source).toBe(`session:${contextKey}`);
-          }
+          expect(cleared.stale).toBe(false);
+          expect(cleared.error).toBeUndefined();
+          expect(cleared.source).toBe("none");
         }
-      }
-      if (legacyBytes !== undefined) {
-        expect(fs.readFileSync(legacyFile, "utf8")).toBe(legacyBytes);
       }
       for (const [index, file] of packagePaths.entries()) {
         expect(fs.readFileSync(path.join(repository, file), "utf8")).toBe(versions[index].contents);

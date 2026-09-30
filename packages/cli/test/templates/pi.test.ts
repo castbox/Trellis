@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 import ts from "typescript";
 import { collectPiTemplates } from "../../src/configurators/pi.js";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import {
   getAllAgents,
   getExtensionTemplate,
@@ -226,7 +227,6 @@ describe("pi cross-worktree callbacks", () => {
     common: string;
     git: (cwd: string, ...args: string[]) => string;
     bind: (workspace: string, key?: string) => string;
-    legacy: (workspace: string) => string;
   } {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "trellis pi worktrees ")));
     const primary = join(root, "primary checkout");
@@ -241,7 +241,7 @@ describe("pi cross-worktree callbacks", () => {
     git(primary, "init");
     git(primary, "commit", "--allow-empty", "-m", "fixture");
     installTaskRuntime(primary);
-    // Establish the native identity in primary before the linked checkout exists.
+    // Establish the native session in primary before the linked checkout exists.
     expect(invoke(primary)).toContain("No active Trellis task found");
     git(primary, "worktree", "add", "--detach", linked, "HEAD");
     for (const [workspace, label] of [[primary, "PRIMARY"], [linked, "LINKED"]] as const) {
@@ -249,8 +249,10 @@ describe("pi cross-worktree callbacks", () => {
       const task = join(workspace, ".trellis/tasks/same-name");
       mkdirSync(task, { recursive: true });
       writeFileSync(join(task, "task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: `${label.toLowerCase()}-task` }),
         id: `${label.toLowerCase()}-task`,
         lifecycle_generation: 0,
+        children: [],
         status: "in_progress",
       }));
       writeFileSync(join(task, "prd.md"), `${label} PRD`);
@@ -270,13 +272,7 @@ describe("pi cross-worktree callbacks", () => {
       }));
       return file;
     };
-    const legacy = (workspace: string): string => {
-      const file = join(workspace, ".trellis/.runtime/sessions/pi_binding.json");
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, JSON.stringify({ current_task: ".trellis/tasks/same-name" }));
-      return file;
-    };
-    return { root, primary, linked, common, git, bind, legacy };
+    return { root, primary, linked, common, git, bind };
   }
 
   function invoke(root: string, sessionId = "binding"): string {
@@ -294,7 +290,6 @@ describe("pi cross-worktree callbacks", () => {
     const f = fixture();
     try {
       f.bind(f.linked);
-      f.legacy(f.primary); // An unsupported local pointer must not override schema 2.
       const output = invoke(f.primary);
       for (const label of ["PRD", "SPEC", "FLOW"]) {
         expect(output).toContain(`LINKED ${label}`);
@@ -308,24 +303,6 @@ describe("pi cross-worktree callbacks", () => {
       f.git(independent, "init");
       installTaskRuntime(independent);
       expect(invoke(independent)).toContain("No active Trellis task found");
-    } finally {
-      rmSync(f.root, { recursive: true, force: true });
-    }
-  });
-
-  it("#2 rejects legacy bindings read-only without promoting them", () => {
-    const f = fixture();
-    try {
-      const legacy = f.legacy(f.linked);
-      const bytes = readFileSync(legacy);
-      expect(invoke(f.primary)).toContain("invalid_task");
-      expect(invoke(f.primary)).toContain("unsupported_binding_schema");
-      expect(readFileSync(legacy)).toEqual(bytes);
-      expect(existsSync(join(f.common, "trellis/sessions/pi_binding.json"))).toBe(false);
-      f.legacy(f.primary);
-      expect(invoke(f.primary)).toContain("unsupported_binding_schema");
-      writeFileSync(legacy, "{");
-      expect(invoke(f.primary)).toContain("unsupported_binding_schema");
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -345,13 +322,15 @@ describe("pi cross-worktree callbacks", () => {
     try {
       f.bind(f.linked);
       writeFileSync(join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: "linked-task" }),
         id: "linked-task",
         lifecycle_generation: 0,
+        children: [],
         status,
       }));
       const output = invoke(f.primary);
       expect(output).toContain("invalid_task");
-      expect(output).toContain("Invalid task status");
+      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "stale_task_identity");
       expect(output).not.toContain("(planning)");
       expect(output).not.toContain("Status: no_task");
       expect(output).not.toContain("LINKED PRD");
@@ -366,8 +345,10 @@ describe("pi cross-worktree callbacks", () => {
     try {
       f.bind(f.linked);
       writeFileSync(join(f.linked, ".trellis/tasks/same-name/task.json"), JSON.stringify({
+        ...emptyTaskRecord({ id: "linked-task" }),
         id: "linked-task",
         lifecycle_generation: 0,
+        children: [],
         status: "in-review",
       }));
       writeFileSync(join(f.linked, ".trellis/workflow.md"), "[workflow-state:in-review]\nLINKED CUSTOM FLOW\n[/workflow-state:in-review]\n");
@@ -408,12 +389,11 @@ describe("pi cross-worktree callbacks", () => {
     }
   });
 
-  it.each(["malformed", "schema", "common", "unregistered", "metadata", "path", "historical-task", "historical-storage"] as const)(
+  it.each(["malformed", "schema", "common", "unregistered", "metadata", "path"] as const)(
     "#3 rejects %s bindings before task-context reads or no-task fallback", (failure) => {
       const f = fixture();
       try {
         const binding = f.bind(f.linked);
-        f.legacy(f.primary);
         const data = JSON.parse(readFileSync(binding, "utf8")) as Record<string, unknown>;
         if (failure === "malformed") writeFileSync(binding, "{");
         if (failure === "schema") writeFileSync(binding, JSON.stringify({ ...data, schema_version: 1 }));
@@ -421,14 +401,6 @@ describe("pi cross-worktree callbacks", () => {
         if (failure === "unregistered") f.git(f.primary, "worktree", "remove", "--force", f.linked);
         if (failure === "metadata") writeFileSync(join(f.linked, ".trellis/tasks/same-name/task.json"), "[]");
         if (failure === "path") writeFileSync(binding, JSON.stringify({ ...data, current_task: "../outside" }));
-        if (failure === "historical-task" || failure === "historical-storage") {
-          const history = join(f.linked, ".trellis/workspace");
-          mkdirSync(history);
-          const target = failure === "historical-task" ? join(f.linked, ".trellis/tasks/same-name/task.json") : binding;
-          const historicalFile = join(history, "source.json");
-          fs.renameSync(target, historicalFile);
-          fs.symlinkSync(historicalFile, target);
-        }
         const reads = vi.spyOn(fs, "readFileSync");
         const output = invoke(f.primary);
         expect(output).toContain("invalid_task");
@@ -445,65 +417,6 @@ describe("pi cross-worktree callbacks", () => {
 });
 
 describe("pi templates", () => {
-  it.each([
-    ".trellis/workflow.md",
-    ".trellis/.runtime/sessions/pi_history.json",
-    ".trellis/tasks/current/task.json",
-    ".trellis/tasks/current/implement.jsonl",
-    ".trellis/tasks/current/prd.md",
-    ".trellis/spec/current.md",
-    ".trellis/config.yaml",
-  ])("rejects historical source aliases through the actual event handler: %s", (relativePath) => {
-    const root = fs.realpathSync(mkdtempSync(join(tmpdir(), "trellis-pi-history-")));
-    try {
-      installTaskRuntime(root);
-      const files: Record<string, string> = {
-        ".trellis/workflow.md": "[workflow-state:in_progress]\nACTIVE FLOW\n[/workflow-state:in_progress]\n",
-        ".trellis/.runtime/sessions/pi_history.json": JSON.stringify({ schema_version: 2, task_id: "current", lifecycle_generation: 0 }),
-        ".trellis/tasks/current/task.json": JSON.stringify({ id: "current", lifecycle_generation: 0, status: "in_progress" }),
-        ".trellis/tasks/current/implement.jsonl": JSON.stringify({ file: ".trellis/spec/current.md" }),
-        ".trellis/tasks/current/prd.md": "ACTIVE PRD",
-        ".trellis/spec/current.md": "ACTIVE SPEC",
-        ".trellis/config.yaml": "context_injection:\n  max_file_bytes: 32768\n",
-      };
-      for (const [name, text] of Object.entries(files)) {
-        fs.mkdirSync(dirname(join(root, name)), { recursive: true });
-        writeFileSync(join(root, name), text);
-      }
-      const invoke = (): unknown => {
-        const handlers = new Map<string, (event: unknown, ctx?: unknown) => unknown>();
-        loadExtensionInternals(root, { TRELLIS_CONTEXT_ID: "" }).trellisExtension({
-          on: (event, handler) => handlers.set(event, handler),
-        });
-        return handlers.get("before_agent_start")?.(
-          { type: "before_agent_start", prompt: "work", systemPrompt: "BASE" },
-          { cwd: root, sessionManager: { getSessionId: () => "history" } },
-        );
-      };
-      const file = join(root, relativePath);
-      const original = readFileSync(file, "utf8");
-      const historical = join(root, ".trellis/workspace/source");
-      fs.mkdirSync(join(root, ".trellis/workspace"));
-      writeFileSync(historical, original);
-      fs.unlinkSync(file);
-      fs.symlinkSync(historical, file);
-      const read = vi.spyOn(fs, "readFileSync");
-      invoke();
-      expect(read.mock.calls.filter(([p]) => {
-        try { return realpathSync(p as fs.PathLike) === historical; } catch { return false; }
-      })).toEqual([]);
-      read.mockRestore();
-      expect(readFileSync(historical, "utf8")).toBe(original);
-      fs.unlinkSync(file);
-      writeFileSync(file, original);
-      const active = JSON.stringify(invoke());
-      expect(active).toContain("ACTIVE FLOW");
-      expect(active).toContain("ACTIVE PRD");
-    } finally {
-      vi.restoreAllMocks();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
   it("provides the three Trellis sub-agent definitions", () => {
     const agents = getAllAgents();
     expect(agents.map((agent) => agent.name).sort()).toEqual([
@@ -658,9 +571,6 @@ describe("pi templates", () => {
     expect(first.systemPrompt).not.toContain(
       "exactly one short Chinese sentence",
     );
-    expect(first.systemPrompt).not.toContain(
-      "Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。",
-    );
     expect(first.systemPrompt).toContain("<trellis-workflow>");
     expect(first.systemPrompt).toContain("Phase 1: Plan");
     expect(first.systemPrompt).toContain("No active Trellis task found");
@@ -749,7 +659,7 @@ describe("pi templates", () => {
     writeFileSync(join(taskDir, "prd.md"), "# PRD\nStable prefix matters.");
     writeFileSync(
       join(taskDir, "task.json"),
-      JSON.stringify({ id: "07-07-cache-fix", lifecycle_generation: 0, status: "in_progress" }),
+      JSON.stringify(emptyTaskRecord({ id: "07-07-cache-fix", status: "in_progress" })),
     );
     mkdirSync(join(root, ".trellis", ".runtime", "sessions"), {
       recursive: true,
@@ -782,7 +692,7 @@ describe("pi templates", () => {
     writeFileSync(join(taskDir, "prd.md"), "FOREIGN TASK CONTENT");
     writeFileSync(
       join(taskDir, "task.json"),
-      JSON.stringify({ id: "foreign-task", lifecycle_generation: 0, status: "in_progress" }),
+      JSON.stringify(emptyTaskRecord({ id: "foreign-task", status: "in_progress" })),
     );
     writeFileSync(
       join(sessionsDir, "pi_process_foreign.json"),
@@ -907,8 +817,8 @@ describe("pi templates", () => {
     mkdirSync(taskDir2, { recursive: true });
     writeFileSync(join(taskDir1, "prd.md"), "ROOT ONE PRD CONTENT");
     writeFileSync(join(taskDir2, "prd.md"), "ROOT TWO PRD CONTENT");
-    writeFileSync(join(taskDir1, "task.json"), JSON.stringify({ id: "shared-task", lifecycle_generation: 0, status: "in_progress" }));
-    writeFileSync(join(taskDir2, "task.json"), JSON.stringify({ id: "shared-task", lifecycle_generation: 0, status: "in_progress" }));
+    writeFileSync(join(taskDir1, "task.json"), JSON.stringify(emptyTaskRecord({ id: "shared-task", status: "in_progress" })));
+    writeFileSync(join(taskDir2, "task.json"), JSON.stringify(emptyTaskRecord({ id: "shared-task", status: "in_progress" })));
     const sessionRef = JSON.stringify({ schema_version: 2, task_id: "shared-task", lifecycle_generation: 0 });
     writeFileSync(join(sessionsDir1, "pi_shared-session.json"), sessionRef);
     writeFileSync(join(sessionsDir2, "pi_shared-session.json"), sessionRef);
@@ -959,8 +869,8 @@ describe("pi templates", () => {
     mkdirSync(taskDir2, { recursive: true });
     writeFileSync(join(taskDir1, "prd.md"), "ROOT ONE PRD CONTENT");
     writeFileSync(join(taskDir2, "prd.md"), "ROOT TWO PRD CONTENT");
-    writeFileSync(join(taskDir1, "task.json"), JSON.stringify({ id: "shared-task", lifecycle_generation: 0, status: "in_progress" }));
-    writeFileSync(join(taskDir2, "task.json"), JSON.stringify({ id: "shared-task", lifecycle_generation: 0, status: "in_progress" }));
+    writeFileSync(join(taskDir1, "task.json"), JSON.stringify(emptyTaskRecord({ id: "shared-task", status: "in_progress" })));
+    writeFileSync(join(taskDir2, "task.json"), JSON.stringify(emptyTaskRecord({ id: "shared-task", status: "in_progress" })));
     const sessionRef = JSON.stringify({ schema_version: 2, task_id: "shared-task", lifecycle_generation: 0 });
     writeFileSync(join(sessionsDir1, "pi_shared-session.json"), sessionRef);
     writeFileSync(join(sessionsDir2, "pi_shared-session.json"), sessionRef);
@@ -1530,8 +1440,10 @@ describe("pi extension: context injection limits (issue #441)", () => {
     const taskDir = join(root, ".trellis", "tasks", taskDirName);
     mkdirSync(taskDir, { recursive: true });
     writeFileSync(join(taskDir, "task.json"), JSON.stringify({
+      ...emptyTaskRecord({ id: taskDirName }),
       id: taskDirName,
       lifecycle_generation: 0,
+      children: [],
       status: "in_progress",
     }));
     mkdirSync(join(root, ".trellis", ".runtime", "sessions"), {

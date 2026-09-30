@@ -246,50 +246,12 @@ function budgetedBlock(budget, header, plainPath, content, reason, sizeForIndex)
   return block
 }
 
-function isHistoricalPath(filePath, basePath) {
-  const absolute = resolve(filePath)
-  const protectedName = name => [".developer", "workspace", "agent-traces"].includes(name) || name.startsWith(".backup-")
-  const parts = absolute.split("\\").join("/").split("/")
-  if (parts.some((name, index) => name === ".trellis" && protectedName(parts[index + 1] || ""))) return true
-  if (basePath !== undefined) {
-    try {
-      const workflowRoot = realpathSync(join(basePath, ".trellis"))
-      const first = relative(workflowRoot, absolute).split("\\").join("/").split("/")[0]
-      return protectedName(first)
-    } catch {
-      return false
-    }
-  }
-  return false
-}
-
 function pathWithin(root, candidate) {
   const rel = relative(root, candidate)
   return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\"))
 }
 
-// Resolve existing ancestors too: missing descendants of historical aliases
-// must be rejected before an existence probe or content read.
-function activeStoragePath(root, candidate) {
-  if (isHistoricalPath(candidate, root)) throw new Error("historical_path")
-  let parent = resolve(candidate)
-  while (true) {
-    try {
-      lstatSync(parent)
-      const actual = resolve(realpathSync(parent), relative(parent, resolve(candidate)))
-      if (isHistoricalPath(actual, root)) throw new Error("historical_path")
-      return candidate
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error
-      const next = dirname(parent)
-      if (next === parent) throw error
-      parent = next
-    }
-  }
-}
-
 function bindingExists(root, candidate) {
-  activeStoragePath(root, candidate)
   try {
     lstatSync(candidate)
     return true
@@ -338,7 +300,6 @@ function repositoryFacts(root) {
 
 function validateWorkspace(root, facts) {
   const actual = realpathSync(root)
-  activeStoragePath(actual, join(actual, ".trellis"))
   if (!statSync(join(actual, ".trellis")).isDirectory()) throw new Error("invalid_workspace")
   if (!facts.common) {
     if (actual !== facts.roots[0]) throw new Error("workspace_mismatch")
@@ -351,7 +312,6 @@ function validateWorkspace(root, facts) {
 }
 
 function readBinding(root, file) {
-  activeStoragePath(root, file)
   const bytes = readFileSync(file)
   if (!isUtf8(bytes)) throw new Error("binding_encoding_error")
   const data = JSON.parse(bytes.toString("utf-8"))
@@ -362,9 +322,7 @@ function readBinding(root, file) {
 /** Read raw file bytes, return null if file doesn't exist. */
 function readFileBytes(basePath, filePath) {
   const fullPath = isAbsolute(filePath) ? filePath : join(basePath, filePath)
-  if (isHistoricalPath(fullPath)) return null
   try {
-    if (isHistoricalPath(realpathSync(fullPath), basePath)) return null
     if (!statSync(fullPath).isFile()) return null
   } catch {
     return null
@@ -402,14 +360,12 @@ function materializeFile(basePath, filePath, reason, limits, budget) {
 function materializeDirectory(basePath, dirPath, reason, limits, budget, maxFiles = 20) {
   const blocks = []
   const fullPath = isAbsolute(dirPath) ? dirPath : join(basePath, dirPath)
-  if (isHistoricalPath(fullPath)) return blocks
 
   let files
   try {
-    if (isHistoricalPath(realpathSync(fullPath), basePath)) return blocks
     if (!statSync(fullPath).isDirectory()) return blocks
     files = readdirSync(fullPath)
-      .filter(f => f.endsWith(".md") && !isHistoricalPath(join(fullPath, f)) && statSync(join(fullPath, f)).isFile())
+      .filter(f => f.endsWith(".md") && statSync(join(fullPath, f)).isFile())
       .sort()
   } catch {
     return blocks
@@ -510,7 +466,6 @@ export class TrellisContext {
       for (const worktree of [...new Set(facts.roots)].sort()) {
         const candidate = join(worktree, offset)
         const workflow = join(candidate, ".trellis")
-        activeStoragePath(candidate, workflow)
         if (!bindingExists(candidate, workflow)) continue
         const workspace = validateWorkspace(candidate, facts)
         const obsolete = join(
@@ -544,11 +499,9 @@ export class TrellisContext {
     const casefoldConflicts = []
     for (const candidate of workspaces) {
       const workflow = join(candidate, ".trellis")
-      activeStoragePath(candidate, workflow)
       if (!bindingExists(candidate, workflow)) continue
       const workspace = validateWorkspace(candidate, facts)
       const tasksDir = join(workspace, ".trellis", "tasks")
-      activeStoragePath(workspace, tasksDir)
       if (!bindingExists(workspace, tasksDir)) continue
       let names
       try {
@@ -567,7 +520,6 @@ export class TrellisContext {
           .some(value => unicodeCasefold(value) === requestedFold)
         let metadata
         try {
-          activeStoragePath(workspace, taskFile)
           metadata = readBinding(workspace, taskFile)
         } catch (error) {
           if (visibleMatch) throw new Error(`task_metadata_invalid: ${taskFile}: ${error.message}`)
@@ -598,7 +550,11 @@ export class TrellisContext {
       }
     }
     if (casefoldConflicts.length) throw new Error(`task_id_casefold_collision: ${casefoldConflicts.join(", ")}`)
-    if (exact.length > 1 || (exact.length && mismatches.length)) throw new Error("ambiguous_task_identity")
+    if (exact.length > 1 || (exact.length && mismatches.length)) {
+      const local = exact.filter(item => realpathSync(item.taskWorkspaceRoot) === realpathSync(this.directory))
+      if (local.length === 1) return { ...local[0] }
+      throw new Error("ambiguous_task_identity")
+    }
     if (!exact.length && mismatches.length) throw new Error(`stale_lifecycle_generation: ${mismatches.join(", ")}`)
     if (!exact.length) throw new Error("stale_task_identity")
     return {
@@ -726,8 +682,6 @@ export class TrellisContext {
 
     try {
       const tasksRoot = join(this.directory, ".trellis", "tasks")
-      activeStoragePath(this.directory, tasksRoot)
-      activeStoragePath(this.directory, candidate)
       const lexical = relative(tasksRoot, candidate).split("\\").join("/")
       if (!lexical || lexical.split("/").length !== 1 || lexical === ".." || lexical === "archive" || isAbsolute(lexical)) return null
       const actualRoot = realpathSync(tasksRoot)
@@ -736,7 +690,6 @@ export class TrellisContext {
       if (!actualRef || actualRef.split("/").length !== 1 || !pathWithin(actualRoot, actual) || actualRef === "archive") return null
       if (!statSync(actual).isDirectory()) return null
       const canonical = join(tasksRoot, actualRef)
-      activeStoragePath(this.directory, join(canonical, "task.json"))
       return canonical
     } catch {
       return null
@@ -748,9 +701,9 @@ export class TrellisContext {
   // ============================================================
 
   isActivePath(filePath) {
-    if (isHistoricalPath(filePath)) return false
     try {
-      return !isHistoricalPath(realpathSync(filePath), this.directory)
+      realpathSync(filePath)
+      return true
     } catch {
       return false
     }

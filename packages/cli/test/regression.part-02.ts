@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getStatuslineHook } from "../src/templates/claude/index.js";
 import { getAllHooks as getCodexHooks } from "../src/templates/codex/index.js";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
@@ -147,7 +148,7 @@ describe("regression: current-task path normalization", () => {
   function setupTaskRepo(): void {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -159,9 +160,11 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-106", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-106" }),
           id: "issue-106",
           name: "issue-106",
           lifecycle_generation: 0,
+          children: [],
           title: "Issue 106 task",
           status: "in_progress",
           package: null,
@@ -616,7 +619,7 @@ describe("regression: current-task path normalization", () => {
     // immediately when session identity is available.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -643,7 +646,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-397] task.py create stores the trimmed description and reports session activation", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -688,7 +691,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-397] task.py create --no-start does not move the session pointer", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -738,7 +741,7 @@ describe("regression: current-task path normalization", () => {
     // written. Pre-R7 behavior parity for headless CLI usage.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -768,7 +771,7 @@ describe("regression: current-task path normalization", () => {
     // still flip planning → in_progress correctly.
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -898,7 +901,7 @@ describe("regression: current-task path normalization", () => {
   it("[task-lifecycle] task.py create refuses an archived task dir-name collision", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     writeProjectFile(path.join(".trellis", "workflow.md"), "# Workflow\n");
@@ -1003,7 +1006,7 @@ describe("regression: current-task path normalization", () => {
     const oldPrefix = new Date().getMonth() === 0 && new Date().getDate() === 1 ? "02-02" : "01-01";
     writeProjectFile(
       path.join(".trellis", "tasks", `${oldPrefix}-reused`, "task.json"),
-      JSON.stringify({ id: "old-task-id", name: "reused", lifecycle_generation: 0, status: "completed" }),
+      JSON.stringify(emptyTaskRecord({ id: "old-task-id", name: "reused", status: "completed" })),
     );
     const args = [
       path.join(tmpDir, ".trellis", "scripts", "task.py"), "create", "New task",
@@ -1053,7 +1056,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1091,7 +1094,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create rejects a --slug carrying a different date prefix", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1126,7 +1129,7 @@ describe("regression: current-task path normalization", () => {
   it("[issue-377] task.py create leaves non-date numeric slug prefixes untouched", () => {
     writeTrellisScripts();
     writeProjectFile(
-      path.join(".trellis", ".developer"),
+      path.join(".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-03-27T00:00:00\n",
     );
     const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
@@ -1174,9 +1177,11 @@ describe("regression: current-task path normalization", () => {
         path.join(".trellis", "tasks", name, "task.json"),
         JSON.stringify(
           {
+            ...emptyTaskRecord({ id: name }),
             id: name,
             name,
             lifecycle_generation: 0,
+            children: [],
             title: `Task ${name}`,
             status: "in_progress",
             package: null,
@@ -1751,9 +1756,11 @@ print(json.dumps({
       path.join(".trellis", "tasks", "session-task", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "session-task" }),
           id: "session-task",
           name: "session-task",
           lifecycle_generation: 0,
+          children: [],
           title: "Session scoped task",
           status: "in_progress",
           priority: "P1",

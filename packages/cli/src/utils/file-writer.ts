@@ -5,7 +5,7 @@ import inquirer from "inquirer";
 
 import { writeFileAtomic } from "./atomic-write.js";
 import { toPosix } from "./posix.js";
-import { assertActiveDataPath } from "./retired-data.js";
+import { assertProjectPath } from "./path-boundary.js";
 
 export type WriteMode = "ask" | "force" | "skip" | "append";
 
@@ -35,8 +35,7 @@ export function getWriteMode(): WriteMode {
 // written this run (vs skipped because they already existed). The captured
 // set is what `.template-hashes.json` should contain — NOT a blind directory
 // walk of `.codex/` / `.claude/` / etc, which would include user-owned files
-// that pre-dated init. See `pruneOrphanManifestKeys` for the self-heal side
-// of the same contract.
+// that existed before init.
 // ---------------------------------------------------------------------------
 
 /** When recording is active, every actual `writeFile` disk write appends here. */
@@ -117,7 +116,7 @@ export async function writeFile(
   content: string,
   options?: { executable?: boolean },
 ): Promise<boolean> {
-  assertActiveDataPath(filePath, writeRecorderRoot ?? process.cwd());
+  assertProjectPath(filePath, writeRecorderRoot ?? process.cwd());
   const exists = fs.existsSync(filePath);
   const displayPath = getRelativePath(filePath);
 
@@ -245,6 +244,6 @@ export async function writeFile(
  * Ensure directory exists
  */
 export function ensureDir(dirPath: string): void {
-  assertActiveDataPath(dirPath, writeRecorderRoot ?? process.cwd());
+  assertProjectPath(dirPath, writeRecorderRoot ?? process.cwd());
   fs.mkdirSync(dirPath, { recursive: true });
 }

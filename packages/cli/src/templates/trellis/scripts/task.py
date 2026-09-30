@@ -45,7 +45,7 @@ from common.active_task import (
     resolve_context_key,
     set_active_task,
 )
-from common.history_paths import require_active_path
+from common.path_boundary import require_project_path
 from common.io import (
     describe_json_read_failure,
     read_json_checked,
@@ -90,7 +90,7 @@ def _record_start_state(
     file it just read, so no failure may be silent: without a message the
     absent status line looks like the task simply was not in planning.
     """
-    require_active_path(task_json_path, repo_root)
+    require_project_path(task_json_path, repo_root)
     data, reason = read_json_checked(task_json_path)
     if data is None:
         problem, hint = describe_json_read_failure(task_json_path, reason)
@@ -273,7 +273,7 @@ def cmd_current(args: argparse.Namespace) -> int:
         read_error = None
         if active.resolved_task_path and active.task_workspace_root:
             task_json_path = active.resolved_task_path / FILE_TASK_JSON
-            require_active_path(task_json_path, active.task_workspace_root)
+            require_project_path(task_json_path, active.task_workspace_root)
             data, reason = read_json_checked(task_json_path)
             if data is None:
                 # Without this, a corrupt task.json emits null for every field
@@ -361,9 +361,6 @@ def _display_status(t, all_statuses: dict) -> str:
 
 def cmd_list(args: argparse.Namespace) -> int:
     """List active tasks."""
-    if args.mine:
-        print("Error: --mine/-m is retired; use explicit task paths or --status.", file=sys.stderr)
-        return 2
     repo_root = get_repo_root()
     tasks_dir = get_tasks_dir(repo_root)
     current_task = get_current_task(repo_root)
@@ -527,7 +524,6 @@ Archive options:
   --no-commit                Skip the auto git commit after archiving
 
 List options:
-  --mine, -m           Retired; use explicit task paths or --status
   --status, -s <s>     Filter by status (planning, in_progress, review, completed)
   --json               Output machine-readable JSON (also available on `current`)
 
@@ -704,7 +700,6 @@ def main() -> int:
 
     # list
     p_list = subparsers.add_parser("list", help="List tasks")
-    p_list.add_argument("--mine", "-m", action="store_true", help="Retired; use explicit task paths or --status")
     p_list.add_argument("--status", "-s", help="Filter by status")
     p_list.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
@@ -749,12 +744,12 @@ def main() -> int:
     }
 
     if args.command in commands:
-        from common.history_paths import RetiredDataPathError
+        from common.path_boundary import ProjectPathError
         from common.session_storage import SessionBindingError
 
         try:
             return commands[args.command](args)
-        except (RetiredDataPathError, SessionBindingError, OSError) as exc:
+        except (ProjectPathError, SessionBindingError, OSError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     else:

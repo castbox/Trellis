@@ -6,322 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getAllScripts } from "../src/templates/trellis/index.js";
-// =============================================================================
-// safe-commit: gitignored .trellis/ recovery (0.5.10 → 0.5.11)
-// =============================================================================
-//
-// Real user incident: project .gitignore listed `.trellis/`. add_session.py's
-// auto-commit ran `git add .trellis/workspace .trellis/tasks`, got `ignored
-// by .gitignore`, fell back to a hint suggesting `git add .trellis &&
-// commit`. The AI agent driving the workflow extrapolated that to
-// `git add -f .trellis/`, which forced in `.trellis/.backup-*/`,
-// `.trellis/worktrees/`, `.trellis/.template-hashes.json`, etc. — 548 files
-// / 83474 lines of caches/backups committed.
-//
-// 0.5.10 fix (since reverted):
-//   - Scripts only stage SPECIFIC product paths.
-//   - On `ignored by` the scripts retried with `git add -f <specific paths>`.
-// That auto-`-f` was an over-fix — when a user gitignores `.trellis/` they
-// mean "keep .trellis/ local-only", and forcing the commit through (even on
-// narrow paths) violates user intent. Group-chat report: a finish-work auto
-// committed `.trellis/workspace/` straight into a repo whose .gitignore
-// excluded `.trellis/`.
-//
-// 0.5.11 fix (current):
-//   - Plain `git add <specific>` is tried once. On `ignored by`, the script
-//     warns and skips the auto-commit — never `-f`.
-//   - New `session_auto_commit: false` config opts the user out of auto-stage
-//     and auto-commit entirely (issue #245).
-//   - The warning explicitly says ``Do NOT use `git add -f .trellis/```` so
-//     AI re-reading the log doesn't reinvent the bug, and points at the new
-//     `session_auto_commit: false` knob.
-//
-// These tests synthesize a tmp git repo with `.trellis/` gitignored and
-// verify (a) on `ignored by` the script warns + skips (no commit, no -f),
-// (b) `session_auto_commit: false` skips git entirely in any state, and
-// (c) the negative-rule warning + new config hint are reachable.
-// =============================================================================
-
-describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 0.5.11)", () => {
-  let tmpDir: string;
-  const pyCmd = process.platform === "win32" ? "python" : "python3";
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-safe-commit-"));
-    execSync("git init -q -b main", { cwd: tmpDir });
-    // Configure user so git commit succeeds in CI sandboxes.
-    execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
-    execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  function writeFile(rel: string, content: string): void {
-    const abs = path.join(tmpDir, rel);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content, "utf-8");
-  }
-
-  function writeTrellisScripts(): void {
-    const scriptsDir = path.join(tmpDir, ".trellis", "scripts");
-    for (const [rel, content] of getAllScripts()) {
-      const abs = path.join(scriptsDir, rel);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, content, "utf-8");
-    }
-  }
-
-  function writeWorkspaceIndex(): void {
-    writeFile(
-      ".trellis/workspace/test-dev/index.md",
-      [
-        "# Workspace Index - test-dev",
-        "",
-        "## Current Status",
-        "",
-        "<!-- @@@auto:current-status -->",
-        "- **Active File**: `journal-1.md`",
-        "- **Total Sessions**: 0",
-        "- **Last Active**: -",
-        "<!-- @@@/auto:current-status -->",
-        "",
-        "## Active Documents",
-        "",
-        "<!-- @@@auto:active-documents -->",
-        "| File | Lines | Status |",
-        "|------|-------|--------|",
-        "| `journal-1.md` | ~0 | Active |",
-        "<!-- @@@/auto:active-documents -->",
-        "",
-        "## Session History",
-        "",
-        "<!-- @@@auto:session-history -->",
-        "| # | Date | Title | Commits | Branch |",
-        "|---|------|-------|---------|--------|",
-        "<!-- @@@/auto:session-history -->",
-        "",
-      ].join("\n"),
-    );
-  }
-
-  function setupRepo(options?: { gitignoreTrellis?: boolean }): void {
-    writeTrellisScripts();
-    writeFile(
-      ".trellis/.developer",
-      "name=test-dev\ninitialized_at=2026-05-09T00:00:00\n",
-    );
-    writeFile(
-      ".trellis/workspace/test-dev/journal-1.md",
-      "# Journal - test-dev (Part 1)\n\n---\n",
-    );
-    writeWorkspaceIndex();
-    // Ignored caches/backups must exist on disk to prove they don't get
-    // staged when -f is forced on specific paths.
-    writeFile(
-      ".trellis/.backup-2026-05-09/should-not-be-committed.txt",
-      "secret-backup\n",
-    );
-    writeFile(
-      ".trellis/worktrees/wt-a/should-not-be-committed.txt",
-      "secret-worktree\n",
-    );
-    writeFile(
-      ".trellis/.template-hashes.json",
-      '{"_": "should-not-be-committed"}\n',
-    );
-    writeFile(
-      ".trellis/.runtime/sessions/should-not-be-committed.json",
-      JSON.stringify({
-        schema_version: 2,
-        task_id: "unrelated-fixture",
-        lifecycle_generation: 0,
-      }) + "\n",
-    );
-    writeFile(
-      ".trellis/tasks/unrelated-fixture/task.json",
-      JSON.stringify({
-        id: "unrelated-fixture",
-        name: "unrelated-fixture",
-        lifecycle_generation: 0,
-        title: "Unrelated fixture",
-        status: "planning",
-      }) + "\n",
-    );
-
-    if (options?.gitignoreTrellis) {
-      writeFile(".gitignore", ".trellis/\n");
-    }
-    // Seed an initial commit so HEAD exists.
-    writeFile("README.md", "test\n");
-    execSync("git add README.md", { cwd: tmpDir });
-    if (options?.gitignoreTrellis) {
-      execSync("git add .gitignore", { cwd: tmpDir });
-    }
-    execSync('git commit -q -m "init"', { cwd: tmpDir });
-  }
-
-  function listCommittedFiles(): string[] {
-    const out = execSync("git ls-tree -r --name-only HEAD", {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
-    return out.split("\n").filter((l) => l.length > 0);
-  }
-
-  it("[gitignore-trellis] safe_commit module ships and contains the negative warning + new config hint", () => {
-    // The warning's exact text matters because AI agents read it.
-    // Specifically the negative example must appear verbatim so any future
-    // refactor that removes it will fail this test. 0.5.11 also adds the
-    // new session_auto_commit hint.
-    const safeCommit = getAllScripts().get("common/safe_commit.py");
-    expect(safeCommit).toBeTruthy();
-    expect(safeCommit).toContain("Do NOT use `git add -f .trellis/`");
-    expect(safeCommit).toContain("safe_archive_paths_to_add");
-    expect(safeCommit).toContain("safe_git_add");
-    // 0.5.11: new hint pointing users at the config knob.
-    expect(safeCommit).toContain("task_auto_commit: false");
-    // 0.5.11: auto -f retry must be gone. The function body should no
-    // longer issue `git add -f`.
-    expect(safeCommit).not.toMatch(/\["add", "-f", "--",/);
-  });
-
-  it("[gitignore-trellis] task.py archive warns and skips when .trellis/ is ignored (default mode)", () => {
-    setupRepo({ gitignoreTrellis: true });
-    // Create a task to archive.
-    writeFile(
-      ".trellis/tasks/issue-500/task.json",
-      JSON.stringify(
-        {
-          id: "issue-500",
-          name: "issue-500",
-          lifecycle_generation: 0,
-          title: "Test archive",
-          status: "in_progress",
-          package: null,
-        },
-        null,
-        2,
-      ),
-    );
-    writeFile(".trellis/tasks/issue-500/prd.md", "# PRD\n");
-
-    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    const result = spawnSync(pyCmd, [taskScriptPath, "archive", "issue-500"], {
-      cwd: tmpDir,
-      encoding: "utf-8",
-      env: { ...process.env, TRELLIS_CONTEXT_ID: "session-arch" },
-    });
-    const stderr = result.stderr ?? "";
-    // 0.5.11: must NOT retry with -f, must NOT auto-commit. Warning must
-    // surface so the user knows their .gitignore won.
-    expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).toContain("ignored by your .gitignore");
-    expect(stderr).toContain("Do NOT use `git add -f .trellis/`");
-
-    const tracked = listCommittedFiles();
-    // Nothing under .trellis/ should be tracked.
-    for (const t of tracked) {
-      expect(
-        t.startsWith(".trellis/"),
-        `should not commit anything under .trellis/ (got: ${t})`,
-      ).toBe(false);
-    }
-
-    // The archive directory move on disk still happened — only git was
-    // untouched.
-    const archiveExists = fs
-      .readdirSync(path.join(tmpDir, ".trellis/tasks/archive"))
-      .some((monthDir) => {
-        const monthPath = path.join(tmpDir, ".trellis/tasks/archive", monthDir);
-        return (
-          fs.statSync(monthPath).isDirectory() &&
-          fs.existsSync(path.join(monthPath, "issue-500"))
-        );
-      });
-    expect(archiveExists).toBe(true);
-  });
-
-  // ===========================================================================
-  // 0.5.11: session_auto_commit config (issue #245 + screenshot user)
-  // ===========================================================================
-
-  function writeConfigYaml(content: string): void {
-    writeFile(".trellis/config.yaml", content);
-  }
-
-  it("[session_auto_commit=false] task.py archive skips git entirely", () => {
-    setupRepo({ gitignoreTrellis: false });
-    writeConfigYaml("session_auto_commit: false\n");
-
-    writeFile(
-      ".trellis/tasks/issue-600/task.json",
-      JSON.stringify(
-        {
-          id: "issue-600",
-          name: "issue-600",
-          lifecycle_generation: 0,
-          title: "Test archive",
-          status: "in_progress",
-          package: null,
-        },
-        null,
-        2,
-      ),
-    );
-    writeFile(".trellis/tasks/issue-600/prd.md", "# PRD\n");
-
-    const taskScriptPath = path.join(tmpDir, ".trellis", "scripts", "task.py");
-    const result = spawnSync(pyCmd, [taskScriptPath, "archive", "issue-600"], {
-      cwd: tmpDir,
-      encoding: "utf-8",
-      env: { ...process.env, TRELLIS_CONTEXT_ID: "session-arch-2" },
-    });
-    const stderr = result.stderr ?? "";
-    expect(stderr).not.toContain("Auto-committed");
-    expect(stderr).toContain("task_auto_commit: false");
-
-    const log = execSync("git log --oneline", {
-      cwd: tmpDir,
-      encoding: "utf-8",
-    });
-    expect(log.trim().split("\n").length).toBe(1);
-
-    // Archive directory move still happened on disk.
-    const archiveExists = fs
-      .readdirSync(path.join(tmpDir, ".trellis/tasks/archive"))
-      .some((monthDir) => {
-        const monthPath = path.join(tmpDir, ".trellis/tasks/archive", monthDir);
-        return (
-          fs.statSync(monthPath).isDirectory() &&
-          fs.existsSync(path.join(monthPath, "issue-600"))
-        );
-      });
-    expect(archiveExists).toBe(true);
-  });
-});
-
-// =============================================================================
-// regression: transient .git/index.lock during archive auto-commit
-// =============================================================================
-//
-// `task.py archive` moves the task directory on disk BEFORE it stages and
-// commits. Another process holding `.git/index.lock` for a fraction of a
-// second (IDE git integration, status daemon, a parallel session) made that
-// auto-commit fail outright, leaving the user with a completed move and a git
-// error to untangle.
-//
-// Fix: `run_git_retry_index_lock` retries ONLY index.lock failures — three
-// attempts over ~1.5s — and the archive path uses it for `add`,
-// `rm --cached` and `commit`. When the retries run out the move stays
-// complete and the commit is reported as pending: rolling the move back would
-// also have to undo the completed status, the re-parented children and the
-// cleared sessions, and a partial rollback is worse than a named pending
-// commit. The warning names the lock file and the command to run by hand.
-// =============================================================================
-
 describe("regression: bounded index.lock retry on archive auto-commit", () => {
   let tmpDir: string;
   const pyCmd = process.platform === "win32" ? "python" : "python3";
@@ -356,16 +42,18 @@ describe("regression: bounded index.lock retry on archive auto-commit", () => {
       fs.writeFileSync(abs, content, "utf-8");
     }
     writeFile(
-      ".trellis/.developer",
+      ".trellis/custom-note",
       "name=test-dev\ninitialized_at=2026-08-09T00:00:00\n",
     );
     writeFile(
       `.trellis/tasks/${taskName}/task.json`,
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: taskName }),
           id: taskName,
           name: taskName,
           lifecycle_generation: 0,
+          children: [],
           title: "Locked archive",
           status: "in_progress",
           package: null,
@@ -696,7 +384,7 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
       fs.writeFileSync(abs, content, "utf-8");
     }
     fs.writeFileSync(
-      path.join(tmpDir, ".trellis", ".developer"),
+      path.join(tmpDir, ".trellis", "custom-note"),
       "name=test-dev\ninitialized_at=2026-08-09T00:00:00\n",
     );
     fs.mkdirSync(taskDir("archive"), { recursive: true });
@@ -797,24 +485,6 @@ describe("regression: task.py rename rewrites every reference in one pass", () =
     expect(readTaskJson(childA).parent).toBe(renamed);
     expect(readTaskJson(childB).parent).toBe(renamed);
 
-    expect(scanForName(target)).toEqual([]);
-  });
-
-  it("[task-rename] legacy subtasks back-references are rewritten too", () => {
-    const parent = create("mum");
-    const target = create("target", parent);
-
-    const parentJson = readTaskJson(parent);
-    parentJson.subtasks = [target];
-    fs.writeFileSync(
-      path.join(taskDir(parent), "task.json"),
-      JSON.stringify(parentJson, null, 2) + "\n",
-    );
-
-    const r = runTask("rename", target, "renamed");
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain("subtasks[0]");
-    expect(readTaskJson(parent).subtasks).toEqual([`${datePrefix}-renamed`]);
     expect(scanForName(target)).toEqual([]);
   });
 

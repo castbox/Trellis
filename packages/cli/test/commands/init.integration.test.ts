@@ -92,7 +92,6 @@ describe("init() integration", () => {
     // Core workflow structure
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, PATHS.SCRIPTS))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".trellis/workspace"))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, PATHS.TASKS))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, PATHS.SPEC))).toBe(true);
 
@@ -147,8 +146,8 @@ describe("init() integration", () => {
     ).toBe(true);
   });
 
-  it("#1a does not provision retired journal merge attributes", async () => {
-    await init({  yes: true });
+  it("#1a leaves Git attributes untouched", async () => {
+    await init({ yes: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".gitattributes"))).toBe(false);
   });
@@ -912,17 +911,10 @@ describe("init() integration", () => {
     expect(second).toEqual(first);
   });
 
-  it("#7 creates bootstrap without personnel or identity initialization", async () => {
-    await init({ yes: true,  });
+  it("#7 creates a current bootstrap task", async () => {
+    await init({ yes: true });
 
-    const calls = vi.mocked(execSync).mock.calls;
-    const match = calls.find(
-      ([cmd]) => typeof cmd === "string" && cmd.includes("init_developer.py"),
-    );
-    expect(match).toBeUndefined();
     const task = JSON.parse(fs.readFileSync(path.join(tmpDir, ".trellis/tasks/00-bootstrap-guidelines/task.json"), "utf8"));
-    expect(task).not.toHaveProperty("creator");
-    expect(task).not.toHaveProperty("assignee");
     expect(task.lifecycle_generation).toBe(0);
     expect(task.source).toEqual({ kind: "no_issue" });
     expect(task).not.toHaveProperty("branch");
@@ -1149,10 +1141,8 @@ describe("init() integration", () => {
       fs.readFileSync(path.join(taskDir, "task.json"), "utf-8"),
     );
 
-    // task.json.subtasks is canonical string[] (child task dir names);
-    // per-package checklist items now live in prd.md as markdown checkboxes.
-    expect(Array.isArray(taskJson.subtasks)).toBe(true);
-    expect(taskJson.subtasks).toEqual([]);
+    // Per-package checklist items live in prd.md as markdown checkboxes.
+    expect(taskJson.children).toEqual([]);
 
     // Canonical shape: legacy current_phase / next_action must NOT appear
     expect(taskJson.current_phase).toBeUndefined();
