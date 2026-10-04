@@ -317,7 +317,7 @@ python3 ./.trellis/scripts/task.py create "<task title>" --description "<summary
 ```
 
 `--slug` is the human-readable name only. Do **not** include the `MM-DD-` date prefix; `task.py create` adds that prefix automatically.
-For an Issue-backed task, include `--source-json '{"kind":"issue","repo_ref":"owner/repo","number":123,"disposition":"exact_source"}'` with the reviewed Issue identity. Omitting it creates a `no_issue` task.
+For an Issue-backed task, include `--source-json '{"kind":"issue","repo_ref":"owner/repo","number":123,"disposition":"exact_source"}'` with the reviewed Issue identity. Omitting it creates a `no_issue` task. Use `reference_only` instead of `exact_source` when the task references the Issue but does not own its full delivery. Creation accepts only these two Issue dispositions; `reference_only` is source relation data, not evidence of complete delivery or authority to close the Issue. The creator performs no GitHub closure action.
 
 For task trees, create the parent task first and then create each child with `--parent <parent-dir>`. Do not start the parent just because children exist; start the child that owns the next independently verifiable deliverable.
 
