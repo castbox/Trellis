@@ -7,6 +7,14 @@ schema. Task selection uses explicit task arguments or a validated session
 binding. `task.py list` and the default context support status filtering and
 project task inventory; the current session task is reported separately.
 
+`task.py create --source-json` accepts `no_issue` (also the default) or an
+Issue source with `exact_source` or `reference_only` disposition. The supplied
+Issue source is preserved through create, read, session start, rename and
+archive. `reference_only` records a relation to the Issue; it does not assert
+complete delivery or authorize Issue closure. Creation performs no GitHub
+closure action. Other dispositions remain readable in existing records but
+are not accepted by this creator.
+
 The outer Trellis workflow owns task creation, planning paths, context
 manifests, artifact review, and activation. `trellis-brainstorm` can explore
 requirements without a task. It writes to a caller-provided destination or
