@@ -451,7 +451,10 @@ async function collectRegistrySpecTemplates(
   return result.files;
 }
 
-async function collectTemplateFiles(cwd: string): Promise<Map<string, string>> {
+export async function collectTemplateFiles(
+  cwd: string,
+  options: { registrySpecs?: boolean } = {},
+): Promise<Map<string, string>> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
 
@@ -508,8 +511,10 @@ async function collectTemplateFiles(cwd: string): Promise<Map<string, string>> {
 
   preserveExistingClaudeStatusLine(cwd, files);
 
-  for (const [filePath, content] of await collectRegistrySpecTemplates(cwd)) {
-    files.set(filePath, content);
+  if (options.registrySpecs !== false) {
+    for (const [filePath, content] of await collectRegistrySpecTemplates(cwd)) {
+      files.set(filePath, content);
+    }
   }
 
   const skipPaths = loadUpdateSkipPaths(cwd);

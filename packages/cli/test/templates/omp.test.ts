@@ -239,7 +239,7 @@ describe("omp cross-worktree callbacks", () => {
       }));
       const output = await invoke(f.primary);
       expect(output).toContain("invalid_task");
-      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "stale_task_identity");
+      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "task_metadata_invalid-task-schema");
       expect(output).not.toContain("workflow-state:planning");
       expect(output).not.toContain("NO TASK");
       expect(output).not.toContain("LINKED PRD");
