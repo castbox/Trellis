@@ -716,6 +716,7 @@ describe("regression: current-task path normalization", () => {
       path.join(".trellis", "tasks", "issue-999", "task.json"),
       JSON.stringify(
         {
+          ...emptyTaskRecord({ id: "issue-999" }),
           id: "issue-999",
           name: "issue-999",
           lifecycle_generation: 0,

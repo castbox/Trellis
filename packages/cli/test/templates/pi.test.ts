@@ -330,7 +330,7 @@ describe("pi cross-worktree callbacks", () => {
       }));
       const output = invoke(f.primary);
       expect(output).toContain("invalid_task");
-      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "stale_task_identity");
+      expect(output).toContain(typeof status === "string" ? "Invalid task status" : "task_metadata_invalid-task-schema");
       expect(output).not.toContain("(planning)");
       expect(output).not.toContain("Status: no_task");
       expect(output).not.toContain("LINKED PRD");

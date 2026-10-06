@@ -59,6 +59,12 @@ export function writeTaskRecord(options: WriteTaskRecordOptions): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
 
   readExistingRecord(file);
+  fs.writeFileSync(file, serializeTaskRecord(record), "utf-8");
+}
+
+/** Current record serialization shared by normal writes and explicit migration. */
+export function serializeTaskRecord(input: TrellisTaskRecord): string {
+  const record = taskRecordSchema.parse(input);
   const out: Record<string, unknown> = {};
 
   const recordBag = record as unknown as Record<string, unknown>;
@@ -67,8 +73,7 @@ export function writeTaskRecord(options: WriteTaskRecordOptions): void {
   }
   if ("branch" in record) out.branch = record.branch;
 
-  const json = JSON.stringify(out, null, 2) + "\n";
-  fs.writeFileSync(file, json, "utf-8");
+  return JSON.stringify(out, null, 2) + "\n";
 }
 
 function readExistingRecord(file: string): void {
@@ -92,7 +97,9 @@ function readExistingRecord(file: string): void {
   try {
     taskRecordSchema.parse(parsed);
   } catch (err) {
-    throw new Error(`Refusing to overwrite invalid task record at ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(
+      `Refusing to overwrite invalid task record at ${file}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

@@ -37,8 +37,12 @@ non-JSON metadata are rejected at every Python task read/write boundary, as in
 Core. An existing invalid record cannot be overwritten with new data. Create
 and lifecycle mutations
 reject exact and Unicode case-fold TaskId collisions across active and archived
-tasks. Malformed unrelated task records do not block targeted lookup, while
-malformed matching candidates fail closed.
+tasks. Active inventory scans reserve positively known legacy TaskIds without
+exposing those records as current lifecycle candidates; unrelated known legacy
+records do not block current task lookup. Direct legacy selection and exact or
+case-fold identity occupation fail closed. Malformed active current records,
+invalid JSON, and missing ids block inventory resolution rather than being
+silently skipped.
 
 Registered Git worktrees determine membership. Resolution requires one exact
 TaskId and generation match. Missing, ambiguous, corrupt, or unsupported

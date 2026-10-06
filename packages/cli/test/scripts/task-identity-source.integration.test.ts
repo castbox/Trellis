@@ -53,6 +53,56 @@ describe.skipIf(!hasPython())("task.py stable identity and source", () => {
 
   afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
 
+  it("creates and resolves current tasks beside unrelated old records while retaining old identity reservations", () => {
+    const legacyDir = path.join(repo, ".trellis/tasks/08-03-historical-directory");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const old = { id: "Old_Reserved", name: "old-reserved", title: "Old work", status: "in_progress", creator: "old", assignee: "old" };
+    const bytes = JSON.stringify(old) + "\n";
+    const oldFile = path.join(legacyDir, "task.json");
+    fs.writeFileSync(oldFile, bytes);
+    const created = task(repo, "create", "Current", "--description", "Current work", "--slug", "current", "--no-start");
+    expect(created.status, created.stderr).toBe(0);
+    const name = taskDir(repo, "current");
+    const started = task(repo, "start", name, "--allow-empty-context");
+    expect(started.status, started.stderr).toBe(0);
+    const resolved = spawnSync("python3", ["-c", `
+from pathlib import Path
+import sys
+sys.path.insert(0, '.trellis/scripts')
+from common.session_storage import repository_facts, resolve_task_identity
+result = resolve_task_identity(repository_facts(Path.cwd()), 'current', 0)
+print(result.task_ref)
+`], { cwd: repo, encoding: "utf8" });
+    expect(resolved.status, resolved.stderr).toBe(0);
+    expect(resolved.stdout).toContain(name);
+    for (const id of ["Old_Reserved", "old_reserved"]) {
+      const occupied = task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--task-id", id, "--no-start");
+      expect(occupied.status).toBe(1);
+      expect(occupied.stderr).toContain("task_id_collision");
+    }
+    const direct = task(repo, "start", path.basename(legacyDir), "--allow-empty-context");
+    expect(direct.status).toBe(1);
+    expect(fs.readFileSync(oldFile, "utf8")).toBe(bytes);
+  });
+
+  it("rejects malformed active current metadata instead of treating it as an unrelated old reservation", () => {
+    const created = task(repo, "create", "Current", "--description", "Current work", "--slug", "current", "--no-start");
+    expect(created.status, created.stderr).toBe(0);
+    const name = taskDir(repo, "current");
+    const currentFile = path.join(repo, ".trellis/tasks", name, "task.json");
+    const data = metadata(repo, name);
+    for (const changed of [{ ...data, lifecycle_generation: -1 }, { ...data, source: { kind: "issue" } }, { ...data, old_label: "unknown" }, { ...data, id: "" }]) {
+      fs.writeFileSync(currentFile, JSON.stringify(changed));
+      const result = task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--no-start");
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("task_metadata_");
+    }
+    fs.writeFileSync(currentFile, "{");
+    const invalid = task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--no-start");
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("task_metadata_invalid");
+  });
+
   it("creates a no-Issue task without branch metadata and archives it in a remote-backed repo", () => {
     const created = task(repo, "create", "Standalone", "--description", "Local work", "--slug", "standalone", "--no-start");
     expect(created.status, created.stderr).toBe(0);

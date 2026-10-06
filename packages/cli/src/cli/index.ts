@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import { init } from "../commands/init.js";
 import { update } from "../commands/update.js";
+import { migrate } from "../commands/migrate.js";
 import { upgrade } from "../commands/upgrade.js";
 import { uninstall } from "../commands/uninstall.js";
 import { ablate, restore } from "../commands/ablate.js";
@@ -55,7 +56,10 @@ function checkForUpdates(cwd: string): void {
 
 // Check for updates at CLI startup (only if .trellis exists)
 const cwd = process.cwd();
-if (fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))) {
+if (
+  process.argv[2] !== "migrate" &&
+  fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))
+) {
   checkForUpdates(cwd);
 }
 
@@ -145,6 +149,23 @@ program
       if (process.env.DEBUG || process.env.TRELLIS_DEBUG) {
         console.error(error instanceof Error ? error.stack : error);
       }
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description(
+    "Explicit one-way migration from a supported legacy installation",
+  )
+  .requiredOption("--from <version>", "Supported source core version (0.6.16)")
+  .requiredOption("--plan <file>", "Private reviewed core/task projection")
+  .option("--dry-run", "Print exact migration actions without writes")
+  .action(async (options: { from: string; plan: string; dryRun?: boolean }) => {
+    try {
+      console.log(JSON.stringify(await migrate(options)));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
   });
