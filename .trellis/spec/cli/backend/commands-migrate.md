@@ -1,7 +1,10 @@
 # `trellis migrate` Command
 
-This explicit one-way executor supports core `0.6.16` to the candidate CLI
-version. Ordinary `init`, `update`, and task readers/writers remain current-only.
+This explicit one-way executor supports actual core `0.6.x` and
+`0.7.0-castbox.N` predecessor installations to the candidate CLI version.
+The source is the installed `.trellis/.version`, not a Guru release tag or
+extension revision. A same-version install uses ordinary `update`; a source
+at or above the target is not an upgrade. Ordinary `init`, `update`, and task readers/writers remain current-only.
 It does not choose task sources, review planning, establish branch/session
 bindings, install a Guru preset, or execute remote delivery.
 
@@ -27,6 +30,16 @@ projection, not guessed by the normal task reader. Existing children and
 nonempty string subtasks must be retained in `children`; relations that cannot
 be represented losslessly block. History archives are never converted.
 
+Optional `current_tasks` defaults to an empty list. Each entry contains
+`task_ref` and the current raw `task.json` `expected_sha256`. The executor
+validates the target task schema and preserves original bytes and modes;
+it does not serialize the record, reset generation or rebuild control/session
+state. These refs must be distinct from converted and deferred refs. A normally
+edited current record makes the plan stale before the first write. Omitted
+current records remain schema-validated and untouched for existing 1.0 callers.
+Current task/control data is never converted merely because the installed core
+version is older.
+
 Optional `deferred_tasks` defaults to an empty list. Each entry contains only
 `task_ref` and the preserved raw `task.json` `expected_sha256`. Converted and
 deferred refs must be distinct and nonduplicated. A deferred record must match
@@ -40,7 +53,7 @@ Each file decision has `path`, `action` (`replace`, `preserve`, or `remove`),
 and raw `expected_sha256` (null for absent). Unknown template edits need an
 explicit decision; missing or receipt-equal files can update automatically.
 Retirement requires exact receipt-owned core bytes in the core namespace.
-The fixed `0.6.16` profile additionally recognizes precisely
+The migration boundary additionally recognizes precisely
 `.agents/skills/trellis-meta/references/local-architecture/workspace-memory.md`
 and the same reference below `.claude/skills/` and `.cursor/skills/`. These
 retired public references come from source
@@ -76,7 +89,8 @@ No Git reset, history rewriting, or automatic remote operation occurs.
 
 Core tests cover full/minimal projections, identity, generation, relations,
 unknown fields and business facts. CLI integration covers preview zero writes,
-actual managed/task updates, preservation, same-plan resume, explicit custom
+actual managed/task updates from differing core versions, raw current task and
+control preservation, same-plan resume, explicit custom
 file choices, stale task projections, omitted legacy tasks, and strict ordinary
 update rejection. Guru end-to-end rehearsal owns real old installation,
 workflow/preset installation, lifecycle re-entry and post-write rollback proof.
