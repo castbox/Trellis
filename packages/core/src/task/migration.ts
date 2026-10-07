@@ -64,7 +64,7 @@ export function isKnownLegacyTaskRecord(value: unknown): boolean {
 }
 
 /**
- * The one-time 0.6.16 migration boundary. The caller authors the complete
+ * The one-time legacy task migration boundary. The caller authors the complete
  * projection after reviewing source/relationships; normal readers stay strict.
  */
 export function validateLegacyTaskProjection(

@@ -62,6 +62,7 @@ describe("explicit migration integration", () => {
       record: typeof record;
     }[];
     deferred_tasks?: { task_ref: string; expected_sha256: string }[];
+    current_tasks?: { task_ref: string; expected_sha256: string }[];
     file_decisions: {
       path: string;
       action: string;
@@ -185,6 +186,86 @@ describe("explicit migration integration", () => {
     expect(snapshot()).toEqual(migrated);
   });
 
+  it.each(["0.6.5", "0.6.15", "0.6.17", "0.7.0-castbox.1", "0.7.0-castbox.2"])(
+    "migrates actual core %s and preserves reviewed current tasks and lifecycle state without serialization",
+    async (source) => {
+      write(".trellis/.version", source);
+      const currentRef = ".trellis/tasks/10-01-current";
+      const current = {
+        ...record,
+        id: "current",
+        name: "current",
+        lifecycle_generation: 3,
+        status: "in_progress",
+        meta: { business: "unpublished work" },
+      };
+      const bytes = JSON.stringify(current, null, 4) + "\n\n";
+      write(`${currentRef}/task.json`, bytes);
+      fs.chmodSync(file(`${currentRef}/task.json`), 0o640);
+      write(
+        ".trellis/.runtime/session.json",
+        '{"focus":"current","generation":3}\n',
+      );
+      plan.current_tasks = [
+        { task_ref: currentRef, expected_sha256: sha(bytes) },
+      ];
+      savePlan();
+      const before = snapshot();
+      const preview = await migrate({
+        from: source,
+        plan: planPath,
+        dryRun: true,
+      });
+      expect(snapshot()).toEqual(before);
+      expect(preview.source_version).toBe(source);
+      expect(
+        preview.actions.find((item) => item.path === `${currentRef}/task.json`),
+      ).toMatchObject({
+        action: "preserve",
+        before_sha256: sha(bytes),
+        after_sha256: sha(bytes),
+        before_mode: 0o640,
+        after_mode: 0o640,
+      });
+      await migrate({ from: source, plan: planPath });
+      expect(fs.readFileSync(file(`${currentRef}/task.json`), "utf8")).toBe(
+        bytes,
+      );
+      expect(fs.statSync(file(`${currentRef}/task.json`)).mode & 0o777).toBe(
+        0o640,
+      );
+      expect(
+        sha(fs.readFileSync(file(".trellis/.runtime/session.json"), "utf8")),
+      ).toBe(before.get(".trellis/.runtime/session.json"));
+      const migrated = snapshot();
+      await migrate({ from: source, plan: planPath });
+      expect(snapshot()).toEqual(migrated);
+    },
+  );
+
+  it("rejects a normally edited current preserve projection before writing and rejects duplicate disposition", async () => {
+    const bytes = JSON.stringify(record);
+    write(`${ref}/task.json`, bytes);
+    plan.tasks = [];
+    plan.current_tasks = [{ task_ref: ref, expected_sha256: sha(bytes) }];
+    savePlan();
+    write(`${ref}/task.json`, bytes + "\n");
+    const before = snapshot();
+    await expect(migrate({ from: "0.6.16", plan: planPath })).rejects.toThrow(
+      "Stale current task",
+    );
+    expect(snapshot()).toEqual(before);
+    plan.current_tasks = [
+      { task_ref: ref, expected_sha256: sha(bytes + "\n") },
+      { task_ref: ref, expected_sha256: sha(bytes + "\n") },
+    ];
+    savePlan();
+    await expect(migrate({ from: "0.6.16", plan: planPath })).rejects.toThrow(
+      "Duplicate task disposition",
+    );
+    expect(snapshot()).toEqual(before);
+  });
+
   it("#2 reports a normal local edit and requires an explicit preserve decision before any write", async () => {
     write(".trellis/scripts/task.py", "# local customization\n");
     const before = snapshot();
@@ -231,7 +312,7 @@ describe("explicit migration integration", () => {
     await expect(migrate({ from: "0.6.16", plan: planPath })).rejects.toThrow(
       "required",
     );
-    await expect(migrate({ from: "0.6.15", plan: planPath })).rejects.toThrow(
+    await expect(migrate({ from: "0.5.16", plan: planPath })).rejects.toThrow(
       "Unsupported migration source",
     );
     expect(snapshot()).toEqual(before);
@@ -305,7 +386,10 @@ describe("explicit migration integration", () => {
 
   it("rejects duplicate converted/deferred dispositions and malformed current deferred records without writes", async () => {
     plan.deferred_tasks = [
-      { task_ref: ref, expected_sha256: sha(fs.readFileSync(file(`${ref}/task.json`), "utf8")) },
+      {
+        task_ref: ref,
+        expected_sha256: sha(fs.readFileSync(file(`${ref}/task.json`), "utf8")),
+      },
     ];
     savePlan();
     let before = snapshot();

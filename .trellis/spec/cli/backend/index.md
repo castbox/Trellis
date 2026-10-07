@@ -30,7 +30,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [`tl mem` Command](./commands-mem.md) | Cross-platform AI session memory: subcommands, schemas, indexing, cleaning pipeline, search relevance | Done |
 | [`trellis upgrade` Command](./commands-upgrade.md) | Global CLI self-upgrade wrapper: channel inference, npm invocation, failure behavior | Done |
 | [`trellis update` Command](./commands-update.md) | Same-version template reapply, conflicts, and idempotency | Done |
-| [`trellis migrate` Command](./commands-migrate.md) | Explicit reviewed 0.6.16 core/task projection and caller-owned recovery | Done |
+| [`trellis migrate` Command](./commands-migrate.md) | Explicit reviewed predecessor core/task projection and caller-owned recovery | Done |
 | [`trellis workflow` Command](./commands-workflow.md) | Workflow marketplace templates, project-local workflow switching, hash ownership contract, and parser compatibility | Done |
 | [`trellis platforms` Command](./commands-platforms.md) | Machine-readable report of configured AI platforms: `--json` shape, registry sourcing, failure behavior | Done |
 | [`trellis uninstall` Command](./commands-uninstall.md) | Uninstall orchestration: plan composition, structured-file dispatch, execute phases, `.trellis/` removal | Done |

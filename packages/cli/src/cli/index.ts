@@ -158,7 +158,10 @@ program
   .description(
     "Explicit one-way migration from a supported legacy installation",
   )
-  .requiredOption("--from <version>", "Supported source core version (0.6.16)")
+  .requiredOption(
+    "--from <version>",
+    "Source core predecessor (0.6.x or 0.7.0-castbox.N)",
+  )
   .requiredOption("--plan <file>", "Private reviewed core/task projection")
   .option("--dry-run", "Print exact migration actions without writes")
   .action(async (options: { from: string; plan: string; dryRun?: boolean }) => {

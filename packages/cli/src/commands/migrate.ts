@@ -13,6 +13,7 @@ import { collectTemplateFiles } from "./update.js";
 import { computeHash, loadHashes } from "../utils/template-hash.js";
 import { assertProjectPath } from "../utils/path-boundary.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
+import { compareVersions } from "../utils/compare-versions.js";
 import {
   getConfiguredPlatforms,
   collectPlatformTemplates,
@@ -34,6 +35,17 @@ const planSchema = z
         .strict(),
     ),
     deferred_tasks: z
+      .array(
+        z
+          .object({
+            task_ref: z.string().regex(/^\.trellis\/tasks\/[^/]+$/),
+            expected_sha256: hash,
+          })
+          .strict(),
+      )
+      .optional()
+      .default([]),
+    current_tasks: z
       .array(
         z
           .object({
@@ -168,9 +180,14 @@ export async function migrate(
   options: MigrateOptions,
 ): Promise<MigrationResult> {
   const cwd = process.cwd();
-  if (options.from !== "0.6.16")
+  if (
+    !/^(?:0\.6\.(?:0|[1-9]\d*)|0\.7\.0-castbox\.[1-9]\d*)$/.test(
+      options.from,
+    ) ||
+    compareVersions(options.from, VERSION) >= 0
+  )
     throw new Error(
-      `Unsupported migration source ${options.from}; supported: 0.6.16`,
+      `Unsupported migration source ${options.from}; expected a 0.6.x or 0.7.0-castbox predecessor of ${VERSION}`,
     );
   const installed = fs
     .readFileSync(filePath(cwd, ".trellis/.version"), "utf8")
@@ -326,6 +343,21 @@ export async function migrate(
       )
     )
       throw new Error(`Deferred task is not a known legacy record: ${name}`);
+    pending.push(item);
+  }
+  for (const task of plan.current_tasks) {
+    if (task.task_ref === ".trellis/tasks/archive")
+      throw new Error("Historical archives are outside migration");
+    if (taskRefs.has(task.task_ref))
+      throw new Error(`Duplicate task disposition ${task.task_ref}`);
+    taskRefs.add(task.task_ref);
+    const name = `${task.task_ref}/task.json`;
+    const item = describe(cwd, name, "preserve");
+    if (item.facts.before_sha256 !== task.expected_sha256)
+      throw new Error(`Stale current task ${name}`);
+    taskRecordSchema.parse(
+      JSON.parse(fs.readFileSync(filePath(cwd, name), "utf8")) as unknown,
+    );
     pending.push(item);
   }
   // Do not activate an installation with an omitted legacy active record.
