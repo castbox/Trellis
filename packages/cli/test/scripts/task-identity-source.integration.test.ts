@@ -85,22 +85,87 @@ print(result.task_ref)
     expect(fs.readFileSync(oldFile, "utf8")).toBe(bytes);
   });
 
-  it("rejects malformed active current metadata instead of treating it as an unrelated old reservation", () => {
-    const created = task(repo, "create", "Current", "--description", "Current work", "--slug", "current", "--no-start");
-    expect(created.status, created.stderr).toBe(0);
+  it("reserves identity independently of non-identity schema while rejecting invalid selected tasks", () => {
+    expect(task(repo, "create", "Current", "--description", "Current work", "--slug", "current", "--no-start").status).toBe(0);
     const name = taskDir(repo, "current");
-    const currentFile = path.join(repo, ".trellis/tasks", name, "task.json");
+    const file = path.join(repo, ".trellis/tasks", name, "task.json");
     const data = metadata(repo, name);
-    for (const changed of [{ ...data, lifecycle_generation: -1 }, { ...data, source: { kind: "issue" } }, { ...data, old_label: "unknown" }, { ...data, id: "" }]) {
-      fs.writeFileSync(currentFile, JSON.stringify(changed));
+    const variants = [{ ...data, lifecycle_generation: -1 }, { ...data, source: { kind: "issue" } },
+      { ...data, old_label: "unknown" }, { ...data, status: null },
+      { id: "current", creator: "old", assignee: "old", subtasks: [], lifecycle_generation: 1 }];
+    for (const [index, changed] of variants.entries()) {
+      const bytes = JSON.stringify(changed);
+      fs.writeFileSync(file, bytes);
+      fs.chmodSync(file, 0o640);
+      const mode = fs.statSync(file).mode;
+      const created = task(repo, "create", "Other", "--description", "Other work", "--slug", `other-${index}`, "--no-start");
+      expect(created.status, created.stderr).toBe(0);
+      const selected = task(repo, "start", name, "--allow-empty-context");
+      expect(selected.status).toBe(1);
+      expect(selected.stderr).toContain("task_metadata_");
+      const lookup = spawnSync("python3", ["-c", `
+from pathlib import Path
+import sys
+sys.path.insert(0, '.trellis/scripts')
+from common.session_storage import repository_facts, resolve_task_identity
+result = resolve_task_identity(repository_facts(Path.cwd()), 'other-${index}', 0)
+print(result.task_ref)
+`], { cwd: repo, encoding: "utf8" });
+      expect(lookup.status, lookup.stderr).toBe(0);
+      const invalidLookup = spawnSync("python3", ["-c", `
+from pathlib import Path
+import sys
+sys.path.insert(0, '.trellis/scripts')
+from common.session_storage import repository_facts, resolve_task_identity
+resolve_task_identity(repository_facts(Path.cwd()), 'current', 0)
+`], { cwd: repo, encoding: "utf8" });
+      expect(invalidLookup.status).toBe(1);
+      expect(invalidLookup.stderr).toContain("task_metadata_");
+      expect(fs.readFileSync(file, "utf8")).toBe(bytes);
+      expect(fs.statSync(file).mode).toBe(mode);
+      expect(fs.existsSync(path.join(repo, ".git/trellis/sessions/source-lifecycle-test.json"))).toBe(false);
+    }
+  });
+
+  it("fails closed on unreadable active identities without partial resources", () => {
+    const directory = path.join(repo, ".trellis/tasks/old");
+    fs.mkdirSync(directory, { recursive: true });
+    const file = path.join(directory, "task.json");
+    for (const bytes of ["{", "[]", "{}", JSON.stringify({ title: "no id" }),
+      JSON.stringify({ id: "" }), JSON.stringify({ id: "../bad" }), JSON.stringify({ id: 5 }), Buffer.from([0xff])]) {
+      fs.writeFileSync(file, bytes);
+      const before = fs.readdirSync(path.join(repo, ".trellis/tasks"));
       const result = task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--no-start");
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("task_metadata_");
+      expect(result.stderr).toContain(file);
+      expect(fs.readdirSync(path.join(repo, ".trellis/tasks"))).toEqual(before);
+      expect(fs.existsSync(path.join(repo, ".git/trellis/sessions"))).toBe(false);
+      expect(fs.readFileSync(file)).toEqual(Buffer.from(bytes));
     }
-    fs.writeFileSync(currentFile, "{");
-    const invalid = task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--no-start");
-    expect(invalid.status).toBe(1);
-    expect(invalid.stderr).toContain("task_metadata_invalid");
+    fs.rmSync(file);
+    expect(task(repo, "create", "Other", "--description", "Other work", "--slug", "other", "--no-start").status).toBe(0);
+  });
+
+  it("retains archive visible-name fallback and Git-ref identity reservations", () => {
+    const archive = path.join(repo, ".trellis/tasks/archive/2026-01/01-01-reserved");
+    fs.mkdirSync(archive, { recursive: true });
+    fs.writeFileSync(path.join(archive, "task.json"), "{");
+    expect(task(repo, "create", "Current", "--description", "Current", "--slug", "current", "--no-start").status).toBe(0);
+    const before = fs.readdirSync(path.join(repo, ".trellis/tasks"));
+    const occupied = task(repo, "create", "Other", "--description", "Other", "--slug", "other", "--task-id", "reserved", "--no-start");
+    expect(occupied.status).toBe(1);
+    expect(occupied.stderr).toContain("task_id_collision");
+    const historical = path.join(repo, ".trellis/tasks/historical");
+    fs.mkdirSync(historical);
+    fs.writeFileSync(path.join(historical, "task.json"), JSON.stringify({ id: "Git_Reserved", source: null }));
+    git(repo, "add", ".trellis/tasks/historical");
+    git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Historical identity");
+    fs.rmSync(historical, { recursive: true });
+    const byRef = task(repo, "create", "Other", "--description", "Other", "--slug", "other", "--task-id", "git_reserved", "--no-start");
+    expect(byRef.status).toBe(1);
+    expect(byRef.stderr).toContain("task_id_collision");
+    expect(fs.readdirSync(path.join(repo, ".trellis/tasks"))).toEqual(before);
   });
 
   it("creates a no-Issue task without branch metadata and archives it in a remote-backed repo", () => {
@@ -261,7 +326,7 @@ print(result.task_ref)
       const second = task(linked, "create", "Second", "--description", "Second task", "--slug", "second", "--task-id", "shared-id", "--no-start");
       expect(second.status).toBe(1);
       expect(second.stderr).toContain("task_id_collision");
-      expect(fs.readdirSync(path.join(linked, ".trellis/tasks")).filter((entry) => entry !== "archive")).toEqual([]);
+      expect(fs.existsSync(path.join(linked, ".trellis/tasks"))).toBe(false);
     } finally {
       git(repo, "worktree", "remove", "--force", linked);
     }

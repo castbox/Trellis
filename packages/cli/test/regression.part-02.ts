@@ -1050,7 +1050,7 @@ describe("regression: current-task path normalization", () => {
     ], { cwd: tmpDir, encoding: "utf-8", env: sessionEnv() });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("task_id_collision");
-    expect(fs.readdirSync(path.join(tmpDir, ".trellis", "tasks")).some((name) => name.endsWith("-new-task"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".trellis", "tasks"))).toBe(false);
   });
 
   it("[issue-377] task.py create normalizes a --slug carrying today's date prefix", () => {
