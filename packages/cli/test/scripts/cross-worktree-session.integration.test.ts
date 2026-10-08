@@ -93,6 +93,40 @@ ${body}
 }
 
 describe("repository-scoped session task bindings", () => {
+  it("creates through the real CLI beside mixed historical worktree metadata without changing history", () => {
+    probe(`
+historical = worktree(primary, 'historical')
+old = historical / '.trellis/tasks/09-23-old/task.json'
+old.parent.mkdir(parents=True)
+raw = json.dumps(dict(id='Old_Reserved', lifecycle_generation=1, creator='old', assignee='old', subtasks=[]))
+old.write_text(raw)
+old.chmod(0o640)
+mode = old.stat().st_mode
+source = dict(kind='issue', repo_ref='castbox/Trellis', number=29, disposition='exact_source')
+p = command(primary, 'one', 'create', 'Current', '--description', 'Current task', '--slug', 'current', '--task-id', 'current', '--source-json', json.dumps(source), '--no-start')
+assert p.returncode == 0, (p.stdout, p.stderr)
+directory = next((primary / '.trellis/tasks').glob('*-current'))
+data = json.loads((directory / 'task.json').read_text())
+assert data['source'] == source and data['lifecycle_generation'] == 0
+p = command(primary, 'one', 'start', str(directory), '--allow-empty-context')
+assert p.returncode == 0, (p.stdout, p.stderr)
+assert resolve(primary).resolved_task_path == directory
+before = sorted(p.name for p in (primary / '.trellis/tasks').iterdir())
+common = Path(git(primary, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+session = common / 'trellis/sessions/codex_one.json'
+session_bytes = session.read_bytes()
+for identity in ('Old_Reserved', 'old_reserved'):
+    p = command(primary, 'two', 'create', 'Occupied', '--description', 'Occupied', '--slug', 'occupied', '--task-id', identity)
+    assert p.returncode == 1 and 'task_id_collision' in p.stderr, (p.stdout, p.stderr)
+    assert sorted(p.name for p in (primary / '.trellis/tasks').iterdir()) == before
+    assert not (common / 'trellis/sessions/codex_two.json').exists()
+p = command(historical, 'one', 'start', str(old.parent), '--allow-empty-context')
+assert p.returncode == 1, (p.stdout, p.stderr)
+assert session.read_bytes() == session_bytes
+assert old.read_text() == raw and old.stat().st_mode == mode
+`);
+  });
+
   it("A1 resolves identity in primary before linking, then reads the linked task through resolver and CLIs", () => {
     probe(`
 assert resolve_context_key(dict(session_id='one'), platform='codex') == 'codex_one'

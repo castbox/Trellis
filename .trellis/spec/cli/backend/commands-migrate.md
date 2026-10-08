@@ -95,8 +95,12 @@ file choices, stale task projections, omitted legacy tasks, and strict ordinary
 update rejection. Guru end-to-end rehearsal owns real old installation,
 workflow/preset installation, lifecycle re-entry and post-write rollback proof.
 
-Native task inventory scanners reserve known old TaskIds without exposing
-them as current candidates. Creation and session resolution remain usable for
-unrelated current tasks. Exact/casefold old identity occupation and direct old
-selection fail; bad active current records, JSON or missing ids also fail.
-The standard task reader/writer is unchanged and accepts only current records.
+Native identity scanners reserve valid TaskIds without classifying unrelated
+non-identity fields or exposing records as current candidates. Creation and
+session resolution remain usable beside historical records; matching selected
+records still require the full current schema. Exact/casefold occupation and
+direct old selection fail; bad active identity (JSON/object/id/readability)
+also fails. This minimal projection does not determine migration disposition:
+the reviewed current/converted/deferred rules above retain their independent
+classification and raw-byte requirements. The standard complete task
+reader/writer still accepts only current records.
