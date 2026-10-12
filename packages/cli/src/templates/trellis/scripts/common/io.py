@@ -64,12 +64,22 @@ def read_task_id_reservation(path: Path) -> tuple[str | None, str | None]:
 
 
 def _has_unsupported_task_fields(path: Path, data: object) -> bool:
+    if path.name == "task.json" and isinstance(data, dict) and data.get("schema_version") == "2.0":
+        from .delivery_schema import V2_FIELDS
+        return bool(data.keys() - V2_FIELDS)
     return path.name == "task.json" and isinstance(data, dict) and bool(data.keys() - TASK_RECORD_FIELDS)
 
 
 def _has_invalid_task_schema(path: Path, data: object) -> bool:
     if path.name != "task.json" or not isinstance(data, dict):
         return False
+    if data.get("schema_version") == "2.0":
+        from .delivery_schema import DeliveryError, parse_task_v2
+        try:
+            parse_task_v2(data)
+            return False
+        except DeliveryError:
+            return True
     if not TASK_REQUIRED_FIELDS <= data.keys():
         return True
     if any(not isinstance(data[field], str) for field in TASK_STRING_FIELDS):
@@ -247,12 +257,27 @@ def write_json(path: Path, data: dict) -> bool:
     """
     if _has_unsupported_task_fields(path, data) or _has_invalid_task_schema(path, data):
         return False
-    if path.name == "task.json" and path.exists() and read_json_checked(path)[1] is not None:
-        return False
+    if path.name == "task.json" and data.get("schema_version") == "2.0":
+        from .delivery_schema import parse_task_v2
+        data = parse_task_v2(data)
+    if path.name == "task.json":
+        previous = None
+        if path.exists():
+            previous, reason = read_json_checked(path)
+            if reason is not None:
+                return False
+        if (previous is not None and previous.get("schema_version") == "2.0") or data.get("schema_version") == "2.0":
+            domain = ("lifecycle_generation", "accepted_scope", "deliveries", "completion_results", "closure_results")
+            if previous is not None:
+                if previous.get("schema_version") != data.get("schema_version") or any(previous.get(k) != data.get(k) for k in ("id", "source", *domain)):
+                    return False
+            elif (data["lifecycle_generation"] != 0 or data["accepted_scope"] is not None
+                  or any(data[k] for k in ("deliveries", "completion_results", "closure_results"))):
+                return False
     return write_text_atomic(path, json.dumps(data, indent=2, ensure_ascii=False))
 
 
-def write_text_atomic(path: Path, text: str) -> bool:
+def write_text_atomic(path: Path, text: str, *, mode: int | None = None) -> bool:
     """Write text to a file atomically (temp in same dir, then replace).
 
     The same never-truncate-in-place guarantee as :func:`write_json`, for the
@@ -270,6 +295,8 @@ def write_text_atomic(path: Path, text: str) -> bool:
         return False
 
     try:
+        if mode is not None:
+            os.chmod(tmp, mode)
         try:
             f = os.fdopen(fd, "w", encoding="utf-8")
         except OSError:

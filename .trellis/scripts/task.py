@@ -52,7 +52,7 @@ from common.io import (
     write_json,
 )
 from common.task_utils import TaskIdentityError, read_task_identity, resolve_lifecycle_target, run_task_hooks
-from common.tasks import iter_active_tasks, children_progress
+from common.tasks import iter_active_tasks, children_progress, get_all_statuses, task_lifecycle_summary
 
 # Import command handlers from split modules (also re-exports for plan.py compatibility)
 from common.task_store import (
@@ -100,6 +100,9 @@ def _record_start_state(
         )
         print(hint, file=sys.stderr)
         return
+
+    if data.get("schema_version") == "2.0":
+        return  # Task binding never starts Delivery implementation.
 
     applied: list[str] = []
 
@@ -152,12 +155,26 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
         return 1
 
+    selected_data, selected_reason = read_json_checked(full_path / FILE_TASK_JSON)
+    if selected_data is None:
+        problem, hint = describe_json_read_failure(full_path / FILE_TASK_JSON, selected_reason)
+        print(f"Error: {problem}. {hint}", file=sys.stderr)
+        return 1
+    is_v2 = selected_data.get("schema_version") == "2.0"
+    if is_v2:
+        from common.runtime_contract import read_runtime_contract
+        try:
+            read_runtime_contract(repo_root / DIR_WORKFLOW / "workflow.md")
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
     # Context-manifest gate (#573): a seeded-but-uncurated implement/check
     # manifest means every sub-agent dispatched for this task runs with zero
     # spec context, and nothing downstream surfaces that to the main session.
     # An absent manifest is not gated — create seeds the files only on
     # sub-agent-capable platforms, so absence means no sub-agent reads them.
-    if not getattr(args, "allow_empty_context", False):
+    if not is_v2 and not getattr(args, "allow_empty_context", False):
         empty_manifests = [
             name
             for name in ("implement.jsonl", "check.jsonl")
@@ -199,6 +216,9 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 1
 
     if not resolve_context_key():
+        if is_v2:
+            print("Error: context_required: Task v2 binding requires an exact session identity", file=sys.stderr)
+            return 1
         # Degraded mode: no session identity available.
         # Hook didn't inject TRELLIS_CONTEXT_ID (common on Windows + Claude Code,
         # --continue resume path, fork distribution, hooks disabled, etc.). Skip
@@ -295,6 +315,11 @@ def cmd_current(args: argparse.Namespace) -> int:
                 "branch": data.get("branch"),
                 "base_branch": data.get("base_branch"),
             }
+            if data.get("schema_version") == "2.0":
+                from common.delivery_session import get_current_delivery
+                task_obj.pop("status")
+                task_obj["schema_version"] = "2.0"
+                task_obj["current_delivery"] = get_current_delivery(repo_root)
         payload = {
             "current_task": task_obj,
             "source": active.source,
@@ -369,7 +394,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     # Single pass: collect all tasks via shared iterator
     all_tasks = {t.dir_name: t for t in iter_active_tasks(tasks_dir, repo_root)}
-    all_statuses = {name: t.status for name, t in all_tasks.items()}
+    all_statuses = get_all_statuses(tasks_dir, repo_root)
 
     if as_json:
         items = []
@@ -388,6 +413,10 @@ def cmd_list(args: argparse.Namespace) -> int:
                 "children": list(t.children),
                 "package": t.package,
             })
+            if t.raw.get("schema_version") == "2.0":
+                items[-1].pop("status")
+                items[-1].pop("display_status")
+                items[-1].update(task_lifecycle_summary(t.raw))
         print(json.dumps({"tasks": items}, ensure_ascii=False))
         return 0
 
@@ -417,7 +446,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             marker = f" {colored('<- current', Colors.GREEN)}"
 
         # Children progress
-        progress = children_progress(t.children, all_statuses)
+        progress = children_progress(t.children, all_statuses, allow_missing_legacy=t.raw.get("schema_version") != "2.0")
         status_label = _display_status(t, all_statuses)
 
         # Package tag
@@ -595,6 +624,8 @@ def main() -> int:
     p_create.add_argument("title", help="Task title (required, non-empty)")
     p_create.add_argument("--slug", "-s", help="Task slug without the MM-DD date prefix")
     p_create.add_argument("--task-id", help="Stable TaskId independent of the directory slug")
+    p_create.add_argument("--schema-version", choices=["legacy", "2.0"], default="legacy",
+                         help="Explicit opt-in Task/Delivery schema (legacy default during D1)")
     p_create.add_argument(
         "--source-json",
         help="Structured task source JSON (default: no_issue; issue create accepts exact_source or reference_only)",
@@ -633,14 +664,17 @@ def main() -> int:
     p_add.add_argument("file", help="JSONL file (implement|check)")
     p_add.add_argument("path", help="File path to add")
     p_add.add_argument("reason", nargs="?", help="Reason for adding")
+    p_add.add_argument("--delivery", help="Exact Delivery UUID for v2 artifacts")
 
     # validate
     p_validate = subparsers.add_parser("validate", help="Validate context files")
     p_validate.add_argument("dir", help="Task directory")
+    p_validate.add_argument("--delivery", help="Exact Delivery UUID for v2 artifacts")
 
     # list-context
     p_listctx = subparsers.add_parser("list-context", help="List context entries")
     p_listctx.add_argument("dir", help="Task directory")
+    p_listctx.add_argument("--delivery", help="Exact Delivery UUID for v2 artifacts")
 
     # start
     p_start = subparsers.add_parser("start", help="Set active task")

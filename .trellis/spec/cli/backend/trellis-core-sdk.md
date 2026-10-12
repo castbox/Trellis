@@ -60,6 +60,13 @@ Core public exports must be declared explicitly in `packages/core/package.json`.
 
 ### Subpath exports
 
+Issue #31 D1 adds the explicitly versioned `/task/v2` API (Task schema 2.0,
+Delivery API 1.0). Legacy `/task` stays pinned during the migration window.
+Schema-2 aggregate writes and Python equivalents share one behavior fixture
+corpus; do not expose v2 implicitly from the root or dual-write a Task.
+See [Delivery Lifecycle](./delivery-lifecycle.md) for the public authority and
+finite cutover prerequisites.
+
 Core exposes domains as explicit subpaths, not from one root barrel:
 
 ```ts

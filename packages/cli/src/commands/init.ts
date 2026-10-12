@@ -1,3 +1,9 @@
+import { randomUUID, createHash } from "node:crypto";
+import {
+  emptyTaskRecordV2,
+  applyTaskOperation,
+  type TaskRecordV2,
+} from "@mindfoldhq/trellis-core/task/v2";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,6 +34,14 @@ import {
   writeFile,
   type WriteMode,
 } from "../utils/file-writer.js";
+import {
+  preflightDeliveryWorkflow,
+  readDeliveryWorkflowContract,
+} from "../utils/delivery-workflow.js";
+import {
+  workflowMdTemplate,
+  deliveryWorkflowMdTemplate,
+} from "../templates/trellis/index.js";
 import { emptyTaskJson, type TaskJson } from "../utils/task-json.js";
 import {
   detectProjectType,
@@ -36,9 +50,14 @@ import {
   type ProjectType,
   type DetectedPackage,
 } from "../utils/project-detector.js";
-import { initializeHashes, removeHash } from "../utils/template-hash.js";
+import {
+  initializeHashes,
+  removeHash,
+  loadHashes,
+} from "../utils/template-hash.js";
 import {
   NATIVE_WORKFLOW_ID,
+  isBundledWorkflow,
   resolveWorkflowTemplate,
 } from "../utils/workflow-resolver.js";
 import {
@@ -303,7 +322,7 @@ const BOOTSTRAP_TASK_NAME = "00-bootstrap-guidelines";
 function writeTaskSkeleton(
   cwd: string,
   taskName: string,
-  taskJson: TaskJson,
+  taskJson: TaskJson | TaskRecordV2,
   prdContent: string,
 ): boolean {
   const taskDir = path.join(cwd, PATHS.TASKS, taskName);
@@ -575,10 +594,80 @@ function createBootstrapTask(
   pythonCmd: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
+  workflowContent?: string,
 ): boolean {
-  const taskJson = getBootstrapTaskJson(projectType, packages);
+  const legacy = getBootstrapTaskJson(projectType, packages);
   const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
-  return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
+  const contract = readDeliveryWorkflowContract(
+    workflowContent ?? workflowMdTemplate,
+  );
+  if (!contract)
+    return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, legacy, prdContent);
+  const {
+    status: _status,
+    commit: _commit,
+    pr_url: _pr,
+    completedAt: _completed,
+    ...metadata
+  } = legacy;
+  // Only the bundled native workflow defines accepted bootstrap scope/profile.
+  // Custom owners must judge their own scope and create a Delivery explicitly.
+  if (workflowContent !== deliveryWorkflowMdTemplate) {
+    return writeTaskSkeleton(
+      cwd,
+      BOOTSTRAP_TASK_NAME,
+      emptyTaskRecordV2(metadata),
+      prdContent,
+    );
+  }
+  const authority = {
+    locator: `.trellis/tasks/${BOOTSTRAP_TASK_NAME}/prd.md`,
+    revision: `sha256:${createHash("sha256").update(prdContent).digest("hex")}`,
+  };
+  const deliveryId = randomUUID();
+  const scoped = applyTaskOperation(
+    emptyTaskRecordV2(metadata),
+    {
+      api_version: "1.0",
+      operation: "accept_scope",
+      owner_role: "task_scope",
+      owner_id: contract.owners.task_scope,
+      key: { task_id: BOOTSTRAP_TASK_NAME, lifecycle_generation: 0 },
+      authority,
+    },
+    contract,
+  ).record;
+  const taskJson = applyTaskOperation(
+    scoped,
+    {
+      api_version: "1.0",
+      operation: "create_delivery",
+      owner_role: "creation",
+      owner_id: contract.owners.creation,
+      key: {
+        task_id: BOOTSTRAP_TASK_NAME,
+        lifecycle_generation: 0,
+        delivery_id: deliveryId,
+      },
+      scope_ref: { authority, anchors: ["bootstrap-guidelines"] },
+      profile: "manual",
+    },
+    contract,
+  ).record;
+  if (!writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent))
+    return false;
+  const planningRoot = path.join(
+    cwd,
+    PATHS.TASKS,
+    BOOTSTRAP_TASK_NAME,
+    "deliveries",
+    deliveryId,
+  );
+  fs.mkdirSync(planningRoot, { recursive: true });
+  writeFileAtomic(path.join(planningRoot, "prd.md"), prdContent);
+  for (const manifest of ["implement.jsonl", "check.jsonl"])
+    writeFileAtomic(path.join(planningRoot, manifest), "");
+  return true;
 }
 
 /**
@@ -880,6 +969,53 @@ export async function init(options: InitOptions): Promise<void> {
   }
   const existingWorkflow = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
   assertProjectPath(existingWorkflow, cwd);
+  const workflowIdInput = options.workflow?.trim();
+  const workflowId =
+    workflowIdInput && workflowIdInput.length > 0
+      ? workflowIdInput
+      : NATIVE_WORKFLOW_ID;
+  let workflowMdOverride: string | undefined;
+  if (options.workflow || options.workflowSource) {
+    const resolved = await resolveWorkflowTemplate(workflowId, {
+      source: options.workflowSource,
+    });
+    if (resolved.id !== NATIVE_WORKFLOW_ID) {
+      workflowMdOverride = resolved.content;
+      console.log(
+        chalk.blue(`🧭 Using workflow template: ${chalk.cyan(resolved.id)}`),
+      );
+    }
+  }
+
+  if (
+    !options.workflow &&
+    !options.workflowSource &&
+    fs.existsSync(existingWorkflow)
+  ) {
+    const existingContent = fs.readFileSync(existingWorkflow, "utf8");
+    if (
+      readDeliveryWorkflowContract(existingContent) ||
+      !loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE]
+    ) {
+      workflowMdOverride = existingContent;
+    }
+  }
+  if (
+    !isFirstInit &&
+    !options.force &&
+    (options.workflow || options.workflowSource) &&
+    fs.existsSync(existingWorkflow) &&
+    fs.readFileSync(existingWorkflow, "utf8") !==
+      (workflowMdOverride ?? workflowMdTemplate)
+  ) {
+    throw new Error(
+      "workflow_activation_required: use trellis workflow --template <id> to switch the active workflow; non-forced reinit preserves existing workflow content",
+    );
+  }
+  preflightDeliveryWorkflow(cwd, workflowMdOverride ?? workflowMdTemplate, {
+    installingRuntime: true,
+  });
+
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
   console.log(chalk.cyan(`\n${banner.trimEnd()}`));
@@ -1599,24 +1735,6 @@ export async function init(options: InitOptions): Promise<void> {
   // Resolve workflow template (default: native bundled)
   // ==========================================================================
 
-  const workflowIdInput = options.workflow?.trim();
-  const workflowId =
-    workflowIdInput && workflowIdInput.length > 0
-      ? workflowIdInput
-      : NATIVE_WORKFLOW_ID;
-  let workflowMdOverride: string | undefined;
-  if (workflowId !== NATIVE_WORKFLOW_ID || options.workflowSource) {
-    const resolved = await resolveWorkflowTemplate(workflowId, {
-      source: options.workflowSource,
-    });
-    if (resolved.id !== NATIVE_WORKFLOW_ID) {
-      workflowMdOverride = resolved.content;
-      console.log(
-        chalk.blue(`🧭 Using workflow template: ${chalk.cyan(resolved.id)}`),
-      );
-    }
-  }
-
   // ==========================================================================
   // Create Workflow Structure
   // ==========================================================================
@@ -1708,13 +1826,19 @@ export async function init(options: InitOptions): Promise<void> {
   // `.trellis/workflow.md` hash entry so `trellis update` classifies it as
   // modified and does not silently restore native bytes. See design.md
   // "Durable-state contract".
-  if (workflowMdOverride !== undefined && workflowId !== NATIVE_WORKFLOW_ID) {
+  if (workflowMdOverride !== undefined && !isBundledWorkflow(workflowId)) {
     removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
   }
 
   if (
     needsBootstrap &&
-    !createBootstrapTask(cwd, pythonCmd, projectType, monorepoPackages)
+    !createBootstrapTask(
+      cwd,
+      pythonCmd,
+      projectType,
+      monorepoPackages,
+      workflowMdOverride,
+    )
   ) {
     throw new Error("Could not create bootstrap task.");
   }

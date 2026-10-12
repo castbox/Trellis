@@ -1,0 +1,246 @@
+"""Contained atomic Delivery operations and objective candidate/fact verification."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+from pathlib import Path
+
+from .delivery_operations import apply_operation, parse_operation
+from .delivery_schema import candidate, fail, parse_task_v2, relative_path
+from .delivery_session import release_delivery
+from .io import read_json_checked, write_text_atomic
+from .path_boundary import require_project_path
+from .runtime_contract import read_runtime_contract
+
+
+def _digest(value: bytes) -> str:
+    return "sha256:" + hashlib.sha256(value).hexdigest()
+
+
+def _checked_path(path: Path, root: Path) -> Path:
+    """Preserve known Task-store aliases; reject nested artifact symlinks."""
+    require_project_path(path, root)
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        fail("invalid_locator", str(path))
+    current = root
+    for index, part in enumerate(parts):
+        current = current / part
+        allowed_store_alias = (parts[:index + 1] in ((".trellis",), (".trellis", "tasks"))
+                               or (index == 2 and parts[:2] == (".trellis", "tasks") and part != "archive"))
+        if current.is_symlink() and not allowed_store_alias:
+            fail("invalid_locator", f"nested symlink: {current}")
+        if current.is_symlink() and allowed_store_alias and not current.is_dir():
+            fail("invalid_locator", f"invalid Task-store alias: {current}")
+    return path
+
+
+def _reserved(locator: str) -> bool:
+    return (locator == ".git" or locator.startswith(".git/")
+            or re.search(r"(?:^|/)trellis/sessions(?:/|$)", locator) is not None
+            or re.match(r"\.trellis/(?:sessions|\.runtime|\.internal|\.delivery-results)(?:/|$)", locator) is not None
+            or re.fullmatch(r"\.trellis/tasks/(?:archive/[^/]+/)?[^/]+/task\.json", locator) is not None)
+
+
+def _file(root: Path, locator: str) -> Path:
+    relative_path(locator)
+    path = _checked_path(root / locator, root)
+    if not path.is_file():
+        fail("missing_locator", locator)
+    return path
+
+
+def candidate_content_ref(root: Path, paths: list[str]) -> str:
+    """Hash explicit sorted file paths, modes and bytes; reject lifecycle files."""
+    if not paths or len(set(paths)) != len(paths):
+        fail("invalid_candidate", "nonempty unique paths required")
+    entries = []
+    for locator in sorted(paths):
+        if _reserved(locator):
+            fail("invalid_candidate", f"lifecycle/private file {locator}")
+        relative_path(locator)
+        path = _checked_path(root / locator, root)
+        if not path.exists():
+            entries.append([locator, None, None])
+        elif path.is_file():
+            entries.append([locator, path.stat().st_mode & 0o777, hashlib.sha256(path.read_bytes()).hexdigest()])
+        else:
+            fail("invalid_candidate", f"not a file: {locator}")
+    return _digest(json.dumps(entries, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _git(root: Path, *args: str, binary: bool = False) -> bytes:
+    env = {k: v for k, v in os.environ.items() if k not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"}}
+    try:
+        result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, timeout=20, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail("invalid_git_fact", str(exc))
+    if result.returncode:
+        fail("invalid_git_fact", " ".join(args))
+    return result.stdout if binary else result.stdout.strip()
+
+
+def verify_candidate(root: Path, value: dict) -> None:
+    candidate(value)
+    if candidate_content_ref(root, value["paths"]) != value["content_ref"]:
+        fail("candidate_mismatch", "content bytes/modes changed")
+    if value["kind"] == "git":
+        if value["head_ref"] is not None and _git(root, "rev-parse", "HEAD").decode() != value["head_ref"]:
+            fail("candidate_mismatch", "HEAD changed")
+        if value["base_ref"] is not None and _git(root, "rev-parse", "--verify", value["base_ref"] + "^{commit}").decode() != value["base_ref"]:
+            fail("candidate_mismatch", "base must be an exact commit")
+
+
+def _verify_commit(root: Path, result: dict) -> None:
+    entries = []
+    for locator in sorted(result["candidate"]["paths"]):
+        relative_path(locator)
+        if _reserved(locator):
+            fail("invalid_candidate", locator)
+        tree = _git(root, "ls-tree", result["commit"], "--", locator).decode()
+        if not tree:
+            entries.append([locator, None, None])
+            continue
+        match = re.match(r"^(100644|100755) blob [a-f0-9]+\t", tree)
+        if match is None:
+            fail("invalid_git_fact", locator)
+        assert match is not None
+        contents = _git(root, "show", f"{result['commit']}:{locator}", binary=True)
+        entries.append([locator, 0o755 if match[1] == "100755" else 0o644, hashlib.sha256(contents).hexdigest()])
+    if _digest(json.dumps(entries, ensure_ascii=False, separators=(",", ":")).encode()) != result["candidate"]["content_ref"]:
+        fail("candidate_mismatch", "commit tree differs from delivered content")
+
+
+def _verify_pr(root: Path, result: dict, *, delivered: bool) -> None:
+    """Read actual PR postconditions. This verifier cannot create/push/merge."""
+    try:
+        process = subprocess.run(
+            ["gh", "pr", "view", str(result["pr_number"]), "--repo", result["repo_ref"],
+             "--json", "number,headRefOid,baseRefName,state,mergeCommit,url,body"],
+            cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail("fact_verification_required", f"actual PR read unavailable: {exc}")
+    if process.returncode:
+        fail("fact_verification_required", f"actual PR read failed: {process.stderr.strip()}")
+    try:
+        actual = json.loads(process.stdout)
+    except json.JSONDecodeError:
+        fail("fact_verification_required", "invalid PR read response")
+    if actual["number"] != result["pr_number"] or actual["headRefOid"] != result["reviewed_head"] or actual["baseRefName"] != result["target_ref"]:
+        fail("candidate_mismatch", "actual PR identity/head/target differs")
+    if delivered:
+        if actual["state"] != "MERGED" or not actual["mergeCommit"] or actual["mergeCommit"]["oid"] != result["merge_commit"]:
+            fail("invalid_git_fact", "PR has not merged at the recorded merge commit")
+    else:
+        publication = result["publication_ref"]
+        if publication["locator"] != actual["url"] or publication["revision"] != _digest(actual["body"].encode("utf-8")):
+            fail("candidate_mismatch", "publication URL/body differs")
+
+
+def _verify_fact(root: Path, op: dict) -> None:
+    if op["operation"] not in ("record_delivery", "record_publication"):
+        return
+    result = op["result"]
+    if result["profile"] == "local_commit":
+        _verify_commit(root, result)
+    elif result["profile"] == "manual":
+        artifact = result["artifact"]
+        if re.match(r"[a-z][a-z0-9+.-]*://", artifact["locator"], re.I):
+            fail("fact_verification_required", "Python manual owner must retain a local immutable artifact")
+        if _digest(_file(root, artifact["locator"]).read_bytes()) != artifact["revision"]:
+            fail("candidate_mismatch", "manual artifact content differs")
+    else:
+        _verify_pr(root, result, delivered=op["operation"] == "record_delivery")
+
+
+def verify_authority(root: Path, ref: dict) -> None:
+    """Verify local authority bytes or an immutable Git object locator."""
+    if re.match(r"[a-z][a-z0-9+.-]*://", ref["locator"], re.I):
+        return
+    file = _file(root, ref["locator"])
+    if re.fullmatch(r"sha256:[a-f0-9]{64}", ref["revision"]):
+        if _digest(file.read_bytes()) != ref["revision"]:
+            fail("authority_mismatch", ref["locator"])
+    elif re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", ref["revision"]):
+        _git(root, "cat-file", "-e", f"{ref['revision']}:{ref['locator']}")
+    else:
+        fail("invalid_authority_revision", "local authority requires sha256 content or exact Git revision")
+
+
+def apply_to_store(task_dir: Path, root: Path, request: object, expected_sha256: str | None = None) -> dict:
+    """Validate, verify, compare the raw preimage, then atomically project one fact."""
+    task_json = task_dir / "task.json"
+    _checked_path(task_json, root)
+    previous = task_json.read_bytes()
+    if expected_sha256 is not None and _digest(previous) != expected_sha256:
+        fail("stale_preimage", "Task changed before operation")
+    data, reason = read_json_checked(task_json)
+    if data is None:
+        fail("invalid_record", str(reason))
+    record = parse_task_v2(data)
+    op = parse_operation(request)
+    declaration = read_runtime_contract(root / ".trellis" / "workflow.md")
+    if op["operation"] == "create_delivery":
+        planning = task_dir / "deliveries" / op["key"]["delivery_id"]
+        _checked_path(planning, root)
+        for directory in (task_dir / "deliveries", planning):
+            if directory.exists() and not directory.is_dir():
+                fail("invalid_locator", f"unexpected planning directory type: {directory}")
+        for child in ("research", "prd.md", "design.md", "implement.md", "implement.jsonl", "check.jsonl"):
+            path = planning / child
+            _checked_path(path, root)
+            if path.exists() and (path.is_file() if child == "research" else not path.is_file()):
+                fail("invalid_locator", f"unexpected planning artifact type: {path}")
+    output = apply_operation(record, op, declaration)
+    if output["changed"]:
+        if op["operation"] in ("accept_scope", "reopen_task"):
+            verify_authority(root, op["authority"])
+        elif op["operation"] == "create_delivery":
+            verify_authority(root, op["scope_ref"]["authority"])
+        elif op["operation"] == "record_gate":
+            verify_authority(root, op["result"]["scope_ref"]["authority"])
+            verify_authority(root, op["result"]["plan_ref"])
+        elif op["operation"] == "rework" and "scope_ref" in op:
+            verify_authority(root, op["scope_ref"]["authority"])
+        elif op["operation"] == "complete_task":
+            verify_authority(root, op["result"]["accepted_scope"])
+        historical = op["operation"] in ("record_delivery", "record_publication") and op.get("historical_success") is True
+        if not historical:
+            if op["operation"] in ("begin_check", "record_publication", "record_delivery"):
+                delivery = next(row for row in record["deliveries"] if row["id"] == op["key"]["delivery_id"])
+                verify_authority(root, delivery["scope_ref"]["authority"])
+                if delivery["plan_ref"] is not None:
+                    verify_authority(root, delivery["plan_ref"])
+            if op["operation"] == "begin_check":
+                verify_candidate(root, op["candidate"])
+            elif op["operation"] == "record_gate" and op["result"]["candidate"] is not None:
+                verify_candidate(root, op["result"]["candidate"])
+            elif op["operation"] in ("record_delivery", "record_publication"):
+                verify_candidate(root, op["result"]["candidate"])
+        _verify_fact(root, op)
+        if task_json.read_bytes() != previous:
+            fail("stale_preimage", "Task changed during verification")
+        mode = task_json.stat().st_mode & 0o777
+        if not write_text_atomic(task_json, json.dumps(output["record"], ensure_ascii=False, indent=2) + "\n", mode=mode):
+            fail("write_failed", str(task_json))
+    # Retry also recovers an interrupted session-release after the fact write.
+    if op["operation"] in ("stop", "record_delivery"):
+        release_delivery(root, task_id=op["key"]["task_id"], generation=op["key"]["lifecycle_generation"], delivery_id=op["key"]["delivery_id"])
+    elif op["operation"] == "reopen_task" and output["changed"]:
+        release_delivery(root, task_id=op["key"]["task_id"], generation=op["key"]["lifecycle_generation"], new_generation=output["record"]["lifecycle_generation"])
+    if op["operation"] == "create_delivery":
+        d = next(row for row in output["record"]["deliveries"] if row["id"] == op["key"]["delivery_id"])
+        planning = task_dir / d["planning_root"]
+        _checked_path(planning / "research", root)
+        (planning / "research").mkdir(parents=True, exist_ok=True)
+        for name in ("prd.md", "design.md", "implement.md", "implement.jsonl", "check.jsonl"):
+            file = planning / name
+            _checked_path(file, root)
+            if not file.exists() and not write_text_atomic(file, ""):
+                fail("write_failed", str(file))
+    return output

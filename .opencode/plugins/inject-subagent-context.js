@@ -45,7 +45,7 @@ function extractActiveTaskHint(prompt) {
  */
 function getImplementContext(ctx, taskDir) {
   const parts = []
-  const taskDirFull = ctx.resolveTaskDir(taskDir)
+  const taskDirFull = ctx.resolveContextDir(taskDir)
   if (!taskDirFull) return ""
 
   const limits = readContextInjectionLimits(ctx.directory)
@@ -100,7 +100,7 @@ function getImplementContext(ctx, taskDir) {
  */
 function getCheckContext(ctx, taskDir) {
   const parts = []
-  const taskDirFull = ctx.resolveTaskDir(taskDir)
+  const taskDirFull = ctx.resolveContextDir(taskDir)
   if (!taskDirFull) return ""
 
   const limits = readContextInjectionLimits(ctx.directory)
@@ -519,6 +519,18 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
             if (!taskDirFull || !existsSync(taskDirFull)) {
               debugLog("inject", "Skipping - task directory not found")
               return
+            }
+          }
+
+          if (taskDir) {
+            const metadata = JSON.parse(taskCtx.readFile(join(taskCtx.resolveTaskDir(taskDir), "task.json")) || "{}")
+            if (metadata.schema_version === "2.0") {
+              const query = ctx.getCurrentDelivery(input)
+              if (!["current", "terminal_delivery"].includes(query.kind)) {
+                output.args.prompt = `Delivery context error: ${JSON.stringify(query)}\n\n${originalPrompt}`
+                return
+              }
+              taskDir = join(taskCtx.resolveTaskDir(taskDir), query.delivery.planning_root)
             }
           }
 

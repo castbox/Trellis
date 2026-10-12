@@ -11,6 +11,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { collectPiTemplates } from "../../src/configurators/pi.js";
 import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
+import { seedDeliveryContext } from "./delivery-fixture.js";
 import {
   getAllAgents,
   getExtensionTemplate,
@@ -285,6 +286,27 @@ describe("pi cross-worktree callbacks", () => {
       { cwd: root, sessionManager: { getSessionId: () => sessionId } },
     ));
   }
+
+  it("loads selected v2 Delivery artifacts and Task workspace workflow without legacy fallback", () => {
+    const f = fixture();
+    try {
+      const deliveryId = seedDeliveryContext(f.linked, "linked-task", "same-name");
+      const binding = f.bind(f.linked);
+      writeFileSync(binding, JSON.stringify({ schema_version: 3, task_id: "linked-task", lifecycle_generation: 0, delivery_id: deliveryId }));
+      const output = invoke(f.primary);
+      expect(output).toContain("SELECTED DELIVERY PRD");
+      expect(output).toContain("SELECTED WORKSPACE SPEC");
+      expect(output).not.toContain("ROOT TASK ARTIFACT");
+      expect(output).not.toContain("PRIMARY FLOW");
+      writeFileSync(binding, JSON.stringify({ schema_version: 3, task_id: "linked-task", lifecycle_generation: 0, delivery_id: null }));
+      const absent = invoke(f.primary);
+      expect(absent).toContain("no_current_delivery");
+      expect(absent).not.toContain("ROOT TASK ARTIFACT");
+      expect(absent).not.toContain("SELECTED DELIVERY PRD");
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
 
   it("#1 resolves common-dir bindings and relative context in the linked task workspace", () => {
     const f = fixture();

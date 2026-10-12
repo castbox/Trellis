@@ -23,6 +23,7 @@ import path from "node:path";
 import chalk from "chalk";
 import inquirer from "inquirer";
 
+import { preflightDeliveryWorkflow } from "../utils/delivery-workflow.js";
 import { DIR_NAMES, PATHS } from "../constants/paths.js";
 import { collectMissingAgents } from "../utils/agent-refs.js";
 import { replacePythonCommandLiterals } from "../configurators/shared.js";
@@ -35,7 +36,7 @@ import {
 import {
   listWorkflowTemplates,
   resolveWorkflowTemplate,
-  NATIVE_WORKFLOW_ID,
+  isBundledWorkflow,
   WorkflowResolveError,
   type ResolvedWorkflowTemplate,
   type WorkflowTemplateListing,
@@ -143,7 +144,7 @@ async function confirmOverwriteInteractively(): Promise<
 
 function applyHashContract(cwd: string, templateId: string): void {
   const relPath = PATHS.WORKFLOW_GUIDE_FILE;
-  if (templateId === NATIVE_WORKFLOW_ID) {
+  if (isBundledWorkflow(templateId)) {
     const filePath = workflowFilePath(cwd);
     const current = fs.readFileSync(filePath, "utf-8");
     const files = new Map<string, string>();
@@ -163,6 +164,7 @@ async function writeWorkflow(
   options: WorkflowCommandOptions,
 ): Promise<void> {
   const filePath = workflowFilePath(cwd);
+  if (!options.createNew) preflightDeliveryWorkflow(cwd, template.content);
   const dest = path.dirname(filePath);
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });

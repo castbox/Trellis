@@ -238,8 +238,11 @@ function resolveActiveTaskStatus(
       if (data.error || data.stale) return invalid(JSON.stringify(data.error ?? "Stale task binding"));
       if (data.current_task === null && data.source === "none" && result.status === 1) return empty;
       if (result.status !== 0 || !isObject(data.current_task)) return invalid("Task resolver failed");
-      const status = data.current_task.status;
-      if (typeof status !== "string" || !status.trim()) return invalid("Invalid task status: expected a nonempty string");
+      const query = data.current_task.schema_version === "2.0" ? data.current_task.current_delivery : null;
+      if (query !== null && (!isObject(query) || typeof query.kind !== "string" || query.kind === "error")) return invalid(`Delivery query error: ${JSON.stringify(query)}`);
+      const delivery = isObject(query) && (query.kind === "current" || query.kind === "terminal_delivery") && isObject(query.delivery) ? query.delivery : null;
+      const status = isObject(query) ? (delivery?.phase ?? query.kind) : data.current_task.status;
+      if (typeof status !== "string" || !status.trim()) return invalid(query ? "Invalid public phase query" : "Invalid task status: expected a nonempty string");
       const taskRoot = data.task_workspace_root;
       const taskDir = data.resolved_task_path;
       if (typeof taskRoot !== "string" || typeof taskDir !== "string" || !isAbsolute(taskRoot) || !isAbsolute(taskDir) || !isActiveDataPath(taskRoot, taskDir)) {
@@ -247,7 +250,7 @@ function resolveActiveTaskStatus(
       }
       return {
          status,
-         taskDir, taskRoot,
+         taskDir: query ? (delivery && typeof delivery.planning_root === "string" ? join(taskDir, delivery.planning_root) : null) : taskDir, taskRoot,
          taskTitle: typeof data.current_task.title === "string" ? data.current_task.title : null,
          error: null,
       };

@@ -145,6 +145,7 @@ function loadBreadcrumbs(directory) {
  */
 function getActiveTask(ctx, platformInput = null, active = ctx.getActiveTask(platformInput)) {
   if (active.error || active.stale) return { id: "session binding", status: "task_error", source: active.source, error: active.error || "stale binding" }
+  const invocationCtx = ctx
   const taskRef = active.taskPath
   if (!taskRef) return null
   const taskDir = active.resolvedTaskPath
@@ -156,7 +157,9 @@ function getActiveTask(ctx, platformInput = null, active = ctx.getActiveTask(pla
   if (!ctx.isActivePath(taskJsonPath) || !existsSync(taskJsonPath)) return { id: taskRef, status: "task_error", source: active.source }
   try {
     const data = JSON.parse(ctx.readFile(taskJsonPath))
-    const status = typeof data.status === "string" ? data.status : ""
+    const query = data.schema_version === "2.0" ? invocationCtx.getCurrentDelivery(platformInput) : null
+    if (query?.kind === "error") return { id: `${taskRef}: ${query.code}: ${query.message}`, status: "task_error", source: active.source }
+    const status = query ? (["current", "terminal_delivery"].includes(query.kind) ? query.delivery.phase : query.kind) : (typeof data.status === "string" ? data.status : "")
     if (!status) return { id: taskRef, status: "task_error", source: active.source }
     const id = data.id || taskRef.split("/").pop()
     return { id, status, source: active.source }

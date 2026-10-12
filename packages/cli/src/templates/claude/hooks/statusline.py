@@ -140,9 +140,15 @@ def _get_current_task_for_input(trellis_dir: Path, cc_data: dict) -> dict | None
     if not task_data:
         return None
 
+    status = task_data.get("status", "unknown")
+    if task_data.get("schema_version") == "2.0":
+        from common.delivery_session import get_current_delivery  # type: ignore[import-not-found]
+        query = get_current_delivery(trellis_dir.parent, cc_data, "claude")
+        status = query["delivery"]["phase"] if query["kind"] in ("current", "terminal_delivery") else query["kind"]
+
     return {
         "title": task_data.get("title") or task_data.get("name") or "unknown",
-        "status": task_data.get("status", "unknown"),
+        "status": status,
         "priority": task_data.get("priority", "P2"),
         "source": active.source,
     }

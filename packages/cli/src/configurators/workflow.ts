@@ -1,4 +1,6 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { DIR_NAMES, PATHS } from "../constants/paths.js";
 import { copyTrellisDir } from "../templates/extract.js";
@@ -103,6 +105,16 @@ export async function createWorkflowStructure(
   await writeFile(
     path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE),
     replacePythonCommandLiterals(workflowMd),
+  );
+
+  await writeFile(
+    path.join(cwd, DIR_NAMES.WORKFLOW, "delivery-contract.md"),
+    readFileSync(
+      fileURLToPath(
+        new URL("../templates/trellis/delivery-contract.md", import.meta.url),
+      ),
+      "utf8",
+    ),
   );
 
   // Copy .gitignore from templates

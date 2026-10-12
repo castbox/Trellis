@@ -13,6 +13,7 @@ import {
 } from "../../src/templates/omp/index.js";
 import { collectOmpTemplates } from "../../src/configurators/omp.js";
 import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
+import { seedDeliveryContext } from "./delivery-fixture.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templateDir = path.resolve(__dirname, "../../src/templates/omp");
@@ -193,6 +194,27 @@ describe("omp cross-worktree callbacks", () => {
     };
     return { root, primary, linked, common, git, bind };
   }
+
+  it("loads selected v2 Delivery artifacts and Task workspace workflow without legacy fallback", async () => {
+    const f = await fixture();
+    try {
+      const deliveryId = seedDeliveryContext(f.linked, "linked-task", "same-name");
+      const binding = f.bind(f.linked);
+      fs.writeFileSync(binding, JSON.stringify({ schema_version: 3, task_id: "linked-task", lifecycle_generation: 0, delivery_id: deliveryId }));
+      const output = await invoke(f.primary);
+      expect(output).toContain("SELECTED DELIVERY PRD");
+      expect(output).toContain("SELECTED WORKSPACE SPEC");
+      expect(output).not.toContain("ROOT TASK ARTIFACT");
+      expect(output).not.toContain("PRIMARY FLOW");
+      fs.writeFileSync(binding, JSON.stringify({ schema_version: 3, task_id: "linked-task", lifecycle_generation: 0, delivery_id: null }));
+      const absent = await invoke(f.primary);
+      expect(absent).toContain("no_current_delivery");
+      expect(absent).not.toContain("ROOT TASK ARTIFACT");
+      expect(absent).not.toContain("SELECTED DELIVERY PRD");
+    } finally {
+      fs.rmSync(f.root, { recursive: true, force: true });
+    }
+  });
 
   it("#1 uses linked task/context/workflow despite conflicting primary content", async () => {
     const f = await fixture();

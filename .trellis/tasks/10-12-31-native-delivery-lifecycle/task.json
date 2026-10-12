@@ -1,0 +1,29 @@
+{
+  "id": "31-native-delivery-lifecycle",
+  "name": "31-native-delivery-lifecycle",
+  "lifecycle_generation": 0,
+  "source": {
+    "kind": "issue",
+    "repo_ref": "castbox/Trellis",
+    "number": 31,
+    "disposition": "exact_source"
+  },
+  "title": "Issue #31: Native Delivery lifecycle and Task phase migration",
+  "description": "Establish upstream Task/Delivery contracts and native workflow adoption, then explicitly migrate task.status consumers with Guru compatibility and joint evidence boundaries.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "cli",
+  "priority": "P2",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
