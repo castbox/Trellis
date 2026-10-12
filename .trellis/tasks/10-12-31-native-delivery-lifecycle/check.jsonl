@@ -12,6 +12,6 @@
 {"file": ".trellis/spec/guides/cross-platform-thinking-guide.md", "reason": "Portable path, shell, schema and persistence assumptions"}
 {"file": ".trellis/tasks/10-12-31-native-delivery-lifecycle/research/current-contracts.md", "reason": "Fresh baseline, required Guru sources and actual consumer inventory"}
 {"file": ".trellis/tasks/10-12-31-native-delivery-lifecycle/research/source-anchors.md", "reason": "Baseline code anchors for current Task coupling"}
-{"file": ".trellis/tasks/10-12-31-native-delivery-lifecycle/research/source-issue.md", "reason": "Complete accepted source requirements; refresh live before execution"}
+{"file": ".trellis/tasks/10-12-31-native-delivery-lifecycle/research/source-issue-current.md", "reason": "Current independently accepted source requirements; historical snapshot is superseded"}
 {"file": ".trellis/spec/cli/backend/quality-guidelines.md", "reason": "Full-scope quality, routing and source/template parity review"}
 {"file": ".trellis/spec/cli/unit-test/integration-patterns.md", "reason": "Integration and real fixture verification"}

@@ -166,8 +166,9 @@ Native source-of-truth contract:
   legacy Task/workflow is not automatically activated or migrated. Explicit
   install/switch preflights exact installed runtime capabilities and active
   schema combinations; same package version alone does not prove Delivery API
-  availability. Current SDK `/task` and legacy-execution retirement still require
-  matching consumer and migration evidence plus public breaking-change guidance.
+  availability. Current SDK `/task` and explicit legacy execution remain isolated
+  compatibility paths. Their global retirement is future breaking-release work;
+  #31 native/API/migration acceptance requires no downstream or joint evidence.
 - Marketplace and custom workflow repositories own migration of their workflow
   content to the structural protocol. This root repository must not advance a
   marketplace gitlink merely to make those external workflows valid.

@@ -534,9 +534,10 @@ helpers report checkout facts only; they are not person resolvers.
 
 #### `task.json.branch` compatibility
 
-New task creation does not write `branch`. `task.py start` changes only task
-status; `task.py archive` preserves a legacy `branch` value without checking
-it or requiring it. `base_branch` remains the PR target, not task identity.
+New task creation does not write `branch`. Retained legacy `task.py start` may
+move Task status and bind a session; schema-2 `start` only selects the exact Task,
+requires a context key and never writes status or starts a Delivery. `task.py
+archive` preserves a legacy `branch` value without checking it or requiring it. `base_branch` remains the PR target, not task identity.
 The old `--skip-branch-validation` archive flag is accepted as a hidden no-op
 so existing invocations continue to archive normally.
 
@@ -624,9 +625,9 @@ a `.current-task` fallback or a Python hook directory.
 
 - `task.py create` always creates task-owned files under
   `.trellis/tasks/<date-slug>/`. It must never write `.trellis/.current-task`.
-- `task.py create` normalizes `--description` with `.strip()` before writing
-  `task.json` and `prd.md`. Missing or whitespace-only descriptions are stored
-  as `""` and emit a warning on stderr.
+- `task.py create` normalizes `--description` with `.strip()`. Both schemas reject
+  missing/whitespace-only descriptions before Task, artifact or session writes;
+  a nonblank description is required.
 - Unless `--no-start` is passed, `task.py create` best-effort activates the new
   task for the current session when a context key is available. This writes
   `.trellis/.runtime/sessions/<session-key>.json` and prints both the activated
@@ -638,16 +639,19 @@ a `.current-task` fallback or a Python hook directory.
   `.trellis/.runtime/`.
 - `task.py create` creates `implement.jsonl` / `check.jsonl` only when the
   repo has a platform configured that consumes those files. For `.codex/`,
-  this is gated by `get_codex_dispatch_mode()`: the default is
+  for retained legacy creation this is gated by `get_codex_dispatch_mode()`: the default is
   `codex.dispatch_mode: auto` (native `SubagentStart` context injection with
   a child-side pull fallback), which seeds JSONL like every other sub-agent
   platform. `sub-agent` is a backwards-compatible alias for `auto`. Setting
   `codex.dispatch_mode: inline` opts out and loads context through skills
-  instead, so JSONL is not seeded.
-- `task.py start` writes session-local state only when a context key is
-  available. Otherwise it enters degraded mode: no session pointer is persisted,
-  `.trellis/.current-task` is not written, and `task.json.status` may still move
-  from `planning` to `in_progress`.
+  instead, so JSONL is not seeded. Schema-2 Task creation owns only overall scope
+  PRD; slice design/implement/manifests belong to each Delivery planning_root,
+  not automatic Task-level planning scaffolding.
+- Retained legacy `task.py start` writes session-local state when a context key
+  is available. Otherwise it retains legacy degraded behavior: no session pointer
+  or `.current-task`, but status may move from planning to in_progress. Schema-2
+  `start` requires a context key and rejects its absence before writes; with a key
+  it binds only the exact Task/generation, not Delivery implementation or gates.
 - Session state is stored at
   `.trellis/.runtime/sessions/<session-key>.json`. The runtime directory is
   created lazily by the JSON write path.
@@ -729,14 +733,16 @@ a `.current-task` fallback or a Python hook directory.
 
 | Condition | Required behavior |
 |-----------|-------------------|
-| `create` without description or with whitespace-only description | Warns on stderr; stores `task.json.description == ""`; initial `prd.md` goal falls back to `TBD.` |
+| `create` without description or with whitespace-only description (either schema) | Refuses before Task/artifact/session writes; requires a nonblank `--description` |
 | `create` with context key, default mode | Task files exist; session runtime points at the new task; activation and source are printed; no `.current-task` |
 | `create --no-start` with context key | Task files exist; existing session runtime is unchanged; skip notice is printed; no `.current-task` |
 | `create` without context key | Task files exist; no `.runtime`; no `.current-task` |
-| `create` with `.codex/` and no `codex.dispatch_mode` override (default `auto`) | Task files exist; `implement.jsonl` and `check.jsonl` exist and are empty |
-| `create` with `.codex/` and `codex.dispatch_mode: inline` | Task files exist; no `implement.jsonl`; no `check.jsonl` |
-| `start` without context key | Returns success in degraded mode; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
-| `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task` |
+| Legacy `create` with `.codex/` and no `codex.dispatch_mode` override (default `auto`) | Task files exist; `implement.jsonl` and `check.jsonl` exist and are empty |
+| Legacy `create` with `.codex/` and `codex.dispatch_mode: inline` | Task files exist; no `implement.jsonl`; no `check.jsonl` |
+| Legacy `start` without context key | Returns success in degraded mode; no `.runtime`; no `.current-task`; hints IDE/session identity or `TRELLIS_CONTEXT_ID` |
+| `start` with `TRELLIS_CONTEXT_ID` | Writes `.runtime/sessions/<key>.json`; does not require `.current-task`; schema 2 only selects the Task/generation and never moves phase |
+| Schema-2 `start` without context key | Refuses before session/Task writes, never degrades into activation |
+| Schema-2 `create` | Creates overall Task scope PRD, no implicit Delivery or Task-level slice design/implement/manifests |
 | `current --source` with same context key | Prints `Source: session:<key>` |
 | `current --source` without context | Prints `(none)` and `Source: none` |
 | `current --json` with active task | `{current_task: {...}, source, stale}`; exit 0 |
@@ -747,7 +753,8 @@ a `.current-task` fallback or a Python hook directory.
 | `create` when the `task.json` write fails | No "Created task", nothing on stdout, exit 1; a directory it created is removed |
 | `archive` when the status write or a child re-parent write fails | Nothing is moved; the failure and the affected child are named; exit 1 |
 | `list` with one corrupt `task.json` | Other tasks still list; the skipped task is named on stderr with the reason; exit 0 |
-| `start` on a task whose `task.json` is corrupt, or whose status write fails | Session pointer is still set and `after_start` hooks still run; the skipped status flip is named on stderr; exit 0 |
+| `start` with corrupt or unreadable initial `task.json` metadata (either schema) | Refuses during metadata preflight before session binding or `after_start` hooks; names the failure on stderr; exit 1; Task bytes and existing session binding remain unchanged |
+| Legacy `start` after valid metadata preflight, when a later status read/write fails | Existing selection/degraded-context behavior and `after_start` hooks still run; the skipped status flip is named on stderr; exit 0 |
 | `list --json` / `list` with a parent whose stored status is `planning` and a child past `planning` | `display_status` (and human list label) shows `"active"`; `task.json.status` on disk stays `planning` |
 | `validate` when legacy `task.json.branch` no longer exists locally | Prints a yellow warning; does not fail validation; archive ignores the field |
 | stale session task + stale `.current-task` exists | Returns stale session state; no `.current-task` fallback |
@@ -791,12 +798,12 @@ a `.current-task` fallback or a Python hook directory.
   surfacing the session source.
 - Regression tests for `create --no-start` preserving an existing session
   pointer.
-- Regression tests for blank and whitespace-only `--description` warning and
-  normalized `task.json.description`.
+- Regression tests for missing/blank/whitespace-only `--description` refusal
+  before Task/artifact/session writes in both schemas.
 - Regression tests for `create` without a context key producing no runtime or
   current-task state.
-- Regression tests for `start` without a context key degrading without creating
-  `.current-task`.
+- Regression tests for legacy `start` without context retaining degraded behavior,
+  and schema-2 `start` refusing before writes; neither creates `.current-task`.
 - Regression tests for `TRELLIS_CONTEXT_ID` and platform-native env keys.
 - Hook/statusline/plugin tests proving the resolver source is surfaced.
 - Stale session tests proving no `.current-task` fallback occurs when the session task

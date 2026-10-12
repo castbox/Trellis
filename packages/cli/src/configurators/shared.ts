@@ -626,6 +626,14 @@ export function buildPullBasedPrelude(agentType: SubAgentType): string {
   // JSONL filenames stay as implement.jsonl / check.jsonl — they are internal
   // context buckets keyed by role (not by platform-visible agent name).
   const jsonl = agentType === "check" ? "check.jsonl" : "implement.jsonl";
+  const schema2Context =
+    agentType === "check"
+      ? `For a schema-2 checker, quality is the default. Only an explicit dispatch profile field or whole line \`Profile: delivery_check\` or \`Profile: delivery_review\` requests formal work; incidental prose does not. These profile rules take precedence over legacy root-artifact loading and self-fix instructions below.
+
+**Quality context:** No selected Delivery is required. Use the exact verified TaskKey and accepted_scope, caller-supplied quality/evidence inputs and applicable specs. Resolve local accepted-scope contents through the validated authority locator; external authorities remain references for their semantic owner to verify. Do not assume root PRD is the accepted authority. Do not load root design/implement or manifests as replacement Delivery planning. Run \`python3 ./.trellis/scripts/get_context.py --mode packages\` from \`task_workspace_root\` if applicable specs were not supplied. Do not select a Delivery, infer one from inventory or write gate/Completion/Closure results. Quality skips the planning-artifact loading steps below, including when a Delivery happens to be selected.
+
+**Formal context:** Both explicit formal profiles require exact DeliveryKey/generation, current candidate, validated planning_root and applicable active-workflow owner inputs. Query \`python3 .trellis/scripts/delivery.py current --json\` from the verified workspace unless dispatch supplies that exact validated context. Missing selection is an error for formal work; binding/runtime/stale errors never downgrade to quality. Use only the selected Delivery planning_root as \`<task-path>\` below, plus the root Task accepted scope. Never infer selection from inventory or substitute root planning. For \`Profile: delivery_review\`, remain independent and read-only, inspect the complete intended candidate/range and current Check evidence, report findings, and perform no self-fixes, lifecycle writes or implementation dispatch. The active workflow's formal owner records outcomes.`
+      : `For a schema-2 Task, Implementation requires a selected Delivery. Query \`python3 .trellis/scripts/delivery.py current --json\` from the verified workspace unless dispatch supplies exact DeliveryKey/generation and validated planning_root, with applicable active-workflow owner inputs. Use only the selected Delivery planning_root as \`<task-path>\` below, plus the root Task accepted scope. Missing/stale selection is an error, never root-artifact fallback. Binding/runtime errors stop implementation; never infer selection from inventory or grant Task-scope quality fallback.`;
 
   return replacePythonCommandLiterals(`## Required: Load Trellis Context First
 
@@ -643,24 +651,22 @@ For human-readable inspection, \`python3 ./.trellis/scripts/task.py current --so
 
 ### Delivery context and profiles
 
-For a schema-2 Task, query \`python3 .trellis/scripts/delivery.py current --json\`
-from the verified workspace unless dispatch supplies an exact DeliveryKey and
-planning_root. Use the selected Delivery planning_root as \`<task-path>\` below;
-root Task PRD remains whole-scope authority. Missing/stale selection is an error,
-never root-artifact fallback. For \`Profile: delivery_review\`, remain read-only,
-review the complete intended range, report findings, and perform no self-fixes,
-lifecycle writes or implementation dispatch. The formal owner records outcomes.
+Validate the exact Task identity/generation and active workflow/schema/API before loading context. Invalid/stale binding or runtime declarations are concrete errors, never permission to use another Task, legacy artifacts or a different profile.
 
-### Step 2: Load task context from the resolved path
+${schema2Context}
+
+For a retained legacy Task under its undeclared compatibility workflow, use the resolved Task root as \`<task-path>\` and keep the legacy artifact-loading sequence below. Do not apply that sequence to schema-2 quality.
+
+### Step 2: Load planning context only for implementation, formal profiles or retained legacy Tasks
 
 1. Read \`<task-path>/${jsonl}\` — JSONL list of spec/research files relevant to this agent.
 2. For each entry in the JSONL, resolve a relative \`file\` path against \`task_workspace_root\`, never the invocation checkout or the manifest directory. Read these specs/research files within the existing context trust and historical-data boundaries.
    **Skip rows without a \`"file"\` field** (e.g. \`{"_example": "..."}\` placeholder rows left over from an older \`task.py create\`).
-3. Read the task's \`prd.md\` (requirements), then \`design.md\` if present (technical design), then \`implement.md\` if present (execution plan).
+3. Read \`<task-path>/prd.md\` (requirements), then \`<task-path>/design.md\` if present (technical design), then \`<task-path>/implement.md\` if present (execution plan).
 
-If \`${jsonl}\` has no curated entries (empty, only a placeholder row, or the file is missing), fall back to: read the task artifacts, run \`python3 ./.trellis/scripts/get_context.py --mode packages\` from \`task_workspace_root\`, and pick the specs that match the task domain yourself. Do NOT block on the missing jsonl — lightweight tasks may be PRD-only, while complex tasks may also include \`design.md\` and \`implement.md\`.
+If \`${jsonl}\` has no curated entries (empty, only a placeholder row, or the file is missing), read artifacts from that same \`<task-path>\`, run \`python3 ./.trellis/scripts/get_context.py --mode packages\` from \`task_workspace_root\`, and pick the applicable specs yourself. Do NOT block on missing jsonl — lightweight planning may be PRD-only, while complex planning may also include \`design.md\` and \`implement.md\`. This never permits root Task planning as a schema-2 fallback.
 
-If the resolved task path has no \`prd.md\`, ask the user what to work on; do NOT proceed without context.
+If required \`<task-path>/prd.md\` is missing, ask the main agent or user to restore the required planning context; do NOT proceed without it. Schema-2 quality instead uses its verified accepted scope and explicit quality inputs above.
 
 ---
 

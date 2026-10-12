@@ -5,9 +5,9 @@ Fresh no-flag native installs and declared schema-2 workflows use the explicit
 Delivery projection and their unique active-workflow owners; see
 [Delivery Lifecycle](./delivery-lifecycle.md). Explicit `native` remains the named
 temporary legacy compatibility workflow; implicit reinit preserves the actual
-installed workflow and ownership. Current SDK `/task` and legacy-execution
-retirement await matching consumer and migration evidence plus public
-breaking-change guidance. Execution hints do not become durable Delivery phases.
+installed workflow and ownership. Current SDK `/task` and explicit legacy
+execution remain isolated compatibility paths. Their global retirement is future
+breaking-release work outside #31; upstream acceptance has no downstream/joint gate. Execution hints do not become durable Delivery phases.
 
 ## Cross-Worktree Resolution
 
