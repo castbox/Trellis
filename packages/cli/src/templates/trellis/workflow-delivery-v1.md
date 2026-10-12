@@ -6,8 +6,9 @@ or `trellis workflow --template native-delivery-v1`. Explicit `native` names the
 temporary legacy compatibility workflow; implicit reinitialization preserves the
 actual installed workflow and its ownership. Existing active legacy Tasks require
 reviewed migration; selecting this workflow does not migrate them. Current SDK
-`/task` and legacy-execution retirement remain pending matching consumer and
-migration evidence plus public breaking-change guidance.
+`/task` and explicit legacy execution remain isolated compatibility paths.
+Their global retirement is future breaking-release work outside #31; native
+acceptance requires no downstream adoption or joint evidence.
 
 Read `.trellis/delivery-contract.md` for public types, operations and errors.
 The Markdown owners below decide semantic sufficiency. Runtime commands only

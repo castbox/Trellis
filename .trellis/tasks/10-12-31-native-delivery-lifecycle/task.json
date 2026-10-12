@@ -9,7 +9,7 @@
     "disposition": "exact_source"
   },
   "title": "Issue #31: Native Delivery lifecycle and Task phase migration",
-  "description": "Establish upstream Task/Delivery contracts and native workflow adoption, then explicitly migrate task.status consumers with Guru compatibility and joint evidence boundaries.",
+  "description": "Independently deliver and accept upstream Task schema 2.0 / Delivery API 1.0, native workflow/default adoption, reviewed migration and platform/interface validation; downstream integration, joint acceptance and global legacy retirement are outside this Task.",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,

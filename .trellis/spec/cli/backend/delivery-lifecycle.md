@@ -10,10 +10,11 @@ Do not duplicate the transition table in platform hooks or route code.
 
 Fresh no-flag native initialization uses bundled `native-delivery-v1`. Existing
 legacy installs and the current legacy `/task` retain their contract until
-reviewed D2 migration/cutover. The older task-lifecycle and workflow-state specs
+explicit reviewed installation migration. The older task-lifecycle and workflow-state specs
 describe that compatibility path. A Task must never receive both legacy status
-and Delivery phase writes. Global legacy retirement awaits actual matching consumer
-and migration evidence; the presence of schema-2 code is insufficient.
+and Delivery phase writes. Global legacy retirement is future breaking-release
+work outside #31, with public replacement/version guidance and its own cutover
+proof. Upstream schema-2 acceptance has no downstream adoption or joint gate.
 
 First-install onboarding under the exact bundled `native-delivery-v1` workflow
 creates its explicit guideline scope and a `manual` Delivery before Planning;
@@ -179,7 +180,8 @@ a ledger merely to retain every historical Check retry.
 Guru installed/private migration evidence, external marketplace workflow
 changes and the release matrix are separate owner boundaries. Report tests,
 controlled installation evidence, remote integration and release evidence
-independently. Missing joint evidence never becomes a PASS.
+independently. Actual downstream integration is outside #31 acceptance; it is
+neither required nor claimed by upstream controlled interface tests.
 
 ## Rework publication and carrier regressions
 

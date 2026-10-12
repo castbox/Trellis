@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { collectPlatformTemplates } from "../../src/configurators/index.js";
+import { injectPullBasedPreludeToml } from "../../src/configurators/shared.js";
 import { seedDeliveryContext } from "./delivery-fixture.js";
 import injectPlugin from "../../src/templates/opencode/plugins/inject-subagent-context.js";
 
@@ -10,6 +12,116 @@ const templates = path.resolve(import.meta.dirname, "../../src/templates");
 const python = process.platform === "win32" ? "python" : "python3";
 const hosts = ["claude", "codex", "opencode"] as const;
 type Host = (typeof hosts)[number];
+
+const pullPlatforms = [
+  { platform: "gemini", agentPath: ".gemini/agents/" },
+  { platform: "qoder", agentPath: ".qoder/agents/" },
+  { platform: "copilot", agentPath: ".github/agents/", suffix: ".agent.md" },
+] as const;
+
+function pullPrelude(content: string): string {
+  const start = content.indexOf("## Required: Load Trellis Context First");
+  if (start < 0) throw new Error("Generated agent has no pull prelude");
+  const end = content.indexOf("\n---\n", start);
+  if (end < 0) throw new Error("Generated prelude has no closing separator");
+  return content.slice(start, end);
+}
+
+describe("generated pull checker context profiles", () => {
+  it.each(pullPlatforms)(
+    "$platform permits Task-scope quality before formal Delivery loading",
+    ({ platform, agentPath, ...options }) => {
+      const suffix = "suffix" in options ? options.suffix : ".md";
+      const content = collectPlatformTemplates(platform)?.get(
+        `${agentPath}trellis-check${suffix}`,
+      );
+      if (!content) throw new Error("Missing generated checker");
+      const prelude = pullPrelude(content);
+      expect(prelude).toContain("quality is the default");
+      expect(prelude).toContain("No selected Delivery is required");
+      expect(prelude).toContain("TaskKey and accepted_scope");
+      expect(prelude).toContain("caller-supplied quality/evidence inputs");
+      expect(prelude).toContain(
+        "Do not load root design/implement or manifests",
+      );
+      expect(prelude).toContain("binding/runtime/stale errors never downgrade");
+      expect(prelude).toContain(
+        "explicit dispatch profile field or whole line",
+      );
+      expect(prelude).toContain("DeliveryKey/generation, current candidate");
+      expect(prelude).toContain("validated planning_root");
+      expect(prelude).toContain("read-only");
+      expect(prelude).toContain("retained legacy Task");
+      expect(prelude).toContain("<task-path>/check.jsonl");
+      expect(prelude).not.toContain("Missing/stale selection is an error");
+      // These rules must be in the prelude itself, before the source agent's
+      // legacy-loading and self-fix prose, rather than relying on a later override.
+      expect(content.indexOf("No selected Delivery is required")).toBeLessThan(
+        content.indexOf("# Check Agent"),
+      );
+    },
+  );
+
+  it.each(pullPlatforms)(
+    "$platform implementation still requires selected Delivery planning",
+    ({ platform, agentPath, ...options }) => {
+      const suffix = "suffix" in options ? options.suffix : ".md";
+      const content = collectPlatformTemplates(platform)?.get(
+        `${agentPath}trellis-implement${suffix}`,
+      );
+      if (!content) throw new Error("Missing generated implementer");
+      const prelude = pullPrelude(content);
+      expect(prelude).toContain("Implementation requires a selected Delivery");
+      expect(prelude).toContain("DeliveryKey/generation");
+      expect(prelude).toContain("validated planning_root");
+      expect(prelude).toContain("Missing/stale selection is an error");
+      expect(prelude).toContain("never root-artifact fallback");
+      expect(prelude).toContain("<task-path>/implement.jsonl");
+      expect(prelude).not.toContain("No selected Delivery is required");
+      expect(prelude).toContain("retained legacy Task");
+    },
+  );
+
+  it.each(["implement", "check"] as const)(
+    "shared TOML prelude insertion preserves the %s context boundary",
+    (role) => {
+      const content = collectPlatformTemplates("codex")?.get(
+        `.codex/agents/trellis-${role}.toml`,
+      );
+      if (!content) throw new Error("Missing generated Codex agent");
+      // Codex currently uses its own marker-gated fallback. Exercise the
+      // exported shared TOML insertion path without claiming collector use.
+      const prelude = pullPrelude(injectPullBasedPreludeToml(content, role));
+      expect(prelude).toContain(
+        role === "check"
+          ? "No selected Delivery is required"
+          : "Implementation requires a selected Delivery",
+      );
+      expect(prelude).toContain(`<task-path>/${role}.jsonl`);
+    },
+  );
+
+  it("actual Codex marker-gated fallback keeps quality separate from formal dispatch", () => {
+    const checker = collectPlatformTemplates("codex")?.get(
+      ".codex/agents/trellis-check.toml",
+    );
+    const implementer = collectPlatformTemplates("codex")?.get(
+      ".codex/agents/trellis-implement.toml",
+    );
+    if (!checker || !implementer) throw new Error("Missing Codex agents");
+    expect(checker).not.toContain("Required: Load Trellis Context First");
+    expect(checker).toContain("including noDelivery");
+    expect(checker).toContain("Root design/implement or manifests");
+    expect(checker).toContain("binding/runtime errors fail closed");
+    expect(checker).toContain("Only an explicit dispatch");
+    expect(checker.indexOf("For schema-2 `quality`")).toBeLessThan(
+      checker.indexOf("Trellis Context Loading Protocol:"),
+    );
+    expect(implementer).toContain(
+      "missing/stale Delivery selection stops implementation",
+    );
+  });
+});
 
 function snapshot(root: string): Map<string, string> {
   const files = new Map<string, string>();

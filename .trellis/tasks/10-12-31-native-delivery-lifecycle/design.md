@@ -1,6 +1,6 @@
 # Task/Delivery contract design
 
-Status: Planning accepted; D1 implementation in progress. Requirement authority is `prd.md` / Trellis #31. Evidence and baseline anchors are under `research/`. This document records the accepted design; the shipped `packages/cli/src/templates/trellis/delivery-contract.md` and versioned SDK types define the implemented public interface. D2 entry conditions remain pending.
+Status: Upstream D1/D2 increments delivered in PR #32/#33; acceptance scope revised by the human on 2026-10-13 to independent upstream delivery without downstream or joint gates. Requirement authority is `prd.md` / Trellis #31. Evidence and baseline anchors are under `research/`. This document records the accepted design; the shipped `packages/cli/src/templates/trellis/delivery-contract.md` and versioned SDK types define the implemented public interface. Legacy global SDK/execution retirement is separately scoped future breaking-release work. This revision changes acceptance ownership, not public runtime types or transition semantics.
 
 ## 1. Source design disposition
 
@@ -189,17 +189,17 @@ Reopen requires explicit owner action for the same Task identity and its unique 
 
 ### 8.1 Compatibility window
 
-Use two substantive staged Deliveries under this Issue (see `implement.md`), not a large tree of narrow tasks:
+The two substantive upstream increments under this Issue (see `implement.md`) are:
 
 1. Interface/runtime candidate: expose the new contract at explicit `/task/v2` and ship Delivery-aware opt-in native runtime/templates. Existing `/task` and existing un-migrated installed records remain version-1 authority during the finite window. Each Task is either old or new; it is never dual-written. No current workflow is silently replaced.
-2. Cutover/retirement: after reviewed migration and actual consumers are ready, switch the current `/task` exports, factories and default native installation to schema 2, remove inferTaskPhase/TaskPhase from the current API, and stop ordinary readers/writers accepting old execution shape. `/task/v2` may remain a version-identifying alias; old schema recognition lives only in explicitly historical/migration code.
+2. Reviewed migration/native default: provide plan-2.0 old-install migration and make fresh native installations use schema 2 / Delivery API 1.0. Schema-2 consumers query Delivery and reject old selected records. Preserve legacy `/task`, plan 1.0 and explicit legacy workflow as isolated compatibility paths. Global `/task` replacement and inferTaskPhase/TaskPhase/legacy execution retirement belong to a separate future breaking-release scope, not this D2 or #31 acceptance.
 
 Package versions remain Core/CLI lockstep. Actual candidate version/commit is assigned by the implementation/release owner; do not freeze an uncreated release number in this plan. During the window, schemas are explicitly selected by versioned API/installation declaration, not best-effort field inspection or a reader fallback. Old installed clients stay pinned until their owner migrates them.
 
 New native installations can use the complete new model before Guru integration completes. An installation with a custom/marketplace workflow can switch only when its owner supplies a matching runtime declaration and migration consumer. `init`, `update`, workflow switch/apply and migration preflight must reject incompatible combinations before replacing files. For an old user-managed workflow, preserve content and emit an explicit incompatibility diagnosis rather than activate an unreachable native fallback. Upstream cannot promise to change Guru's installer; #531 owns its preflight/apply side, while Trellis supplies queryable version/contract facts.
 
 Fresh no-flag initialization adopts bundled `native-delivery-v1` independently of
-the destructive retirement gate below. During this staged window, explicit
+future global breaking retirement. During this staged window, explicit
 `native` identifies the named legacy compatibility workflow; it is not the new
 installation default. Existing no-explicit-workflow reinitialization preserves
 the actual installed workflow and its managed/user ownership, including managed
@@ -209,7 +209,7 @@ the retained undeclared compatibility installation. Explicit mismatches and
 malformed/unsupported declarations fail before writes. Declaration-based format
 selection never supplies scope acceptance, a Delivery or semantic gate success;
 custom declared workflows continue to receive a Task-only bootstrap. Current
-SDK/legacy execution retirement remains pending under the conditions below.
+SDK/legacy global retirement is outside #31, with the separate obligations below.
 
 The bundled optional Linear hook follows the same schema-2 boundary: a Task
 start is selection only and performs no external state or description mutation.
@@ -220,7 +220,7 @@ Task IO before external calls, rejecting invalid aggregates without side effects
 Legacy mappings remain explicit compatibility behavior. Controlled verification
 uses a fake client exclusively; this Task authorizes no real external messages.
 
-Retire the old execution/API path only after: new native entry/phase/result/migration tests pass; a consumable Guru candidate declares and actually consumes the same API; representative old-install cutover is proven; public breaking-change guidance identifies SDK replacements and version incompatibilities. Joint evidence is required for paired acceptance, not Guru Issue CLOSED. If those conditions are pending, the interface/native capability can be delivered and reported, but destructive compatibility retirement remains pending. Never keep permanent status/Delivery dual writes.
+For #31, accept the schema-2 native default, versioned `/task/v2` API, reviewed old-install migration, controlled custom-workflow ownership and version diagnosis using upstream-owned evidence. No Guru candidate, downstream readiness or joint evidence is a completion prerequisite. Retain `/task`, plan 1.0 and explicit legacy workflow as isolated compatibility paths; schema-2 installations cannot execute their old records or double-write authority. Global SDK replacement and destructive legacy retirement belong to a future breaking-release scope that must independently publish replacements/version incompatibilities and prove native migration plus affected-consumer cutover. No dependency on #531 is created.
 
 ### 8.2 Migration plan 2.0
 
@@ -255,8 +255,9 @@ The aggregate is simpler than separate Task/Delivery ledgers; closed APIs are na
 
 The human-authorized completion goal requires two consecutive independent whole
 Issue reviews without confirmed defects or missing required evidence on the
-same stable candidate. D1 correctness does not close D2 retirement/migration
-or the matching Guru installed boundary. Review records remain evidence, not
+same stable candidate. The 2026-10-13 revision accepts upstream native/default/migration and interface
+behavior only. Global legacy retirement and actual Guru installed evidence are
+outside this scope; they cannot invalidate an otherwise complete upstream round. Review records remain evidence, not
 another lifecycle authority; current source Task is not silently migrated.
 
 ### 10.1 Hook identity continuity
@@ -354,9 +355,9 @@ The explicit legacy SDK migration endpoint retains plan-1.0 schemas and behavior
 independently of future current `/task` exports. Schema-2 inventory and carriers
 must read real Task/Delivery projections, including OpenCode SessionStart and
 queue/child progress; no pseudo Task development status for schema 2. This work
-can be prepared and validated in controlled native installations now. Default
-retirement remains a separate activation after the accepted matching-consumer
-readiness boundary in section 8; missing Guru evidence is not silently waived.
+can be prepared and validated in controlled native installations now. Global SDK/legacy
+retirement is future breaking-release work outside #31 as specified in section 8;
+actual Guru integration is neither claimed nor required by this upstream scope.
 
 Under an already installed valid schema-2 workflow declaration, retained old
 active data is historical-only for ordinary reapply: reserve its valid portable

@@ -1230,13 +1230,31 @@ Platform's hook either does not expose a sub-agent-start event or cannot inject 
 
 #### Active task discovery on class-2 platforms (issue #225)
 
-Sub-agents on class-2 platforms run as **separate sessions** with their own session ids, and no session identity reaches them: the parent's key is not exported into the child, and on most platforms no session env var exists to export in the first place (see `### Active Task Resolution`). So the session-scoped resolver returns `None` for the sub-agent's own session key. To bridge that gap the prelude (`buildPullBasedPrelude` in `src/configurators/shared.ts`) tells sub-agents to discover the active task in this order:
+A dispatched child may have no parent session identity. `buildPullBasedPrelude`
+in `src/configurators/shared.ts` must resolve the exact Task and its workspace,
+then load role/profile context without inventing a selection:
 
-1. **`Active task: <path>` line in dispatch prompt** — primary path. The main agent is required by `workflow.md`'s `[workflow-state:in_progress]` breadcrumb to prefix every sub-agent dispatch (including `trellis-research`, since 0.5.8) with `Active task: <path from task.py current>`. The breadcrumb fires on every `UserPromptSubmit` while `task.json.status == in_progress`, so the rule is reinjected per turn.
-2. **`task.py current --source`** — secondary. Resolves via the session-scoped runtime store. Returns `Source: session:<key>` on a precise match, or `Source: session-fallback:<key>` when the runtime contains exactly one session file (single-window inference; see `_resolve_single_session_fallback` in `active_task.py`). Returns nothing when ≥2 session files exist — refuses to guess across windows so 04-21's multi-session isolation contract holds.
-3. **Ask the user** — terminal fallback when both above yield nothing.
+1. Use `Active task: <path>` plus explicit Task workspace; an absolute managed Task path identifies its workspace, a relative hint alone does not.
+2. If workspace identity is missing, use successful, non-stale `task.py current --json` fields `resolved_task_path` and `task_workspace_root`. A conflict/error is reconciled by the main agent; never join a hint to the invoking checkout or choose from inventory. `current --source` is human-readable inspection only. Schema-2 identity must not be inferred from a single-session fallback.
+3. If the exact workspace remains unavailable, ask the main agent for it. No replacement Task or Delivery is created or selected.
 
-When changing the prelude, the dispatch protocol, or the `session-fallback` semantics, all three layers must stay aligned. `regression.test.ts > [issue-225]` and `regression.test.ts > [session-fallback]` are the contract tests; `templates/trellis.test.ts > [issue-225]` asserts the workflow.md breadcrumb still carries the protocol. Manual e2e runbook lives in the historical task `.trellis/tasks/<archive>/05-04-fix-codex-subagent-missing-active-task/manual-verify.md`.
+The checker prelude itself separates default/explicit quality from formal
+`delivery_check` / `delivery_review`. Schema-2 quality reads verified TaskKey,
+accepted scope and caller quality/evidence inputs/specs even with no Delivery;
+root design/implement/manifests are not substitute slice planning. Implementation
+and explicit formal profiles require exact DeliveryKey, current candidate,
+validated planning_root and applicable owner obligations. Stale/invalid identity
+never downgrades into quality. Context consumers record no lifecycle outcomes;
+formal full Review remains read-only. Retained legacy loading keeps its root
+artifact/JSONL behavior. These rules must precede context-loading steps rather
+than depend on a later carrier override.
+
+Generated Gemini/Qoder/Copilot ingress and the shared Markdown/TOML insertion
+helpers need regression coverage for these profiles. Actual Codex collection
+uses its native marker-gated TOML fallback; helper tests do not prove helper
+insertion into Codex output. Hook/extension quality-vs-formal tests supply
+executable noDelivery/stale/missing-selection evidence. Historical issue-225 and
+session-fallback regression tests continue to guard retained legacy discovery.
 
 ### Class-3 — Extension-backed (2 platforms)
 
@@ -1386,14 +1404,21 @@ staff confirmations, Claude Code canary test) lives in the archived task:
 
 ### Scope / Trigger
 
-Task planning is artifact-driven:
+The root planning and Task-start lifecycle below describe retained legacy
+compatibility. Schema-2 Task creation owns overall scope PRD only; each Delivery
+owns its planning_root and manifests, and Task start is selection only. Default
+checker quality uses exact Task/scope and caller inputs/specs even without a
+Delivery; implementation and explicit formal Check/Review require exact selected
+Delivery planning and owner inputs. See [Delivery Lifecycle](./delivery-lifecycle.md).
+
+Retained legacy Task planning is artifact-driven:
 
 - `prd.md` is created by `task.py create` and stores requirements, constraints, and acceptance criteria.
 - `design.md` is required for complex tasks and stores technical design, boundaries, data flow, contracts, and tradeoffs.
 - `implement.md` is required for complex tasks and stores execution order, checklist, validation commands, and rollback points.
 - `implement.jsonl` / `check.jsonl` are spec and research manifests for implement/check context. They do not replace `implement.md`.
 
-Lightweight tasks may be PRD-only. Complex tasks must have `prd.md`, `design.md`, and `implement.md` before `task.py start` moves the task into implementation.
+Retained legacy lightweight tasks may be PRD-only. Their complex tasks require `prd.md`, `design.md`, and `implement.md` before Task start activation. Schema-2 planning acceptance belongs to the Delivery Planning owner; Task start never activates implementation.
 
 ### Lifecycle
 
@@ -1615,7 +1640,7 @@ python3 ./.trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
 | Unlink                | `task_store.py`                               | `remove-subtask` removes the child from the parent's `children` and clears the child's `parent`.                                  |
 | Parent responsibility | workflow / skills                             | Parent task owns source requirements, task map, cross-child acceptance, and final integration review.                             |
 | Child responsibility  | workflow / skills                             | Child task owns one independently verifiable deliverable, including its own dependencies and acceptance criteria.                 |
-| Archive progress      | `script-conventions.md` / `children_progress` | Parent `children` is historical. Archiving a child does not prune it from the parent; missing active children count as completed. |
+| Archive progress      | `script-conventions.md` / `children_progress` | Parent `children` is historical; archive never prunes it. Only legacy compatibility may count missing active children as complete. Schema 2 requires an actual matching current-generation/scope Completion result; missing/archive presence/legacy status never prove completion. |
 
 ### Good / Base / Bad Cases
 
@@ -1948,12 +1973,15 @@ index on demand after the task and phase are known.
 
 ### Task Status Guidance
 
-`SessionStart` reports task status and artifact presence, but it does not
-approve implementation. Planning tasks stay behind the review gate: lightweight
-tasks may be PRD-only, while complex tasks need `prd.md`, `design.md`, and
-`implement.md` before `task.py start`.
+For retained legacy Tasks, `SessionStart` reports status and root artifact
+presence, never implementation approval. Their lightweight tasks may be PRD-only;
+complex legacy planning needs root PRD/design/implement before Task start.
+Schema-2 context reports exact Task/nullable Delivery, public phase and applicable
+result availability under the active workflow; Task start selects only. Delivery
+Planning owns acceptance and its planning_root; quality-only checks never turn
+Task selection or artifact presence into implementation approval.
 
-For `in_progress` tasks, `SessionStart` points the AI to the per-turn
+For retained legacy `in_progress` tasks, `SessionStart` points the AI to the per-turn
 `<workflow-state>` block and restates the implementation/check context order.
 Dispatch-vs-inline behavior belongs to workflow-state, skills, and agent
 definitions, not to a large SessionStart instruction block.

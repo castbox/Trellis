@@ -1,19 +1,19 @@
 # Implementation and verification plan
 
-Status: Planning accepted; D1 is committed and its earlier interface candidate merged in PR #32. Subsequent lifecycle/carrier repairs and explicit plan-2 migration have passed source and controlled installed validation; their upstream check/commit/delivery closeout is now being prepared on `codex/31-native-delivery-lifecycle`. The human directed upstream to perform its own closeout before waiting for Guru #531 joint acceptance. P4 normal-default retirement and P5 exact-pair whole acceptance remain pending under their existing prerequisites. This does not reduce accepted scope or authorize source Issue closure. The Task is activated under the installed legacy contract; its own data has not been migrated. Scope and ACs are in `prd.md`; design is in `design.md`, with the implemented public interface in the shipped Delivery contract and versioned types. Execution/verification evidence is under `research/`.
+Status: Human scope revision accepted on 2026-10-13. D1/D2 upstream increments merged in PR #32/#33; actual final source `bfff3db2` passed Ubuntu/Python 3.9 CI and matches main `ad56d408` tree. #31 has no prerequisite relationship with #531, requires no joint acceptance and does not wait for downstream evidence. Global unversioned SDK/legacy execution retirement is a future breaking-release workstream outside this Task. Independent upstream acceptance still requires all revised PRD ACs and two complete clean review rounds. The retained legacy Task/session is not silently migrated, completed or archived.
 
 ## 1. Delivery policy and ownership
 
-Use a staged policy with two substantive upstream Deliveries under this one Issue-scoped Task. The breaking migration has one coherent accepted scope; do not create dozens of narrow lifecycle tasks. If a later product or owner boundary genuinely becomes an independent deliverable, review that split first.
+Use a staged policy with two substantive upstream Deliveries under this one Issue-scoped Task. The independently accepted upstream schema-2 introduction and reviewed migration have one coherent scope; do not create dozens of narrow lifecycle tasks. If a later product or owner boundary genuinely becomes an independent deliverable, review that split first.
 
 | Slice | Entry | Independent output / exit | Remaining work |
 | --- | --- | --- | --- |
-| D1: public contract, runnable runtime and opt-in native adoption | Reviewed plan, fresh canonical baseline and applicable implementation authorization. Existing public path remains usable. | Versioned `/task/v2` contract, deterministic TS/Python runtime, native owner entries/continuation, representative interface mapping fixtures and a usable native single/multi-Delivery sample. Provide an installable exact candidate through the separately authorized delivery process. | Current/default schema cutover, reviewed old-install migration, legacy consumer retirement, actual Guru integration and joint evidence. |
-| D2: migration, default cutover and legacy retirement | D1 candidate is consumed; selected migration/compatibility inputs are current and actual custom/Guru consumer readiness is established. | Explicit migration and compatibility preflight, current `/task`/factory/native default switch, complete source/template/platform/dogfood/spec consumer retirement and relevant old-install evidence. No Task development phase remains in new normal execution. | Joint evidence if still pending; externally owned profile/template or release evidence. Code gaps produce a reviewed additional slice, never silent scope reduction. |
+| D1: public contract, runnable runtime and opt-in native adoption | Reviewed plan, fresh canonical baseline and applicable implementation authorization. Existing public path remains usable. | Versioned `/task/v2`, deterministic TS/Python runtime, native owners and actual native single/multi-Delivery evidence; delivered in PR #32. | Upstream migration, fresh default and carrier repairs delivered by D2. |
+| D2: reviewed migration and fresh native default | Upstream-owned native/custom migration facts and explicit installed version declarations; no downstream adoption prerequisite. | Plan-2.0 migration/rollback/reapply, native default, schema-2 consumers and platform/context ownership; delivered in PR #33. Legacy `/task` and explicit legacy workflow remain isolated. | Final revised-scope review and Completion judgment. |
 
-Final Task Completion requires all PRD ACs, D1/D2 facts, finite compatibility retirement and joint evidence bound to the same upstream/Guru candidates. Evidence-only completion may follow without another Delivery. Neither interface-candidate delivery nor both upstream merges automatically complete the Task or close #31. Software publishing, source Issue disposition, archive and resource cleanup remain separate owners/actions.
+Final Task Completion requires the revised PRD ACs and upstream D1/D2 facts. Downstream adoption, joint evidence and future destructive SDK/legacy retirement are outside this acceptance. Neither merges nor scope revision automatically complete the Task or close #31. Software publishing, source disposition, archive and cleanup retain separate owners/authorization.
 
-Trellis #31 owns Core/CLI/Python schema/runtime, native owners and platform entry/context adoption, upstream migration and public compatibility checks. Guru #531 owns Guru author/gates/projections/private transactions/history migration/installed scenarios. #292 and #530 are refreshed and consumed through that owner. Original business owners retain #149/#444/#155 actual workspace recovery and provider implementation. Marketplace/docs-site maintainers own their repositories/gitlinks; the release owner retains the full release matrix.
+Trellis #31 owns Core/CLI/Python schema-2 runtime, native owners/platform context, upstream migration and public compatibility diagnostics. Guru owns its adapters/gates/private migration/installed scenarios independently; #531 is a reference, not an execution or acceptance dependency. Original business owners retain #149/#444/#155 recovery and provider work. Marketplace/docs-site maintainers own their repositories/gitlinks; the release owner retains the full release matrix.
 
 ## 2. Ordered implementation checklist
 
@@ -23,7 +23,7 @@ Trellis #31 owns Core/CLI/Python schema/runtime, native owners and platform entr
 - [x] Inspect Git status, current task/session, attached worktrees and repository topology; preserve unrelated files and the #23 task. Implementation uses local branch `codex/31-native-delivery-lifecycle`; no new worktree or unrelated migration.
 - [x] Read package specs and `trellis-before-dev` context. Implementation/check uses Trellis subagents per current workflow after activation; each dispatch begins `Active task: .trellis/tasks/10-12-31-native-delivery-lifecycle` and respects native context injection/child-side loading. The validated manifests reference large `platform-integration.md`, `script-conventions.md` and `quality-guidelines.md`; automatic injection can truncate them and hit the total payload cap. Each child must explicitly read the complete matching sections from the canonical files, and read any deferred artifact/index entry from disk. Do not enlarge global injection settings or treat truncated injection as complete guideline loading.
 - [x] Promote reviewed design contracts into one upstream-owned durable public document and versioned schema/API definitions, including Task/Delivery/candidate/result identity, legal transitions, owner roles, query union, native profile conditions, result recovery and migration errors.
-- [ ] Validate actual Guru producer -> proposed input -> output -> consumer fixtures with the observed public schemas. D1 shared mapping fixtures pass in both runtimes; actual Guru owner review/consumption remains pending before D2 runtime cutover. A fixture is interface proof only. Do not message another chat or mutate Guru merely as a planning side effect.
+- [x] Validate upstream-owned producer -> public input -> output -> consumer mapping fixtures in both runtimes against observed public schemas. Fixtures establish interface behavior only; actual downstream owner review/consumption is out of scope and is not a cutover gate. Do not message or mutate Guru.
 - [x] Verify finite compatibility and package/API-version declarations against the actual source/installed candidates. Decide the actual candidate package version with the release/implementation owner without publishing it.
 
 Exit: contract is reviewable, backward incompatibility is explicit, and no unknown owner or unmapped required result blocks D1 design. Scope/design changes return to the relevant plan owner; do not use an old generic confirmation for a changed plan.
@@ -59,7 +59,7 @@ Exit: D1 is an independent usable upstream interface/runtime/native candidate, w
 - [x] Make init/update/workflow-switch/migrate preflights diagnose incompatible API/workflow combinations before writes. Existing custom content remains preserved; a `.new` sidecar is never active runtime input. Guru apply/upgrade preflight is #531-owned and must consume the same declared contract.
 - [x] Add explicit historical archive and deferred-record handling without changing identity reservations or allowing old records as new lifecycle candidates. Reopen requires reviewed migration/current authority and preserves history.
 - [x] Verify preview zero writes; raw-byte/mode preservation, stale preflight, exact same-plan resume, ordinary failure recovery and caller-owned rollback. Use exact backup/write sets; no reset, resource deletion or private Guru parsing.
-- [ ] Request/consume the actual matching Guru candidate compatibility result before the destructive legacy retirement point; do not wait for #531 CLOSED and do not pretend a schema fixture is installed proof.
+- Compatibility boundary: retain the explicit legacy paths and reject unsupported declared combinations. Global destructive retirement and actual Guru compatibility are outside this Task; no downstream result is requested or required.
 
 Exit: selected old installation can be migrated with reviewable preconditions and restored before new business writes; unsupported marketplace combinations fail before replacement. New projects remain usable independently.
 
@@ -80,40 +80,22 @@ scope/Delivery. Custom workflow ownership remains Task-only even when template
 bytes match. Red/green regression and independent source Check are recorded in
 `research/goal-review-loop.md`; the refreshed package must reproduce the fix.
 
-### P4 — D2 all normal consumers and retirement
+### P4 — D2 native default and schema-2 consumer adoption
 
-- [x] Adopt the complete native Delivery workflow for fresh no-flag init before
-  paired retirement readiness; preserve actual legacy/custom/native workflow
-  and receipt ownership on no-explicit-workflow reinit. Omitted Python create
-  schema follows the installed validated declaration, never Task status or
-  prospective template content. Explicit `native` remains a named temporary
-  legacy compatibility entry. This independently usable default slice does not
-  retire current `/task` or remove old installed execution before its gate.
-  Source red/green and independent receipt reproduction are documented in
-  `research/goal-review-loop.md`; final full/package evidence is recorded there
-  separately and is required before this candidate is delivered.
-- [x] Correct the optional bundled Linear example for schema-2 selection and
-  current Completion: no external start mutation, guarded archive mapping and
-  canonical protected metadata IO. Verify configured actual Task start and
-  manual hook boundaries using a fake client; retain explicit legacy mappings.
-  Source 22-case hook and 34-case related regression evidence is available;
-  final package reproduction remains an explicit upstream closeout obligation.
-- [ ] Switch current Core `/task` type/factory/schema/exports to v2 and retire inferTaskPhase/TaskPhase/status defaults, field ordering and normal writer dependencies. Retain old recognition only at explicit historical/migration boundaries with documented endpoint.
-- [ ] Migrate task.py create/current/list/queue/tree/archive/start/finish, all task JSON readers/writers and bootstrap factories. Commit/pr_url/completedAt have explicit historical dispositions; no hidden one-Delivery assumption remains.
-- [ ] Migrate shared Python hooks, Codex/Copilot SessionStart, OpenCode JS ephemeral injections, Pi/OMP extension prompts, Snow hooks, pull preludes, statusline/other actual consumers and context artifacts. Use registry-driven coverage for all declared platform entry paths. Keep inline execution hints out of persisted phase.
-- [ ] Update common Skills, generated agents/runtime agents, bundled meta references and owned dogfood copies. Inventory template and generated runtime differences rather than patch a subset.
-- [ ] Coordinate external marketplace/native/TDD/channel workflow compatibility under their owner boundaries. Do not modify/advance submodules or claim their compatibility without actual corresponding evidence.
-- [ ] Update durable specs before final full-scope Check; converge the public contract and migration/deprecation notes. Run all affected-package checks, regression tests and template parity tests.
-- [ ] If self-hosting this task under the new runtime, first display its exact reviewed old-record/artifact/session projection, back it up and obtain the required migration authority. Never bulk-migrate unrelated repository tasks or change the active task early merely to make tests pass.
+- [x] Fresh no-flag init uses `native-delivery-v1`; implicit reinit preserves actual legacy/custom/native ownership. Omitted create schema follows the validated installed declaration. Explicit `native` remains an isolated legacy compatibility entry; `/task/v2` remains the schema-2 SDK endpoint.
+- [x] Schema-2 Task create/current/list/queue/tree/archive/start, shared Python/JS/extension/pull carriers, common Skills, agents and bundled references consume Delivery projections and current workflow ownership. Retained legacy readers/writers are compatibility-specific; they never execute schema-2 records or double-write authority.
+- [x] Native/custom workflow preservation and plan-2.0 migration prove preview, raw bytes/modes, stale refusal, resume, rollback/reapply and representative packaged carrier behavior; registry-derived coverage covers all 22 declared platforms at the documented asset/executable layers.
+- [x] The optional Linear example uses schema-2 selection/current Completion, no automatic external start write and protected metadata IO. Its actual Ubuntu 22-case fake-client suite passes after the interpreter fix in PR #33; external Linear service behavior is not claimed.
+- [x] Upstream public contract/specs document versioned SDK replacements, API/schema diagnosis, single authority and migration. Scope revision removes downstream/joint completion gates from active docs/templates while preserving isolated compatibility.
+- Deferred/out of scope: global current `/task` replacement, inferTaskPhase removal from the legacy SDK, destructive legacy execution retirement, external marketplace repository conversion and self-hosting migration of this retained Task. A future breaking release must inventory affected consumers and prove its own cutover; no #531 progress gate is attached here.
 
-Exit: new normal runtime no longer writes/reads Task development status; all declared entry paths use the same Delivery projection and active-workflow ownership. Legacy retirement conditions from design Section 8 are satisfied or the cutover remains pending.
+Exit: fresh/default schema-2 runtime uses Delivery, and controlled old-install migration plus unsupported-version diagnostics are demonstrated. Compatibility paths are explicitly separated and are not falsely claimed retired.
 
-### P5 — Joint evidence and whole-task finish
+### P5 — Independent upstream acceptance and whole-task finish
 
-- [ ] Consume joint evidence from Guru #531 pinned to the exact upstream API/candidate and Guru candidate; retain native D1/D2 evidence under the same identities. Original-source business-session recovery remains unclaimed without original-worktree proof.
-- [ ] Verify all ACs with actual owner/location/evidence layer and uncertainty. Required external evidence missing means pending/blocking for that AC, not PASS.
-- [ ] Run final full-scope Check and exact committed full Review for any additional code changes. Evidence-only arrival does not require a new Delivery/commit.
-- [ ] Invoke the current workflow's actual whole-task Completion owner. Source disposition, archive/bookkeeping and cleanup follow their own later contracts/authorization; do not close #31 from a delivery PR keyword.
+- [ ] Verify every revised AC against exact upstream source/API/schema/package identities and actual observation layers. External integrations and software release remain disclosed out-of-scope boundaries, not required missing evidence.
+- [ ] Complete two consecutive independent whole-scope clean reviews on the same final candidate. A finding resets the streak; fixes require fresh review. Scope removal is recorded as a human decision, never relabeled as implementation of a removed obligation.
+- [ ] Apply actual whole-task Completion/finish judgment under the retained workflow after required work is complete. Source disposition, archive/bookkeeping and cleanup require their own later authority; a delivery PR keyword never closes #31.
 
 ## 3. Verification matrix
 
@@ -129,9 +111,9 @@ Exit: new normal runtime no longer writes/reads Task development status; all dec
 | Migration, AC9 | Old active+archive+session+multi-PR-shaped public facts; dry-run snapshot, stale bytes, same-plan resume, modes and exact rollback. Include current/deferred/invalid selected records and partial/missing artifacts. | Guru private migration and original business worktrees are outside upstream execution. |
 | Native/custom profile dispatch, AC10 | Actual native local/manual/Git-free sample; generated direct Skill ingress against custom owner declaration; quality Check no phase mutation; current API mismatch fails closed. | Representative Guru installed gate routing owned by #531. |
 | Platform/init/update/reapply, AC11 | Registry-generated source/template/argv/envelope contract coverage; executable shared Python + OpenCode JS + Pi/OMP/pull/Snow representative carriers as applicable; controlled packaged init/migrate/reapply for native and custom workflow. | Missing external host/session is UNVERIFIED, not PASS. Full multi-host release matrix remains release-owner work. |
-| Joint continuity, AC12 | Upstream evidence manifest/notes bind candidate SHA, package/API/schema, native sample and referenced Guru result locators to the same pair. | #531 supplies installed evidence and sole #149/#444/#155 verification; release owner supplies release matrix separately. |
+| Upstream provenance/compatibility, AC12 | Bind exact source/package/API/schema to native and controlled custom samples; verify isolated legacy replacements/migration/version diagnosis. | Actual Guru/private business integration and joint evidence are outside #31. |
 
-Every acceptance evidence entry records owner, candidate/API identity, scenario, actual observation layer (code/test, static, installed, external), result, evidence locator and any unverified boundary. Use the existing task evidence/artifacts, not a new product ledger or tracked authorization/gate report. Native and Guru evidence are referenced and reused rather than rerunning each other's suites.
+Every acceptance evidence entry records owner, candidate/API identity, scenario, actual observation layer (code/test, static, installed, external), result, evidence locator and any unverified boundary. Use the existing task evidence/artifacts, not a new product ledger or tracked authorization/gate report. Downstream evidence is not required or relabeled as upstream proof. Historical reports retain their then-current scope; fresh reviews use the revised PRD.
 
 ## 4. Concrete check commands
 
@@ -160,7 +142,7 @@ python3 .trellis/scripts/get_context.py --mode continuation
 
 After implementation, execute the proposed `delivery.py`/v2 operations from design Section 3 in a controlled installed project, not just import-level tests. Pin the actual built/packed package and install context in the evidence. Checks during an implementation-authorized session must report actual observations; planning alone never claims future behavior was verified.
 
-For retirement auditing, use focused `rg` queries for inferTaskPhase, Task phase exports, Task status access/default/writes, commit/pr_url/completedAt and root-only artifact loading across canonical code, templates, platform carriers and specs. Classify every remaining hit: explicit predecessor migration, historical-only reader, an unrelated process/HTTP status, or a defect. A zero broad `status` search is neither expected nor evidence of success.
+For schema-2 consumer auditing, use focused `rg` queries for inferTaskPhase, Task phase exports, Task status access/default/writes, commit/pr_url/completedAt and root-only artifact loading across canonical code, templates, platform carriers and specs. Classify every remaining hit: explicit predecessor migration, historical-only reader, an unrelated process/HTTP status, explicit isolated legacy compatibility, or a defect in schema-2 execution. Global retirement is not this audit's exit. A zero broad `status` search is neither expected nor evidence of success.
 
 ## 5. Risk points and rollback
 
@@ -172,11 +154,11 @@ For retirement auditing, use focused `rg` queries for inferTaskPhase, Task phase
 | Install cutover | New readers with old writer/workflow/extension | Preflight all declared schema/API/profile inputs; block before writes. |
 | Migration execute | Stale raw bytes, wrong Delivery attribution or custom file loss | No preflight writes; caller reviews projection. Same-plan failure recovery accepts only exact old/target bytes; restore backed-up exact paths before new business work. |
 | Archive/reopen | Archive forges completion or prior generation masquerades as current | Require actual bound completion/source disposition; preserve historical bytes/refs and stop on ambiguity. |
-| Cross-repository integration | Parallel #292/#530 evolution or privately unmapped old cycles | Refresh actual owner interfaces through #531; revise thin mapping only; do not patch Guru here. |
+| External workflow version | A declared custom workflow/API combination is unsupported | Diagnose before upstream writes and preserve content; downstream adapter changes belong to their owner and never gate this Task. |
 | Self-hosting/submodules | Broad task migration or unrelated repo/gitlink changes | Inventory exact targets and stop outside owned boundaries; no reset, cleanup or unapproved mutation. |
 
 ## 6. Documentation and review status
 
 Docs strategy: update upstream public contract and affected executable specs before final code Check; task-local plan remains the implementation design source until reviewed changes are promoted. No second Guru contract copy. Include API migration notes, supported/unsupported combinations, finite old-contract exit and evidence ownership in durable upstream docs. External docs-site/marketplace changes are handed to their owner or explicitly scoped before editing.
 
-Planning readiness requires: requirement convergence; all source design commitments mapped; concrete types/closed APIs/phases/native owner conditions; two-repository examples; explicit version/migration/rollback; scenario AC/owner coverage; valid spec/research manifests; and a final artifact presentation. Implementation begins only after reviewed plan acceptance and task activation under the current workflow. Planning authorization alone does not authorize that activation.
+Planning readiness requires: requirement convergence; all source design commitments mapped; concrete types/closed APIs/phases/native owner conditions; upstream interface mapping examples; explicit version/migration/rollback; scenario AC/owner coverage; valid spec/research manifests; and a final artifact presentation. Implementation begins only after reviewed plan acceptance and task activation under the current workflow. Planning authorization alone does not authorize that activation.

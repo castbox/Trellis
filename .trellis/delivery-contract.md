@@ -21,12 +21,15 @@ Reviewed plan-2.0 migration is available through `trellis migrate`; it requires
 explicit caller-owned projections and file decisions, with read-only preview
 and caller-owned backup, resume and rollback. Init, update and readers never
 convert old records, recreate gates or migrate another workflow's private data.
-Global current-SDK and legacy-execution retirement still requires native
-migration evidence, a matching consumer that actually uses this API and public
-breaking-change guidance. A schema fixture or an open/closed Issue is not
-integration evidence. Exact-candidate joint evidence remains required for
-paired acceptance. Core and CLI remain version locked; package publication
-and release qualification are separate from source implementation and acceptance.
+Issue #31 accepts upstream native/runtime, versioned API, reviewed migration,
+controlled custom-workflow contracts and platform evidence independently. It has
+no prerequisite relationship with Guru #531 and requires no joint acceptance.
+Actual downstream integration and private migration are separate owner work.
+Global current-SDK replacement and destructive legacy-execution retirement are
+future breaking-release work outside #31; they require published replacements,
+version guidance and their own migration/affected-consumer cutover evidence.
+Legacy and schema-2 authority remain isolated with no dual writes. Core and CLI
+remain version locked; package publication and release qualification are separate.
 
 ## Identity and artifacts
 
@@ -376,8 +379,9 @@ converge_metadata → mark_ready → ready` remains private. Completion's eviden
 refresh and reactivation validation do not create another Delivery. Guru #292
 and #530 remain their own capabilities; no unmerged fix is assumed here.
 
-Cross-repository acceptance needs both candidates pinned to this same API,
-native single/multi-Delivery evidence, and Guru's actual installed D1/D2,
-rework, clean review, lost-output and closeout evidence. Public mapping fixtures
-prove interface compatibility only. Original business-worktree recovery and
-the full release/platform matrix remain their designated owners' evidence.
+Upstream acceptance binds its own exact source/package/API to native and
+controlled custom-workflow evidence. Public mappings and fixtures prove the
+upstream interface behavior only; they do not claim actual Guru installation,
+private migration or original business-worktree recovery. Those integrations
+remain their designated owners' work and require no joint acceptance for #31.
+The full release/platform matrix remains the release owner's evidence.

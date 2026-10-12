@@ -4,7 +4,9 @@ The private plan's `schema_version` selects the executor. Plan 1.0 retains its
 original predecessor-to-legacy projection through the explicit legacy SDK
 namespace. Plan 2.0 performs the reviewed Task/Delivery cutover described below.
 Implementing migration is separate from retiring the default compatibility path;
-that retirement still requires actual matching consumer readiness.
+global retirement is future breaking-release work outside #31, with its own
+public replacement/version guidance and affected-consumer cutover evidence.
+Upstream migration acceptance does not wait for downstream or joint validation.
 See [Delivery Lifecycle](./delivery-lifecycle.md).
 
 The plan-1.0 one-way executor supports actual core `0.6.x` and
