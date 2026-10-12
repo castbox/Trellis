@@ -32,11 +32,11 @@ import {
 } from "./template-fetcher.js";
 
 /**
- * The id used to refer to the bundled native workflow.
+ * Bundled workflow IDs: named legacy compatibility and fresh-install Delivery.
  *
- * Treated as Trellis-managed for hash-tracking: when this id is selected by
+ * Both are Trellis-managed for hash-tracking: when either ID is selected by
  * `init --workflow` or `trellis workflow`, `.trellis/workflow.md` stays in
- * `.template-hashes.json`. Any other id is user-managed local workflow and
+ * `.template-hashes.json`. Any other ID is user-managed local workflow and
  * must be removed from the hash file (the durable-state contract in
  * design.md "Durable-state contract").
  */
@@ -51,7 +51,7 @@ function deliveryListingEntry(): WorkflowTemplateListing {
   return {
     id: DELIVERY_WORKFLOW_ID,
     type: "workflow",
-    name: "Native Delivery Workflow (opt-in)",
+    name: "Native Delivery Workflow (default for new installations)",
     description:
       "Delivery API 1.0 / Task schema 2.0; explicit migration required for old tasks",
     path: "bundled:trellis/workflow-delivery-v1.md",
@@ -111,9 +111,9 @@ function nativeListingEntry(): WorkflowTemplateListing {
   return {
     id: NATIVE_WORKFLOW_ID,
     type: "workflow",
-    name: "Native Trellis Workflow",
+    name: "Native Trellis Workflow (legacy compatibility)",
     description:
-      "Default Trellis Plan / Execute / Finish workflow bundled with the CLI",
+      "Named legacy Plan / Execute / Finish compatibility workflow; existing installations require explicit migration",
     path: "bundled:trellis/workflow.md",
     source: "bundled",
   };

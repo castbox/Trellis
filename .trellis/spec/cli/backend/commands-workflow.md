@@ -16,6 +16,7 @@ This spec applies when editing:
 
 - `packages/cli/src/commands/workflow.ts`
 - `packages/cli/src/utils/workflow-resolver.ts`
+- `packages/cli/src/utils/workflow-hash-contract.ts`
 - `packages/cli/src/commands/init.ts` workflow-selection code
 - `packages/cli/src/configurators/workflow.ts`
 - `marketplace/workflows/**`
@@ -100,8 +101,8 @@ Marketplace entries use `type: "workflow"` and point to one markdown file:
 
 Required built-ins:
 
-- `native`
-- `native-delivery-v1` (D1 opt-in Task schema 2.0 / Delivery API 1.0)
+- `native` (named legacy compatibility workflow during staged retirement)
+- `native-delivery-v1` (fresh no-flag init default, Task schema 2.0 / Delivery API 1.0)
 - `tdd`
 - `channel-driven-subagent-dispatch`
 
@@ -115,9 +116,12 @@ Ownership contract:
 - Reinitialization without an explicit workflow choice preserves the existing
   workflow's actual ownership. A missing workflow hash stays missing after both
   forced full reinit and add-platform reinit, even when `options.workflow`
-  defaults to `native`. Hash initialization must not adopt retained custom
+  chooses the fresh `native-delivery-v1` default. Hash initialization must not adopt retained custom
   legacy/schema-2 content. Normal and forced update preserve its continuation
   and declared owners; only explicit workflow selection changes this authority.
+- The fresh default does not switch existing managed legacy workflow bytes on
+  no-explicit reinit. Legacy installations retain their actual contract until a
+  reviewed migration; ordinary update still uses that installed declaration.
 - Do not add `workflow.variant` or any other long-lived config field to make
   `trellis update` chase a selected variant. Switching is an explicit project
   action.
@@ -156,10 +160,14 @@ Native source-of-truth contract:
   must match the bundled native continuation body; unrelated dogfood workflow
   guidance remains independently managed.
 - `packages/cli/src/templates/trellis/workflow-delivery-v1.md` owns the bundled
-  opt-in native Delivery workflow. D1 does not activate it in this repository
-  or migrate its existing legacy Tasks automatically. Opt-in install/switch
-  preflights exact installed runtime capabilities and active schema combinations;
-  same package version alone does not prove Delivery API availability.
+  native Delivery workflow, the fresh no-flag init default. Explicit `native`
+  remains the named temporary legacy compatibility workflow; implicit reinit
+  preserves actual installed content and ownership. This repository's current
+  legacy Task/workflow is not automatically activated or migrated. Explicit
+  install/switch preflights exact installed runtime capabilities and active
+  schema combinations; same package version alone does not prove Delivery API
+  availability. Current SDK `/task` and legacy-execution retirement still require
+  matching consumer and migration evidence plus public breaking-change guidance.
 - Marketplace and custom workflow repositories own migration of their workflow
   content to the structural protocol. This root repository must not advance a
   marketplace gitlink merely to make those external workflows valid.
@@ -283,3 +291,9 @@ if (explicitTemplate || !isInteractive()) {
 ```
 
 Only the no-argument interactive picker may prompt for conflict resolution.
+
+Workflow hash ownership is projected by the pure `projectWorkflowHashes` helper:
+bundled IDs track the selected content, and user-managed IDs remove the workflow
+hash while retaining unrelated entries. The command saves that projection only
+after its content write; explicit migration uses the same projection inside its
+reviewed, frozen receipt write set without live receipt rereads.

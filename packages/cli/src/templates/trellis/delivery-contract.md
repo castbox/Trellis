@@ -7,17 +7,26 @@ unique operation owners. A workflow's private transaction is not a public phase.
 
 ## Rollout boundary
 
-This is the opt-in D1 interface/runtime candidate. Legacy `/task`, legacy
-records and the default legacy workflow remain available during the reviewed
-migration window. A Task has one authority: legacy or schema 2, never both.
-Opt-in does not convert old records, recreate their gates, or migrate another
-workflow's private data. Unsupported API/workflow combinations fail before use.
+Fresh no-flag installation defaults to bundled `native-delivery-v1`, using
+Task schema 2.0 / Delivery API 1.0. Existing installations retain their actual
+workflow and ownership on implicit reinitialization; explicit `native` is the
+named temporary legacy compatibility workflow. Current SDK `/task` exports and
+unmigrated legacy execution remain compatibility authority during this finite
+window. A Task has one authority: legacy or schema 2, never both. Omitted
+`task.py create --schema-version` follows the validated actual installed
+declaration; it does not accept scope, create a Delivery or supply gate success.
+Unsupported API/workflow combinations fail before use.
 
-D2 will provide reviewed migration and default cutover. Retirement requires
-native migration evidence and a matching consumer that actually uses this API;
-a schema fixture or an open/closed Issue is not integration evidence. Core and
-CLI remain version locked. Package publication and release qualification are
-separate from this contract's source implementation.
+Reviewed plan-2.0 migration is available through `trellis migrate`; it requires
+explicit caller-owned projections and file decisions, with read-only preview
+and caller-owned backup, resume and rollback. Init, update and readers never
+convert old records, recreate gates or migrate another workflow's private data.
+Global current-SDK and legacy-execution retirement still requires native
+migration evidence, a matching consumer that actually uses this API and public
+breaking-change guidance. A schema fixture or an open/closed Issue is not
+integration evidence. Exact-candidate joint evidence remains required for
+paired acceptance. Core and CLI remain version locked; package publication
+and release qualification are separate from source implementation and acceptance.
 
 ## Identity and artifacts
 
@@ -159,6 +168,56 @@ Existing owned aliases at `.trellis`, `.trellis/tasks` and a selected Task
 directory retain their canonical-root containment boundary. Nested/file or
 dangling symlinks do not become additional owned roots. Candidate business
 paths and per-Delivery artifact descendants remain checked at each boundary.
+
+Task rename/archive/reopen preserve retained Delivery, stopped, Completion and
+Closure results. The optional schema-2 `artifact_origin` stores the original
+managed Task root, initialized only by explicit relocation and immutable after
+that. Existing records need no eager rewrite. In the selected Task's store
+context, SHA references under that exact origin prefix resolve to its current
+Task root; new operation SHA references under the current root normalize to the
+origin before identity/retry comparison. Revisions and retained result objects
+are unchanged. Fixed Git references keep their original locator and read the
+exact Git object even when the current file is absent. Candidate paths/hashes
+never relocate: affected candidate producers must refresh their results.
+
+SDK `relocateTaskRecordV2({root,taskDir,destination,expected_preimage,name?})`
+is a Task-local move primitive. Callers own mutable Task-tree name backrefs;
+Python `task.py rename` maintains those through its existing rename planner.
+`resolveTaskArtifactLocator({root,taskDir},ref)` is the read-only SDK locator
+resolver for that exact selected record; SHA addresses resolve to the current
+root, while Git-object and external locators retain their original meaning.
+Both runtimes rewrite only parsed context-manifest `file` fields under the
+source Task root, preserving free text and permissions. Explicit archive paths
+are legal for history queries and formal reopen, never execution selection.
+Reopen retains identity/history, establishes the new generation/authority and
+returns the Task to active storage without selecting or creating a Delivery.
+
+Archive preflight refuses a direct Task-leaf symlink with `invalid_locator`
+before modifying metadata, manifests, sessions or directories. The active alias
+remains readable; the runtime never moves that link or copies its external Task.
+Supported `.trellis` and tasks-store root aliases remain compatible.
+
+Reopen validates the complete session-release plan before aggregate/location
+writes. If an ordinary session writer later fails, the new generation and some
+released bindings may already exist. The original operation can recover only
+when its TaskId is exact, current generation is old+1, canonical authority equals
+the current accepted scope, old generation has actual Completion, and the current
+generation has no Delivery/Completion/Closure. The current declared `task_scope`
+owner must validate; authority content is verified again. Recovery returns
+`changed: false` and the current TaskKey, retaining the aggregate bytes and
+releasing remaining old-generation bindings without another increment or
+automatic selection. Changed authority, wrong owner/key and subsequent business
+facts reject without writes. No reopen receipt ledger exists: this contract
+proves equivalent current state, not a past transient scope or invoking owner.
+
+SDK callers must reread the exact current active Task locator and raw preimage,
+then resubmit the original operation; disappeared archive StoreOptions do not
+resolve automatically. Python `delivery.py reopen --task <original-archive>
+--input <original-operation>` can recover a disappeared explicit archive locator
+only via the operation's exact TaskId/generation+1 lookup in registered workspace
+facts, followed by the same validation. No sole-item inventory or session fallback
+selects a recovery Task. A stale explicit preimage remains a refusal; reread it
+before retrying when using the optional preimage guard.
 
 `computeCandidateContentRef(root,paths,kind?)` and Python
 `candidate_content_ref(root,paths,kind=None)` accept an explicit `git` or

@@ -28,7 +28,7 @@ from pathlib import Path
 from .config import get_context_injection_limits
 from .git import branch_exists_locally
 from .path_boundary import require_project_path
-from .io import read_json
+from .io import JSON_READ_MISSING, read_json, read_json_checked
 from .log import Colors, colored
 from .paths import DIR_ARCHIVE, DIR_TASKS, DIR_WORKFLOW, FILE_TASK_JSON, get_repo_root
 from .task_utils import resolve_task_dir
@@ -47,11 +47,19 @@ def _context_target(args: argparse.Namespace, invocation_root: Path) -> tuple[Pa
     task_dir = resolve_task_dir(args.dir, workspace)
     if task_dir is None:
         return None
-    task_data = read_json(task_dir / FILE_TASK_JSON)
-    if task_data is None or task_data.get("schema_version") != "2.0":
-        return workspace, task_dir, task_dir  # legacy context/evidence-only directories
+    task_json = task_dir / FILE_TASK_JSON
+    task_data, read_reason = read_json_checked(task_json)
+    if task_data is None:
+        if read_reason == JSON_READ_MISSING and not task_json.is_symlink():
+            return workspace, task_dir, task_dir  # genuinely evidence-only directory
+        print(f"Error: task_metadata_{read_reason}: {task_json}")
+        return None
+    from .runtime_contract import require_task_runtime
     from .delivery_session import planning_directory
     try:
+        require_task_runtime(workspace, task_data)
+        if task_data.get("schema_version") != "2.0":
+            return workspace, task_dir, task_dir
         return workspace, task_dir, planning_directory(task_dir, workspace, getattr(args, "delivery", None))
     except ValueError as exc:
         print(f"Error: {exc}")

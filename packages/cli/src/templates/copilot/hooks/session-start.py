@@ -276,7 +276,7 @@ def _get_task_status(trellis_dir: Path, hook_input: dict) -> str:
 
     if task_data.get("schema_version") == "2.0":
         from common.delivery_session import get_current_delivery  # type: ignore[import-not-found]
-        query = get_current_delivery(active.invocation_root, hook_input)
+        query = get_current_delivery(active.invocation_root, hook_input, platform="copilot")
         view = {key: query[key] for key in ("kind", "key", "code", "message") if key in query}
         if query["kind"] in ("current", "terminal_delivery"):
             view.update(phase=query["delivery"]["phase"], planning_root=query["delivery"]["planning_root"])
@@ -419,7 +419,7 @@ def _build_compact_current_state(
         data = _load_task_data(active.task_workspace_root / ".trellis", task_dir)
         if data.get("schema_version") == "2.0":
             from common.delivery_session import get_current_delivery  # type: ignore[import-not-found]
-            query = get_current_delivery(active.invocation_root, hook_input)
+            query = get_current_delivery(active.invocation_root, hook_input, platform="copilot")
             status = query["delivery"]["phase"] if query["kind"] in ("current", "terminal_delivery") else query["kind"]
             lines.append(f"Delivery selection: {query['kind']}; key={json.dumps(query.get('key'), ensure_ascii=False)}")
         else:

@@ -1,6 +1,6 @@
 # Implementation and verification plan
 
-Status: Planning accepted; D1 implementation and local candidate validation complete; local commit plan explicitly approved; candidate delivery and D2 pending on `codex/31-native-delivery-lifecycle`. The task is activated under the installed legacy contract; its own data has not been migrated. Scope and ACs are in `prd.md`; design is in `design.md`, with the implemented public interface in the shipped Delivery contract and versioned types. Execution/verification evidence is under `research/`.
+Status: Planning accepted; D1 is committed and its earlier interface candidate merged in PR #32. Subsequent lifecycle/carrier repairs and explicit plan-2 migration have passed source and controlled installed validation; their upstream check/commit/delivery closeout is now being prepared on `codex/31-native-delivery-lifecycle`. The human directed upstream to perform its own closeout before waiting for Guru #531 joint acceptance. P4 normal-default retirement and P5 exact-pair whole acceptance remain pending under their existing prerequisites. This does not reduce accepted scope or authorize source Issue closure. The Task is activated under the installed legacy contract; its own data has not been migrated. Scope and ACs are in `prd.md`; design is in `design.md`, with the implemented public interface in the shipped Delivery contract and versioned types. Execution/verification evidence is under `research/`.
 
 ## 1. Delivery policy and ownership
 
@@ -54,17 +54,50 @@ Exit: D1 is an independent usable upstream interface/runtime/native candidate, w
 
 ### P3 — D2 explicit migration and install preflight
 
-- [ ] Extend migrate with explicit plan 2.0; preserve 1.0's original semantics during the finite window. Cover schema/API declarations, whole reviewed Task/Delivery projection, exact raw preimages, owned session/workflow/template changes and active/archive disposition.
-- [ ] Inventory old active/archived records and exact session/branch/worktree/commit/PR facts in controlled fixtures/copies. Do not assign every old outcome to D1 or derive pass from status. Original owner resolves missing semantic facts.
-- [ ] Make init/update/workflow-switch/migrate preflights diagnose incompatible API/workflow combinations before writes. Existing custom content remains preserved; a `.new` sidecar is never active runtime input. Guru apply/upgrade preflight is #531-owned and must consume the same declared contract.
-- [ ] Add explicit historical archive and deferred-record handling without changing identity reservations or allowing old records as new lifecycle candidates. Reopen requires reviewed migration/current authority and preserves history.
-- [ ] Verify preview zero writes; raw-byte/mode preservation, stale preflight, exact same-plan resume, ordinary failure recovery and caller-owned rollback. Use exact backup/write sets; no reset, resource deletion or private Guru parsing.
+- [x] Extend migrate with explicit plan 2.0; preserve 1.0's original semantics during the finite window. Cover schema/API declarations, whole reviewed Task/Delivery projection, exact raw preimages, owned session/workflow/template changes and active/archive disposition.
+- [x] Inventory old active/archived records and exact session/branch/worktree/commit/PR facts in controlled fixtures/copies. Do not assign every old outcome to D1 or derive pass from status. Original owner resolves missing semantic facts.
+- [x] Make init/update/workflow-switch/migrate preflights diagnose incompatible API/workflow combinations before writes. Existing custom content remains preserved; a `.new` sidecar is never active runtime input. Guru apply/upgrade preflight is #531-owned and must consume the same declared contract.
+- [x] Add explicit historical archive and deferred-record handling without changing identity reservations or allowing old records as new lifecycle candidates. Reopen requires reviewed migration/current authority and preserves history.
+- [x] Verify preview zero writes; raw-byte/mode preservation, stale preflight, exact same-plan resume, ordinary failure recovery and caller-owned rollback. Use exact backup/write sets; no reset, resource deletion or private Guru parsing.
 - [ ] Request/consume the actual matching Guru candidate compatibility result before the destructive legacy retirement point; do not wait for #531 CLOSED and do not pretend a schema fixture is installed proof.
 
 Exit: selected old installation can be migrated with reviewable preconditions and restored before new business writes; unsupported marketplace combinations fail before replacement. New projects remain usable independently.
 
+Actual P3 evidence is indexed in `research/goal-review-loop.md`: full CLI 2103
+PASS, Core 475 PASS / one existing optional SQLite SKIP, independent migration
+46/46 and custom ownership 8/8, packed native/custom prior-install cutover,
+caller-owned exact rollback/retry, and 22-platform installed asset/reapply
+coverage. These are upstream/controlled-copy results, not Guru private
+migration, released-0.6, external host AI execution or the full release matrix.
+The current upstream finish pass also repairs a freshly observed session
+resolution failure caused by explicitly prunable Git entries with residual
+`.trellis` directories; new source/check/package identities supersede the
+previous `077bb029` candidate for that repair and this plan refresh.
+The same finish pass corrects byte-identical custom workflow onboarding:
+bootstrap consumes the effective installed workflow and requires explicit
+bundled native identity or retained managed ownership before creating native
+scope/Delivery. Custom workflow ownership remains Task-only even when template
+bytes match. Red/green regression and independent source Check are recorded in
+`research/goal-review-loop.md`; the refreshed package must reproduce the fix.
+
 ### P4 — D2 all normal consumers and retirement
 
+- [x] Adopt the complete native Delivery workflow for fresh no-flag init before
+  paired retirement readiness; preserve actual legacy/custom/native workflow
+  and receipt ownership on no-explicit-workflow reinit. Omitted Python create
+  schema follows the installed validated declaration, never Task status or
+  prospective template content. Explicit `native` remains a named temporary
+  legacy compatibility entry. This independently usable default slice does not
+  retire current `/task` or remove old installed execution before its gate.
+  Source red/green and independent receipt reproduction are documented in
+  `research/goal-review-loop.md`; final full/package evidence is recorded there
+  separately and is required before this candidate is delivered.
+- [x] Correct the optional bundled Linear example for schema-2 selection and
+  current Completion: no external start mutation, guarded archive mapping and
+  canonical protected metadata IO. Verify configured actual Task start and
+  manual hook boundaries using a fake client; retain explicit legacy mappings.
+  Source 22-case hook and 34-case related regression evidence is available;
+  final package reproduction remains an explicit upstream closeout obligation.
 - [ ] Switch current Core `/task` type/factory/schema/exports to v2 and retire inferTaskPhase/TaskPhase/status defaults, field ordering and normal writer dependencies. Retain old recognition only at explicit historical/migration boundaries with documented endpoint.
 - [ ] Migrate task.py create/current/list/queue/tree/archive/start/finish, all task JSON readers/writers and bootstrap factories. Commit/pr_url/completedAt have explicit historical dispositions; no hidden one-Delivery assumption remains.
 - [ ] Migrate shared Python hooks, Codex/Copilot SessionStart, OpenCode JS ephemeral injections, Pi/OMP extension prompts, Snow hooks, pull preludes, statusline/other actual consumers and context artifacts. Use registry-driven coverage for all declared platform entry paths. Keep inline execution hints out of persisted phase.

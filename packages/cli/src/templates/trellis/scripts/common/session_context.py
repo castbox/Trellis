@@ -24,7 +24,7 @@ from .path_boundary import ProjectPathError, is_project_path
 from .config import get_git_packages
 from .git import run_git
 from .packages_context import get_packages_section
-from .tasks import iter_active_tasks, load_task, children_progress, get_all_statuses, task_lifecycle_summary
+from .tasks import iter_active_tasks, load_task, children_progress, get_all_statuses, task_lifecycle_summary, task_inventory_label, task_inventory_summary
 from .paths import (
     DIR_SPEC,
     DIR_TASKS,
@@ -526,7 +526,7 @@ def get_context_json(repo_root: Path | None = None) -> dict:
         {
             "dir": t.dir_name,
             "name": t.name,
-            **(task_lifecycle_summary(t.raw) if t.raw.get("schema_version") == "2.0" else {"status": t.status}),
+            **task_inventory_summary(t),
             "children": list(t.children),
             "parent": t.parent,
         }
@@ -571,6 +571,10 @@ def get_context_json(repo_root: Path | None = None) -> dict:
         current = load_task(active.resolved_task_path, active.task_workspace_root)
         if current and current.raw.get("schema_version") == "2.0":
             from .delivery_session import get_current_delivery
+            projection = result["currentTask"]
+            assert projection is not None
+            projection["key"] = {"task_id": current.raw["id"], "lifecycle_generation": current.raw["lifecycle_generation"]}
+            projection["lifecycle"] = task_lifecycle_summary(current.raw)
             result["currentDelivery"] = get_current_delivery(repo_root)
 
     if pkg_git_info:
@@ -672,7 +676,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
         t = all_tasks[name]
         progress = children_progress(t.children, all_statuses, allow_missing_legacy=t.raw.get("schema_version") != "2.0")
         prefix = "  " * indent
-        lines.append(f"{prefix}- {name}/ ({t.status}){progress}")
+        lines.append(f"{prefix}- {name}/ ({task_inventory_label(t)}){progress}")
         task_count += 1
         for child in t.children:
             if child in all_tasks:

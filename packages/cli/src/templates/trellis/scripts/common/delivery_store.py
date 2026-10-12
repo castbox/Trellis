@@ -10,10 +10,11 @@ from pathlib import Path
 
 from .delivery_operations import apply_operation, parse_operation
 from .delivery_schema import DeliveryError, candidate, fail, parse_task_v2, relative_path
-from .delivery_session import release_delivery
+from .delivery_session import apply_release_plan, plan_release_delivery, release_delivery
 from .io import read_json_checked, write_text_atomic
 from .path_boundary import require_project_path
 from .runtime_contract import read_runtime_contract
+from .task_artifacts import TaskArtifactContext, artifact_context, authority_locator, canonical_operation, relocate_task_directory
 
 
 def _digest(value: bytes) -> str:
@@ -154,7 +155,7 @@ def _verify_pr(root: Path, result: dict, *, delivered: bool) -> None:
             fail("candidate_mismatch", "publication URL/body differs")
 
 
-def _verify_fact(root: Path, op: dict) -> None:
+def _verify_fact(root: Path, op: dict, context: TaskArtifactContext | None = None) -> None:
     if op["operation"] not in ("record_delivery", "record_publication"):
         return
     result = op["result"]
@@ -164,19 +165,26 @@ def _verify_fact(root: Path, op: dict) -> None:
         artifact = result["artifact"]
         if re.match(r"[a-z][a-z0-9+.-]*://", artifact["locator"], re.I):
             fail("fact_verification_required", "Python manual owner must retain a local immutable artifact")
-        if _digest(_file(root, artifact["locator"]).read_bytes()) != artifact["revision"]:
+        if _digest(_file(root, authority_locator(artifact, context)).read_bytes()) != artifact["revision"]:
             fail("candidate_mismatch", "manual artifact content differs")
     else:
         _verify_pr(root, result, delivered=op["operation"] == "record_delivery")
 
 
-def verify_authority(root: Path, ref: dict) -> None:
+def verify_authority(root: Path, ref: dict, context: TaskArtifactContext | None = None) -> None:
     """Verify local authority bytes or an immutable Git object locator."""
+    if context is not None:
+        selected_path = _checked_path(root / context.task_root / "task.json", root)
+        selected, reason = read_json_checked(selected_path)
+        if selected is None:
+            fail("invalid_artifact_context", str(reason))
+        if selected["id"] != context.task_id or selected.get("artifact_origin") != context.artifact_origin:
+            fail("invalid_artifact_context", "context must match the verified selected Task")
     if re.match(r"[a-z][a-z0-9+.-]*://", ref["locator"], re.I):
         return
-    file = _file(root, ref["locator"])
+    relative_path(ref["locator"])
     if re.fullmatch(r"sha256:[a-f0-9]{64}", ref["revision"]):
-        if _digest(file.read_bytes()) != ref["revision"]:
+        if _digest(_file(root, authority_locator(ref, context)).read_bytes()) != ref["revision"]:
             fail("authority_mismatch", ref["locator"])
     elif re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", ref["revision"]):
         _git(root, "cat-file", "-e", f"{ref['revision']}:{ref['locator']}")
@@ -195,7 +203,18 @@ def apply_to_store(task_dir: Path, root: Path, request: object, expected_sha256:
     if data is None:
         fail("invalid_record", str(reason))
     record = parse_task_v2(data)
-    op = parse_operation(request)
+    context = artifact_context(task_dir, root, record)
+    op = canonical_operation(parse_operation(request), context)
+    archived = task_dir.relative_to(root).parts[:3] == (".trellis", "tasks", "archive")
+    restored = root / ".trellis" / "tasks" / task_dir.name
+    if archived:
+        if op["operation"] != "reopen_task":
+            fail("archived_task", "only explicit history query or formal reopen is legal")
+        _checked_path(restored, root)
+        if restored.exists():
+            fail("task_destination_occupied", str(restored))
+        from .task_utils import require_unique_task_id
+        require_unique_task_id(record["id"], root / ".trellis" / "tasks", root, exclude=task_dir)
     declaration = read_runtime_contract(root / ".trellis" / "workflow.md")
     if op["operation"] == "create_delivery":
         planning = task_dir / "deliveries" / op["key"]["delivery_id"]
@@ -209,42 +228,50 @@ def apply_to_store(task_dir: Path, root: Path, request: object, expected_sha256:
             if path.exists() and (path.is_file() if child == "research" else not path.is_file()):
                 fail("invalid_locator", f"unexpected planning artifact type: {path}")
     output = apply_operation(record, op, declaration)
+    reopen_release = None
+    if op["operation"] == "reopen_task":
+        verify_authority(root, op["authority"], context)
+        reopen_release = plan_release_delivery(root, task_id=op["key"]["task_id"], generation=op["key"]["lifecycle_generation"], new_generation=output["record"]["lifecycle_generation"])
     if output["changed"]:
-        if op["operation"] in ("accept_scope", "reopen_task"):
-            verify_authority(root, op["authority"])
+        if op["operation"] == "accept_scope":
+            verify_authority(root, op["authority"], context)
         elif op["operation"] == "create_delivery":
-            verify_authority(root, op["scope_ref"]["authority"])
+            verify_authority(root, op["scope_ref"]["authority"], context)
         elif op["operation"] == "record_gate":
-            verify_authority(root, op["result"]["scope_ref"]["authority"])
-            verify_authority(root, op["result"]["plan_ref"])
+            verify_authority(root, op["result"]["scope_ref"]["authority"], context)
+            verify_authority(root, op["result"]["plan_ref"], context)
         elif op["operation"] == "rework" and "scope_ref" in op:
-            verify_authority(root, op["scope_ref"]["authority"])
+            verify_authority(root, op["scope_ref"]["authority"], context)
         elif op["operation"] == "complete_task":
-            verify_authority(root, op["result"]["accepted_scope"])
+            verify_authority(root, op["result"]["accepted_scope"], context)
         historical = op["operation"] in ("record_delivery", "record_publication") and op.get("historical_success") is True
         if not historical:
             if op["operation"] in ("begin_check", "record_publication", "record_delivery"):
                 delivery = next(row for row in record["deliveries"] if row["id"] == op["key"]["delivery_id"])
-                verify_authority(root, delivery["scope_ref"]["authority"])
+                verify_authority(root, delivery["scope_ref"]["authority"], context)
                 if delivery["plan_ref"] is not None:
-                    verify_authority(root, delivery["plan_ref"])
+                    verify_authority(root, delivery["plan_ref"], context)
             if op["operation"] == "begin_check":
                 verify_candidate(root, op["candidate"])
             elif op["operation"] == "record_gate" and op["result"]["candidate"] is not None:
                 verify_candidate(root, op["result"]["candidate"])
             elif op["operation"] in ("record_delivery", "record_publication"):
                 verify_candidate(root, op["result"]["candidate"])
-        _verify_fact(root, op)
+        _verify_fact(root, op, context)
         if task_json.read_bytes() != previous:
             fail("stale_preimage", "Task changed during verification")
+        if archived:
+            output["record"] = relocate_task_directory(task_dir, restored, root, record=output["record"])
+            task_dir = restored
+            task_json = restored / "task.json"
         mode = task_json.stat().st_mode & 0o777
-        if not write_text_atomic(task_json, json.dumps(output["record"], ensure_ascii=False, indent=2) + "\n", mode=mode):
+        if not archived and not write_text_atomic(task_json, json.dumps(output["record"], ensure_ascii=False, indent=2) + "\n", mode=mode):
             fail("write_failed", str(task_json))
     # Retry also recovers an interrupted session-release after the fact write.
     if op["operation"] in ("stop", "record_delivery"):
         release_delivery(root, task_id=op["key"]["task_id"], generation=op["key"]["lifecycle_generation"], delivery_id=op["key"]["delivery_id"])
-    elif op["operation"] == "reopen_task" and output["changed"]:
-        release_delivery(root, task_id=op["key"]["task_id"], generation=op["key"]["lifecycle_generation"], new_generation=output["record"]["lifecycle_generation"])
+    elif reopen_release is not None:
+        apply_release_plan(reopen_release)
     if op["operation"] == "create_delivery":
         d = next(row for row in output["record"]["deliveries"] if row["id"] == op["key"]["delivery_id"])
         planning = task_dir / d["planning_root"]

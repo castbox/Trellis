@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readdirSync } from "fs"
-import { join } from "path"
+import { join, relative } from "path"
 import {
   TrellisContext,
   debugLog,
@@ -29,6 +29,37 @@ function extractActiveTaskHint(prompt) {
   if (typeof prompt !== "string" || !prompt) return null
   const match = prompt.match(ACTIVE_TASK_HINT_RE)
   return match ? match[1].trim() : null
+}
+
+function checkerProfile(prompt, args) {
+  const values = Object.hasOwn(args, "profile") ? [args.profile] : []
+  values.push(...[...prompt.matchAll(/^Profile: ([a-z_]+)\s*$/gm)].map(match => match[1]))
+  if (!values.length) return "quality"
+  if (new Set(values).size !== 1 || !["quality", "delivery_check", "delivery_review"].includes(values[0])) {
+    throw new Error("invalid_check_profile: conflicting or unsupported explicit profile")
+  }
+  return values[0]
+}
+
+function getTaskScopeQualityContext(ctx, taskDir, metadata) {
+  const parts = [
+    "Context mode: task_scope_only\nQuality/evidence verification only. No formal Delivery context was loaded.\n"
+    + "Do not record lifecycle results, select a Delivery, or use root Task artifacts as Delivery planning.\n"
+    + "If the actual dispatch is delivery_check or delivery_review, stop with delivery_selection_required.\n"
+    + `TaskKey: ${JSON.stringify({ task_id: metadata.id, lifecycle_generation: metadata.lifecycle_generation })}\nAccepted Task scope: ${JSON.stringify(metadata.accepted_scope)}`,
+  ]
+  const scope = metadata.accepted_scope
+  if (scope && !/^[a-z][a-z0-9+.-]*:\/\//i.test(scope.locator)) {
+    const origin = metadata.artifact_origin
+    const taskRoot = relative(ctx.directory, taskDir).split("\\").join("/")
+    const locator = origin && /^sha256:[a-f0-9]{64}$/.test(scope.revision) && scope.locator.startsWith(origin + "/")
+      ? taskRoot + scope.locator.slice(origin.length) : scope.locator
+    const limits = readContextInjectionLimits(ctx.directory)
+    const block = materializeArtifact(ctx.directory, locator, "Accepted Task scope (quality only)",
+      "Task acceptance context; current contents are not a formal gate result", limits, new ContextBudget(limits.max_total_bytes))
+    if (block) parts.push(block)
+  }
+  return parts.join("\n\n")
 }
 
 /**
@@ -459,6 +490,7 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           // Strip "trellis-" prefix added by v0.5.0-beta.5 agent rename migration
           const subagentType = (rawSubagentType || "").replace(/^trellis-/, "")
           const originalPrompt = args.prompt || ""
+          const profile = subagentType === "check" ? checkerProfile(originalPrompt, args) : null
 
           debugLog("inject", "Task tool called, subagent_type:", rawSubagentType)
 
@@ -528,6 +560,12 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
             const metadata = JSON.parse(taskCtx.readFile(join(taskCtx.resolveTaskDir(taskDir, validatedTaskPath), "task.json")) || "{}")
             if (metadata.schema_version === "2.0") {
               const query = ctx.getCurrentDelivery(input)
+              if (query.kind === "no_current_delivery" && subagentType === "check" && profile === "quality") {
+                const context = getTaskScopeQualityContext(taskCtx, taskCtx.resolveTaskDir(taskDir, validatedTaskPath), metadata)
+                args.prompt = buildPrompt("check", originalPrompt,
+                  `Caller workspace: ${directory}\nTask workspace: ${taskCtx.directory}\n\n${context}`, false)
+                return
+              }
               if (!["current", "terminal_delivery"].includes(query.kind)) {
                 output.args.prompt = `Delivery context error: ${JSON.stringify(query)}\n\n${originalPrompt}`
                 return
@@ -569,7 +607,11 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
 
           // Mutate args in-place — whole-object replacement does NOT work for the task tool
           // because the runtime holds a local reference to the same args object.
-          args.prompt = newPrompt
+          args.prompt = profile === "delivery_review"
+            ? `<!-- trellis-hook-injected -->\nProfile: delivery_review\nIndependent read-only full-range review; do not edit, self-fix, record lifecycle results or dispatch implementation. Report findings to the declared full_review owner.\nRequire exact DeliveryKey, candidate, PlanningRoot and applicable owner inputs.\n\n${workspaceContext}\n\n${originalPrompt}`
+            : profile === "delivery_check"
+              ? `<!-- trellis-hook-injected -->\nProfile: delivery_check\nFollow the active workflow Check owner and exact candidate. Fixes return to implementation for candidate refresh before any pass. Carrier identity grants no additional semantic writer.\n\n${workspaceContext}\n\n${originalPrompt}`
+              : newPrompt
 
           debugLog("inject", "Injected context for", subagentType, "prompt length:", newPrompt.length)
 

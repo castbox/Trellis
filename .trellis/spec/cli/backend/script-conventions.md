@@ -1145,13 +1145,18 @@ if _last_context_key_export(env_file) == export_line:
 
 | Type | Kind | Purpose |
 |------|------|---------|--------------------------|
-| `TaskData` | `TypedDict(total=False)` | Type hints when reading task.json |
-| `TaskInfo` | `dataclass(frozen=True)` | Immutable view for business logic |
+| `TaskData` | `TypedDict(total=False)` | Legacy task.json type hints during the compatibility window |
+| `TaskInfo` | `dataclass(frozen=True)` | Immutable view with separate legacy status and schema-2 inventory |
+| `TaskLifecycleInventory` | `dataclass(frozen=True)` | Current generation/scope Completion and independent Delivery inventory |
 
-**Write-back rule**: Always modify `task_info.raw` (the validated original dict) and pass it to `write_json()`. Never construct a new dict from TaskInfo fields.
+**Legacy write-back rule**: Modify `task_info.raw` (the validated original dict)
+and pass it to `write_json()`; never reconstruct a partial record from TaskInfo
+fields. The status example below is legacy-only. Schema-2 lifecycle changes use
+closed Delivery/Task operations under the declared workflow owner; inventory
+and `raw` are not approval or arbitrary lifecycle-write authority.
 
 ```python
-# GOOD — modify validated task data
+# GOOD — legacy compatibility record only
 data = read_json(task_json)
 data["status"] = "completed"
 write_json(task_json, data)
@@ -1167,12 +1172,14 @@ write_json(task_json, {"title": info.title, "status": "completed"})
 | `dir_name` | `str` | Directory name (e.g., `"03-12-refactor"`) |
 | `directory` | `Path` | Absolute path to task dir |
 | `title` | `str` | `data["title"]` or `data["name"]` or `"unknown"` |
-| `status` | `str` | `data["status"]` (default `"unknown"`) |
+| `status` | `str \| None` | Legacy status; `None` for schema-2 or history-only records |
 | `priority` | `str` | `data["priority"]` (default `"P2"`) |
 | `children` | `tuple[str, ...]` | Immutable copy of `data["children"]` |
 | `parent` | `str \| None` | Parent task dir name |
 | `package` | `str \| None` | Associated package |
 | `raw` | `dict` | Original dict for writes and uncommon fields |
+| `inventory` | `TaskLifecycleInventory \| None` | Schema-2 acceptance/slice projection; never execution selection |
+| `history_only` | `bool` | Legacy record retained under a schema-2 workflow; not executable |
 
 Properties: `.name`, `.description`, `.branch`, `.meta` — delegate to `raw`.
 
@@ -1182,10 +1189,10 @@ Replaces 9 scattered task iteration patterns with a single typed API.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `load_task` | `(task_dir: Path) -> TaskInfo \| None` | Load one task; `None` if no valid task.json |
-| `iter_active_tasks` | `(tasks_dir: Path) -> Iterator[TaskInfo]` | All non-archived tasks, **sorted by dir name** |
-| `get_all_statuses` | `(tasks_dir: Path) -> dict[str, str]` | `{dir_name: status}` map for progress display |
-| `children_progress` | `(children, all_statuses) -> str` | Format `" [2/3 done]"` or `""` |
+| `load_task` | `(task_dir: Path, repo_root: Path \| None = None) -> TaskInfo \| None` | Validated record/runtime view; missing records return `None`, invalid records emit a diagnostic |
+| `iter_active_tasks` | `(tasks_dir: Path, repo_root: Path \| None = None) -> Iterator[TaskInfo]` | Non-archived inventory, **sorted by dir name**; retained legacy history is marked separately |
+| `get_all_statuses` | `(tasks_dir: Path, repo_root: Path \| None = None) -> dict[str, str \| TaskLifecycleInventory]` | Legacy statuses or schema-2 inventory; includes archived schema-2 records and excludes history-only legacy execution |
+| `children_progress` | `(children, all_statuses, *, allow_missing_legacy: bool = True) -> str` | Format `" [2/3 done]"` or `""`; schema-2 callers disable missing/legacy completion inference |
 
 **Sorting guarantee**: `iter_active_tasks` uses `sorted(tasks_dir.iterdir())` — same order as the filesystem `ls` output. This is frozen behavior; changing the sort would break display consistency.
 
@@ -1194,7 +1201,8 @@ Replaces 9 scattered task iteration patterns with a single typed API.
 `children` on a parent task is the **historical** list of subtask dir names — it must NOT be pruned when a child is archived. The contract:
 
 - `cmd_archive` keeps the archived child's name in the parent's `children`.
-- `children_progress` treats any `child` not present in `all_statuses` (i.e. no longer in the active tasks dir) as **completed**, since `cmd_archive` always sets `status=completed` before moving the directory.
+- With `allow_missing_legacy=True`, the legacy compatibility display counts missing archived children and legacy `completed`/`done` strings as complete, retaining its original behavior.
+- Schema-2 parent callers use `allow_missing_legacy=False`: a missing child, archive location or legacy status never proves completion. A typed child inventory counts only when `completion_result_id` matches its current generation and accepted scope. Archived schema-2 children remain in the inventory so actual Completion survives relocation.
 - Renderers that walk children (e.g. `task.py:_print_task`) must guard with `if child_name in all_tasks` so archived entries are silently skipped, not shown.
 
 **Why**: pruning on archive caused `[1/6 done]` → `[0/5 done]` regression — both numerator and denominator dropped, hiding completed work. The single field `children` serves two readers (parent-to-child traversal and progress %); both must agree on its meaning. If you ever need an "active children only" view, derive it via `[c for c in t.children if c in all_statuses]`, do not mutate the field.

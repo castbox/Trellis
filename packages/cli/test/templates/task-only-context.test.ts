@@ -75,7 +75,7 @@ def iter_tasks(directory, repo_root):
     return iter(())
 tasks.iter_active_tasks = iter_tasks
 sys.modules.update({"common": common, "common.paths": paths, "common.tasks": tasks})
-hook._resolve_active_task = lambda *args: types.SimpleNamespace(task_path=None)
+hook._resolve_active_task = lambda *args, **kwargs: types.SimpleNamespace(task_path=None)
 print(hook._build_compact_current_state(Path(root) / ".trellis", {}, []))
 `, hook, directory], { encoding: "utf8" });
 

@@ -32,6 +32,16 @@
       "import": "./dist/task/v2/index.js",
       "default": "./dist/task/v2/index.js"
     },
+    "./task/legacy-migration": {
+      "types": "./dist/task/legacy-migration.d.ts",
+      "import": "./dist/task/legacy-migration.js",
+      "default": "./dist/task/legacy-migration.js"
+    },
+    "./task/migration-v2": {
+      "types": "./dist/task/migration-v2.d.ts",
+      "import": "./dist/task/migration-v2.js",
+      "default": "./dist/task/migration-v2.js"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js",

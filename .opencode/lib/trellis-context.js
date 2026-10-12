@@ -479,14 +479,42 @@ export class TrellisContext {
     return null
   }
 
-  _validateBinding({ data, root, facts, contextKey }) {
-    if (data.schema_version === 3) {
-      if (!contextKey) throw new Error("context_required")
-      const response = JSON.parse(execFileSync(PYTHON_CMD, [join(root, ".trellis", "scripts", "task.py"), "current", "--json"], {
+  _readActiveTaskResponse(root, contextKey) {
+    if (!contextKey) throw new Error("context_required")
+    let output
+    let failed = false
+    try {
+      output = execFileSync(PYTHON_CMD, [join(root, ".trellis", "scripts", "task.py"), "current", "--json"], {
         cwd: root, encoding: "utf8", timeout: 10000,
         env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey, PYTHONDONTWRITEBYTECODE: "1" },
-      }))
-      if (response.error || response.stale || !response.current_task) throw new Error(response.error || "invalid_task_binding")
+      })
+    } catch (error) {
+      failed = true
+      if (!error.stdout) throw new Error(`task_resolver_failed: ${error.message}`)
+      output = error.stdout.toString()
+    }
+    let response
+    try { response = JSON.parse(output) }
+    catch { throw new Error("task_resolver_failed: invalid JSON response") }
+    if (!response || typeof response !== "object" || Array.isArray(response)) throw new Error("task_resolver_failed: invalid response")
+    if (failed && !response.error && !response.stale) throw new Error("task_resolver_failed: unsuccessful response")
+    if (response.error || response.stale || !response.current_task) throw new Error(response.error || "invalid_task_binding")
+    return response
+  }
+
+  _validateTaskRuntime(selected, contextKey) {
+    const content = new TrellisContext(selected.taskWorkspaceRoot).readProjectFile(".trellis/workflow.md")
+    if (content && content.split(/\r?\n/).some(line => /^\[\/?trellis-runtime-contract\]$/.test(line.trim()))) {
+      // An explicitly declared runtime owns schema compatibility. Legacy
+      // inventory is not authority to bypass its exact selected-record check.
+      this._readActiveTaskResponse(this.directory, contextKey)
+    }
+    return selected
+  }
+
+  _validateBinding({ data, root, facts, contextKey }) {
+    if (data.schema_version === 3) {
+      const response = this._readActiveTaskResponse(root, contextKey)
       return { taskPath: response.current_task.dir, taskWorkspaceRoot: response.task_workspace_root, resolvedTaskPath: response.resolved_task_path }
     }
     if (data.schema_version !== 2) throw new Error("unsupported_schema")
@@ -561,14 +589,14 @@ export class TrellisContext {
     if (casefoldConflicts.length) throw new Error(`task_id_casefold_collision: ${casefoldConflicts.join(", ")}`)
     if (exact.length > 1 || (exact.length && mismatches.length)) {
       const local = exact.filter(item => realpathSync(item.taskWorkspaceRoot) === realpathSync(this.directory))
-      if (local.length === 1) return { ...local[0] }
+      if (local.length === 1) return this._validateTaskRuntime({ ...local[0] }, contextKey)
       throw new Error("ambiguous_task_identity")
     }
     if (!exact.length && mismatches.length) throw new Error(`stale_lifecycle_generation: ${mismatches.join(", ")}`)
     if (!exact.length) throw new Error("stale_task_identity")
-    return {
+    return this._validateTaskRuntime({
       ...exact[0],
-    }
+    }, contextKey)
   }
 
   getCurrentDelivery(platformInput = null) {

@@ -11,7 +11,7 @@ from .io import read_json_checked
 from .path_boundary import require_project_path
 from .runtime_contract import RuntimeContractError, read_runtime_contract
 from .session_storage import (
-    read_record, records, repository_facts,
+    SessionRecord, read_record, records, repository_facts,
     session_path, write_record,
 )
 
@@ -83,8 +83,8 @@ def select_delivery(task_dir: Path, workspace: Path, invocation_root: Path, deli
     return get_current_delivery(invocation_root)
 
 
-def release_delivery(repo_root: Path, *, task_id: str | None = None, generation: int | None = None, delivery_id: str | None = None, new_generation: int | None = None) -> int:
-    """Release exact matching execution selections, retaining Task binding.
+def plan_release_delivery(repo_root: Path, *, task_id: str | None = None, generation: int | None = None, delivery_id: str | None = None, new_generation: int | None = None) -> list[tuple[SessionRecord, dict]]:
+    """Read and validate the exact release set before any aggregate write.
 
     Explicit owner terminal operations can release all matching sessions. A
     manual release affects only the current exact context and never another
@@ -95,7 +95,7 @@ def release_delivery(repo_root: Path, *, task_id: str | None = None, generation:
     if task_id is None and key is None:
         fail("context_required", "no exact session for release")
     selected = records(facts, key=key, ignore_unsupported=True)
-    count = 0
+    plan = []
     for binding in selected:
         if binding.data["schema_version"] != 3:
             continue
@@ -107,9 +107,27 @@ def release_delivery(repo_root: Path, *, task_id: str | None = None, generation:
         if new_generation is not None:
             payload["lifecycle_generation"] = new_generation
         if payload != binding.data:
-            write_record(binding.path, payload, binding.root)
-            count += 1
+            plan.append((binding, payload))
+    return plan
+
+
+def apply_release_plan(plan: list[tuple[SessionRecord, dict]]) -> int:
+    """Apply validated releases; exact retries recover ordinary write failures."""
+    count = 0
+    for binding, payload in plan:
+        current = read_record(binding.path, binding.root, repository_facts(binding.root))
+        if current.data == payload:
+            continue
+        if current.data != binding.data:
+            fail("stale_binding", f"session changed after release preflight: {binding.path}")
+        write_record(binding.path, payload, binding.root)
+        count += 1
     return count
+
+
+def release_delivery(repo_root: Path, *, task_id: str | None = None, generation: int | None = None, delivery_id: str | None = None, new_generation: int | None = None) -> int:
+    """Release matching selections without inferring another execution owner."""
+    return apply_release_plan(plan_release_delivery(repo_root, task_id=task_id, generation=generation, delivery_id=delivery_id, new_generation=new_generation))
 
 
 def planning_directory(task_dir: Path, repo_root: Path, delivery_id: str | None = None) -> Path:

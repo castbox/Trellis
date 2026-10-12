@@ -62,6 +62,8 @@ def read_runtime_contract(workflow: Path) -> dict:
     closed = [i for i, line in enumerate(lines)
               if line.strip() == "[/trellis-runtime-contract]"]
     if not opened and not closed:
+        if any(line.strip().startswith(("[trellis-runtime-contract", "[/trellis-runtime-contract")) for line in lines):
+            raise RuntimeContractError("invalid_runtime_contract_block")
         raise RuntimeContractError("missing_runtime_contract")
     if len(opened) != 1 or len(closed) != 1 or opened[0] >= closed[0]:
         raise RuntimeContractError("invalid_runtime_contract_block")
@@ -71,3 +73,23 @@ def read_runtime_contract(workflow: Path) -> dict:
     except json.JSONDecodeError as exc:
         raise RuntimeContractError("invalid_runtime_contract_json") from exc
     return validate_runtime_contract(value)
+
+
+def require_task_runtime(workspace: Path, task_data: dict) -> None:
+    """Selected-record execution boundary; retained legacy inventory is unaffected."""
+    from .path_boundary import require_project_path
+    workflow = workspace / ".trellis" / "workflow.md"
+    require_project_path(workflow, workspace)
+    is_v2 = task_data.get("schema_version") == "2.0"
+    if not workflow.exists():
+        if is_v2:
+            raise RuntimeContractError("missing_runtime_contract")
+        return
+    try:
+        read_runtime_contract(workflow)
+    except RuntimeContractError as exc:
+        if exc.code == "missing_runtime_contract" and not is_v2:
+            return
+        raise
+    if not is_v2:
+        raise RuntimeContractError("unsupported_task_schema: schema-2 workflow requires explicit migration before execution")

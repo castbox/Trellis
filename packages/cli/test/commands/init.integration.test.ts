@@ -87,7 +87,7 @@ describe("init() integration", () => {
   });
 
   it("#1 creates expected directory structure with defaults", async () => {
-    await init({  yes: true });
+    await init({ yes: true });
 
     // Core workflow structure
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(true);
@@ -153,7 +153,7 @@ describe("init() integration", () => {
   });
 
   it("#1b does not print the promotional pain-point block", async () => {
-    await init({  yes: true });
+    await init({ yes: true });
 
     const logOutput = vi
       .mocked(console.log)
@@ -167,7 +167,7 @@ describe("init() integration", () => {
   });
 
   it("#2 single platform creates only that platform directory", async () => {
-    await init({  yes: true, claude: true });
+    await init({ yes: true, claude: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(false);
@@ -192,7 +192,7 @@ describe("init() integration", () => {
   });
 
   it("#3 multi platform creates all selected platform directories", async () => {
-    await init({  yes: true, claude: true, cursor: true, opencode: true });
+    await init({ yes: true, claude: true, cursor: true, opencode: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, ".cursor"))).toBe(true);
@@ -211,7 +211,7 @@ describe("init() integration", () => {
   });
 
   it("#3b codex platform creates skills plus .codex assets", async () => {
-    await init({  yes: true, codex: true });
+    await init({ yes: true, codex: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".agents", "skills"))).toBe(true);
     // Codex SessionStart hook was removed (de-recursion fix); the
@@ -302,7 +302,7 @@ describe("init() integration", () => {
   });
 
   it("#3c kiro platform creates .kiro/skills", async () => {
-    await init({  yes: true, kiro: true });
+    await init({ yes: true, kiro: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".kiro", "skills"))).toBe(true);
     // Kiro is agent-capable → trellis-start skill not emitted.
@@ -331,7 +331,7 @@ describe("init() integration", () => {
   });
 
   it("#3d antigravity platform creates .agent/workflows", async () => {
-    await init({  yes: true, antigravity: true });
+    await init({ yes: true, antigravity: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".agent", "workflows"))).toBe(true);
     expect(
@@ -343,7 +343,7 @@ describe("init() integration", () => {
   });
 
   it("#3f devin platform creates .devin/workflows", async () => {
-    await init({  yes: true, devin: true });
+    await init({ yes: true, devin: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(true);
     expect(
@@ -357,7 +357,7 @@ describe("init() integration", () => {
 
   it("#3f-alias deprecated --windsurf still configures Devin (.devin/workflows)", async () => {
     // Windsurf was renamed to Devin; --windsurf remains a deprecated alias.
-    await init({  yes: true, windsurf: true });
+    await init({ yes: true, windsurf: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".devin", "workflows"))).toBe(true);
     expect(
@@ -372,7 +372,7 @@ describe("init() integration", () => {
   });
 
   it("#3g qoder platform creates .qoder/commands + .qoder/skills", async () => {
-    await init({  yes: true, qoder: true });
+    await init({ yes: true, qoder: true });
 
     expect(
       fs.existsSync(
@@ -389,7 +389,7 @@ describe("init() integration", () => {
   });
 
   it("#3h codebuddy platform creates .codebuddy/commands/trellis", async () => {
-    await init({  yes: true, codebuddy: true });
+    await init({ yes: true, codebuddy: true });
 
     expect(
       fs.existsSync(path.join(tmpDir, ".codebuddy", "commands", "trellis")),
@@ -421,7 +421,7 @@ describe("init() integration", () => {
   });
 
   it("#3i copilot platform creates .github/copilot hooks and discovery config", async () => {
-    await init({  yes: true, copilot: true });
+    await init({ yes: true, copilot: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".github", "prompts"))).toBe(true);
     // Copilot is agent-capable → start.prompt.md not emitted.
@@ -485,7 +485,7 @@ describe("init() integration", () => {
   });
 
   it("#3e gemini platform creates .gemini/commands/trellis", async () => {
-    await init({  yes: true, gemini: true });
+    await init({ yes: true, gemini: true });
     expect(
       fs.existsSync(path.join(tmpDir, ".gemini", "commands", "trellis")),
     ).toBe(true);
@@ -510,7 +510,7 @@ describe("init() integration", () => {
   });
 
   it("#3j droid platform creates commands + skills", async () => {
-    await init({  yes: true, droid: true });
+    await init({ yes: true, droid: true });
     // Droid is agent-capable → start.md not emitted.
     expect(
       fs.existsSync(
@@ -538,7 +538,7 @@ describe("init() integration", () => {
   });
 
   it("#3k pi platform creates extension-backed prompts, skills, and agents", async () => {
-    await init({  yes: true, pi: true });
+    await init({ yes: true, pi: true });
 
     expect(fs.existsSync(path.join(tmpDir, ".pi", "settings.json"))).toBe(true);
     expect(
@@ -590,7 +590,7 @@ describe("init() integration", () => {
   });
 
   it("#3m kimi platform creates shared skills and .kimi-code skills", async () => {
-    await init({  yes: true, kimi: true });
+    await init({ yes: true, kimi: true });
 
     // Shared workflow + bundled skills → .agents/skills/
     expect(
@@ -684,7 +684,7 @@ describe("init() integration", () => {
   });
 
   it("#3l trae platform writes hooks, commands, agents, and tracked templates", async () => {
-    await init({  yes: true, trae: true });
+    await init({ yes: true, trae: true });
 
     // Trae is agentCapable && hasHooks, so trellis-start is filtered like other
     // SessionStart-backed platforms. The generated agents are still pull-based
@@ -740,7 +740,7 @@ describe("init() integration", () => {
   });
 
   it("#3m zcode platform filters start command and writes hooks (hasHooks=true)", async () => {
-    await init({  yes: true, zcode: true });
+    await init({ yes: true, zcode: true });
 
     // ZCode owns its private .zcode surface. Commands remain commands, while
     // .zcode/skills contains workflow/bundled skills only. Since ZCode is
@@ -811,7 +811,7 @@ describe("init() integration", () => {
     delete process.env.TRELLIS_QUIET;
 
     try {
-      await init({  yes: true, zcode: true });
+      await init({ yes: true, zcode: true });
     } finally {
       process.stderr.write = originalWrite;
       if (originalVitest === undefined) delete process.env.VITEST;
@@ -828,7 +828,7 @@ describe("init() integration", () => {
   });
 
   it("#3n opencode platform emits start slash command", async () => {
-    await init({  yes: true, opencode: true });
+    await init({ yes: true, opencode: true });
 
     // OpenCode is agentCapable && !hasHooks per registry (plugins/session-start.js
     // provides equivalent injection, but the user-invocable /trellis:start is
@@ -846,7 +846,7 @@ describe("init() integration", () => {
   });
 
   it("#3o reasonix platform emits trellis-start skill without runAs:subagent", async () => {
-    await init({  yes: true, reasonix: true });
+    await init({ yes: true, reasonix: true });
 
     // Reasonix is agentCapable && !hasHooks → trellis-start ships as a plain
     // user-invocable skill. It must NOT carry the `runAs: subagent` frontmatter
@@ -866,30 +866,30 @@ describe("init() integration", () => {
   });
 
   it("#4 force mode overwrites previously modified files", async () => {
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true, workflow: "native" });
 
     const workflowMd = path.join(tmpDir, PATHS.WORKFLOW_GUIDE_FILE);
     const original = fs.readFileSync(workflowMd, "utf-8");
     fs.writeFileSync(workflowMd, "user modified content");
 
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true, workflow: "native" });
 
     expect(fs.readFileSync(workflowMd, "utf-8")).toBe(original);
   });
 
   it("#5 skip mode preserves previously modified files", async () => {
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true, workflow: "native" });
 
     const workflowMd = path.join(tmpDir, PATHS.WORKFLOW_GUIDE_FILE);
     fs.writeFileSync(workflowMd, "user modified content");
 
-    await init({  yes: true, skipExisting: true });
+    await init({ yes: true, skipExisting: true });
 
     expect(fs.readFileSync(workflowMd, "utf-8")).toBe("user modified content");
   });
 
   it("#6 re-init with force produces identical file set", async () => {
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true });
 
     const collectFiles = (dir: string): string[] => {
       const files: string[] = [];
@@ -905,7 +905,7 @@ describe("init() integration", () => {
     };
 
     const first = collectFiles(tmpDir);
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true });
     const second = collectFiles(tmpDir);
 
     expect(second).toEqual(first);
@@ -914,7 +914,12 @@ describe("init() integration", () => {
   it("#7 creates a current bootstrap task", async () => {
     await init({ yes: true });
 
-    const task = JSON.parse(fs.readFileSync(path.join(tmpDir, ".trellis/tasks/00-bootstrap-guidelines/task.json"), "utf8"));
+    const task = JSON.parse(
+      fs.readFileSync(
+        path.join(tmpDir, ".trellis/tasks/00-bootstrap-guidelines/task.json"),
+        "utf8",
+      ),
+    );
     expect(task.lifecycle_generation).toBe(0);
     expect(task.source).toEqual({ kind: "no_issue" });
     expect(task).not.toHaveProperty("branch");
@@ -927,7 +932,7 @@ describe("init() integration", () => {
       (() => "Python 3.8.18") as typeof execSync,
     );
 
-    await expect(init({  yes: true, claude: true })).rejects.toThrow(
+    await expect(init({ yes: true, claude: true })).rejects.toThrow(
       /No supported Python command found.*Python 3\.8\.18 \(< 3\.9\)/s,
     );
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
@@ -940,7 +945,7 @@ describe("init() integration", () => {
       throw new Error("not found");
     }) as typeof execSync);
 
-    await expect(init({  yes: true, claude: true })).rejects.toThrow(
+    await expect(init({ yes: true, claude: true })).rejects.toThrow(
       /No supported Python command found.*not found/s,
     );
     expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
@@ -949,8 +954,7 @@ describe("init() integration", () => {
   it("#7d renders the platform Python command into generated config and logs the adaptation", async () => {
     const expectedPythonCmd =
       process.platform === "win32" ? "python" : "python3";
-
-    await init({  yes: true, claude: true });
+    await init({ yes: true, claude: true });
 
     const settings = fs.readFileSync(
       path.join(tmpDir, ".claude", "settings.json"),
@@ -967,7 +971,7 @@ describe("init() integration", () => {
   });
 
   it("#8 writes correct version file", async () => {
-    await init({  yes: true });
+    await init({ yes: true });
 
     const content = fs.readFileSync(
       path.join(tmpDir, DIR_NAMES.WORKFLOW, ".version"),
@@ -977,7 +981,7 @@ describe("init() integration", () => {
   });
 
   it("#9 initializes template hash tracking file", async () => {
-    await init({  yes: true });
+    await init({ yes: true });
 
     const hashPath = path.join(
       tmpDir,
@@ -998,7 +1002,7 @@ describe("init() integration", () => {
   });
 
   it("#10 creates spec templates for backend, frontend, and guides", async () => {
-    await init({  yes: true });
+    await init({ yes: true });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
     expect(fs.existsSync(path.join(specDir, "backend", "index.md"))).toBe(true);
@@ -1012,7 +1016,7 @@ describe("init() integration", () => {
     // go.mod triggers detectProjectType → "backend"
     fs.writeFileSync(path.join(tmpDir, "go.mod"), "module example.com/app\n");
 
-    await init({  yes: true });
+    await init({ yes: true });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
     expect(fs.existsSync(path.join(specDir, "backend", "index.md"))).toBe(true);
@@ -1027,7 +1031,7 @@ describe("init() integration", () => {
       "export default {}\n",
     );
 
-    await init({  yes: true });
+    await init({ yes: true });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
     expect(fs.existsSync(path.join(specDir, "frontend", "index.md"))).toBe(
@@ -1077,7 +1081,7 @@ describe("init() integration", () => {
       { rel: "packages/api", name: "@app/api", files: { "go.mod": "" } },
     ]);
 
-    await init({  yes: true });
+    await init({ yes: true });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
     // Per-package spec dirs created with sanitized names (scope stripped)
@@ -1112,7 +1116,7 @@ describe("init() integration", () => {
       { rel: "packages/docs", name: "@trellis/docs" },
     ]);
 
-    await init({  yes: true });
+    await init({ yes: true });
 
     const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
     expect(fs.existsSync(configPath)).toBe(true);
@@ -1132,7 +1136,7 @@ describe("init() integration", () => {
       { rel: "packages/ui", name: "ui" },
     ]);
 
-    await init({ yes: true,  });
+    await init({ yes: true });
 
     const taskDir = path.join(tmpDir, PATHS.TASKS, "00-bootstrap-guidelines");
     expect(fs.existsSync(taskDir)).toBe(true);
@@ -1154,25 +1158,20 @@ describe("init() integration", () => {
 
     // prd.md mentions packages + renders per-package checklist items
     const prd = fs.readFileSync(path.join(taskDir, "prd.md"), "utf-8");
-    const expectedPythonCmd =
-      process.platform === "win32" ? "python" : "python3";
     expect(prd).toContain("core");
     expect(prd).toContain("ui");
     expect(prd).toContain("spec/");
     expect(prd).toContain("- [ ] Fill guidelines for core");
     expect(prd).toContain("- [ ] Fill guidelines for ui");
-    expect(prd).toContain(
-      `${expectedPythonCmd} ./.trellis/scripts/task.py finish`,
-    );
-    expect(prd).toContain(
-      `${expectedPythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines`,
-    );
+    expect(prd).toContain("planning_root");
+    expect(prd).toContain("Completion and Closure");
+    expect(prd).not.toContain("./.trellis/scripts/task.py finish");
   });
 
   it("#16 --no-monorepo skips detection even with workspace config", async () => {
     setupPnpmWorkspace(tmpDir, [{ rel: "packages/a", name: "a" }]);
 
-    await init({  yes: true, monorepo: false });
+    await init({ yes: true, monorepo: false });
 
     const specDir = path.join(tmpDir, PATHS.SPEC);
     // Single-repo spec (global backend + frontend), no per-package dirs
@@ -1194,7 +1193,7 @@ describe("init() integration", () => {
     // Empty directory — no workspace configs
     const logSpy = vi.mocked(console.log);
 
-    await init({  yes: true, monorepo: true });
+    await init({ yes: true, monorepo: true });
 
     // Should log error about missing multi-package layout
     const errorCall = logSpy.mock.calls.find(
@@ -1316,7 +1315,7 @@ describe("init() integration", () => {
   });
 
   it("#23 existing project --registry --template still refreshes spec and records source", async () => {
-    await init({ yes: true,  });
+    await init({ yes: true });
 
     registryDownload.files.set("index.md", "# refreshed golang spec\n");
     const index = JSON.stringify({
@@ -1372,7 +1371,7 @@ describe("init() integration", () => {
     fs.mkdirSync(path.join(tmpDir, "frontend", ".git"), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, "backend", ".git"), { recursive: true });
 
-    await init({  yes: true });
+    await init({ yes: true });
 
     const configPath = path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml");
     expect(fs.existsSync(configPath)).toBe(true);
@@ -1400,8 +1399,8 @@ describe("init() integration", () => {
   it("#18 monorepo: re-init does not duplicate packages in config.yaml", async () => {
     setupPnpmWorkspace(tmpDir, [{ rel: "packages/lib", name: "lib" }]);
 
-    await init({  yes: true, force: true });
-    await init({  yes: true, force: true });
+    await init({ yes: true, force: true });
+    await init({ yes: true, force: true });
 
     const configContent = fs.readFileSync(
       path.join(tmpDir, DIR_NAMES.WORKFLOW, "config.yaml"),
@@ -1417,7 +1416,7 @@ describe("init() integration", () => {
   // were bumped to 30s (SessionStart) / 15s (UserPromptSubmit). This guards
   // against future drift on the most common install path.
   it("#19 init writes bumped hook timeouts (issue #267)", async () => {
-    await init({  yes: true, claude: true });
+    await init({ yes: true, claude: true });
 
     const settings = JSON.parse(
       fs.readFileSync(path.join(tmpDir, ".claude", "settings.json"), "utf-8"),
@@ -1471,7 +1470,7 @@ describe("init() integration", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const { confirms } = await installStatuslinePromptMock(true);
 
-    await init({  });
+    await init({});
 
     // Asked exactly once, defaulting to No
     expect(confirms).toHaveLength(1);
@@ -1489,7 +1488,7 @@ describe("init() integration", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const { confirms } = await installStatuslinePromptMock(false);
 
-    await init({  });
+    await init({});
 
     expect(confirms).toHaveLength(1);
     expect(
@@ -1504,7 +1503,7 @@ describe("init() integration", () => {
   it("#26 -y mode never shows the statusLine confirm", async () => {
     const { confirms } = await installStatuslinePromptMock(true);
 
-    await init({  yes: true, claude: true });
+    await init({ yes: true, claude: true });
 
     expect(confirms).toHaveLength(0);
     expect(
@@ -1517,7 +1516,7 @@ describe("init() integration", () => {
     // Would answer No if (wrongly) asked — flag must win without prompting
     const { confirms } = await installStatuslinePromptMock(false);
 
-    await init({  claude: true, withStatusline: true });
+    await init({ claude: true, withStatusline: true });
 
     expect(confirms).toHaveLength(0);
     expect(
@@ -1528,11 +1527,11 @@ describe("init() integration", () => {
   it("#28 reinit add-platform: statusLine confirm fires for newly added claude", async () => {
     // user is required so the bootstrap task is created — otherwise the second
     // init routes through the aborted-init recovery instead of handleReinit
-    await init({ yes: true, cursor: true,  });
+    await init({ yes: true, cursor: true });
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(false);
 
     const { confirms } = await installStatuslinePromptMock(true);
-    await init({  claude: true });
+    await init({ claude: true });
 
     expect(confirms).toHaveLength(1);
     expect(confirms[0].default).toBe(false);
@@ -1550,14 +1549,14 @@ describe("init() integration", () => {
     fs.mkdirSync(path.dirname(nativeSettingsPath), { recursive: true });
     fs.writeFileSync(nativeSettingsPath, '{"permissions":{"allow":[]}}\n');
 
-    await init({ yes: true, codex: true,  });
+    await init({ yes: true, codex: true });
     expect(
       fs.existsSync(
         path.join(tmpDir, ".claude", "skills", "trellis-meta", "SKILL.md"),
       ),
     ).toBe(false);
 
-    await init({  yes: true, claude: true });
+    await init({ yes: true, claude: true });
 
     expect(
       fs.existsSync(
@@ -1570,12 +1569,12 @@ describe("init() integration", () => {
   });
 
   it("#29 reinit add-platform: no confirm when claude is already configured", async () => {
-    await init({ yes: true, claude: true,  });
+    await init({ yes: true, claude: true });
 
     const { confirms } = await installStatuslinePromptMock(true);
     // Re-running with --claude skips the already-configured platform — the
     // confirm must be pre-filtered out, not asked and then silently ignored
-    await init({  claude: true });
+    await init({ claude: true });
 
     expect(confirms).toHaveLength(0);
     expect(

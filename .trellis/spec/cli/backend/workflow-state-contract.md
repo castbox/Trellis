@@ -1,9 +1,13 @@
 # Workflow-State Breadcrumb Contract
 
-The status-based mechanics below describe legacy workflow compatibility during
-Issue #31 D1. Opt-in schema-2 workflows use the explicit Delivery projection and
-their unique active-workflow owners; see [Delivery Lifecycle](./delivery-lifecycle.md).
-Execution hints do not become durable Delivery phases.
+The status-based mechanics below describe retained legacy workflow compatibility.
+Fresh no-flag native installs and declared schema-2 workflows use the explicit
+Delivery projection and their unique active-workflow owners; see
+[Delivery Lifecycle](./delivery-lifecycle.md). Explicit `native` remains the named
+temporary legacy compatibility workflow; implicit reinit preserves the actual
+installed workflow and ownership. Current SDK `/task` and legacy-execution
+retirement await matching consumer and migration evidence plus public
+breaking-change guidance. Execution hints do not become durable Delivery phases.
 
 ## Cross-Worktree Resolution
 

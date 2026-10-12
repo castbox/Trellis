@@ -658,7 +658,16 @@ print(len(entries))
       fs.mkdirSync(archivedDir, { recursive: true });
       fs.writeFileSync(
         path.join(archivedDir, "task.json"),
-        JSON.stringify({ title: "Archived", status: "completed" }, null, 2),
+        JSON.stringify(
+          emptyTaskRecord({
+            id: "archived-task",
+            name: "Archived",
+            title: "Archived",
+            status: "completed",
+          }),
+          null,
+          2,
+        ),
       );
       fs.writeFileSync(
         path.join(archivedDir, "implement.jsonl"),

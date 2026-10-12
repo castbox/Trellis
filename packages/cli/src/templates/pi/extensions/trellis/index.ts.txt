@@ -1086,6 +1086,7 @@ function contextKey(input?: unknown, ctx?: PiExtensionContext): string | null {
 }
 
 interface ActiveTask {
+  deliveryQuery?: Record<string, unknown> | null;
   planningDir?: string | null;
   taskDir: string | null;
   taskRoot: string;
@@ -1118,8 +1119,9 @@ function readActiveTask(root: string, key: string | null): ActiveTask {
     if (data.error || data.stale) return invalid(JSON.stringify(data.error ?? "Stale task binding"));
     if (data.current_task === null && data.source === "none" && result.status === 1) return empty;
     if (result.status !== 0 || !isObj(data.current_task)) return invalid("Task resolver failed");
-    const query = data.current_task.schema_version === "2.0" ? data.current_task.current_delivery : null;
-    if (query !== null && (!isObj(query) || typeof query.kind !== "string" || query.kind === "error")) return invalid(`Delivery query error: ${JSON.stringify(query)}`);
+    const isV2 = data.current_task.schema_version === "2.0";
+    const query = isV2 ? data.current_task.current_delivery : null;
+    if (isV2 && (!isObj(query) || !["current", "terminal_delivery", "no_current_delivery"].includes(String(query.kind)))) return invalid(`Delivery query error: ${JSON.stringify(query)}`);
     const delivery = isObj(query) && (query.kind === "current" || query.kind === "terminal_delivery") && isObj(query.delivery) ? query.delivery : null;
     const status = isObj(query) ? (delivery?.phase ?? query.kind) : data.current_task.status;
     if (typeof status !== "string" || !status.trim()) return invalid(query ? "Invalid public phase query" : "Invalid task status: expected a nonempty string");
@@ -1130,6 +1132,7 @@ function readActiveTask(root: string, key: string | null): ActiveTask {
     }
     return {
       taskDir, taskRoot,
+      deliveryQuery: isObj(query) ? query : null,
       planningDir: query ? (delivery && typeof delivery.planning_root === "string" ? join(taskDir, delivery.planning_root) : null) : taskDir,
       status,
       id: str(data.current_task.id) ?? basename(taskDir),
@@ -1146,6 +1149,10 @@ const WF_RE =
 function workflowBreadcrumb(root: string, key: string | null): string {
   const active = readActiveTask(root, key);
   if (active.error) return `<workflow-state>\nStatus: invalid_task\n${active.error}\n</workflow-state>`;
+  if (active.deliveryQuery) {
+    const continuation = runContextScript(root, key, ["--mode", "continuation"]);
+    return `<workflow-state>\nTask: ${active.id}; Delivery query: ${JSON.stringify(active.deliveryQuery)}\n${continuation}\n</workflow-state>`;
+  }
   root = active.taskRoot;
   const wf = readText(join(root, ".trellis", "workflow.md"), root);
   if (!wf) return "";
@@ -1173,12 +1180,12 @@ function runContextScript(root: string, key: string | null, args: string[]): str
     const py = process.platform === "win32" ? "python" : "python3";
     const result = spawnSync(py, [script, ...args], {
       cwd: root,
-      env: key ? { ...process.env, TRELLIS_CONTEXT_ID: key } : process.env,
+      env: { ...process.env, ...(key ? { TRELLIS_CONTEXT_ID: key } : {}), PYTHONDONTWRITEBYTECODE: "1" },
       encoding: "utf-8",
       timeout: SESSION_OVERVIEW_TIMEOUT_MS,
       windowsHide: true,
     });
-    if (result.status !== 0) return "";
+    if (result.status !== 0) return args.includes("continuation") ? `Trellis continuation error: ${result.stderr?.trim() || "query failed"}` : "";
     const stdout = (result.stdout ?? "").trim();
     return stdout;
   } catch {
@@ -1223,7 +1230,7 @@ function buildContext(root: string, agent: string, key: string | null): string {
   if (active.error) return `Trellis task binding invalid: ${active.error}`;
   const dir = active.planningDir === undefined ? active.taskDir : active.planningDir;
   if (!dir)
-    return "No active Trellis task found. Read .trellis/ before proceeding.";
+    return active.deliveryQuery ? `Delivery selection: ${active.deliveryQuery.kind}; no execution planning context was loaded.` : "No active Trellis task found. Read .trellis/ before proceeding.";
   root = active.taskRoot;
   const relTaskDir = relative(root, dir).replace(/\\/g, "/");
   const limits = readContextInjectionLimits(root);

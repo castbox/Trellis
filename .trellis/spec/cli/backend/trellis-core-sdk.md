@@ -67,6 +67,21 @@ corpus; do not expose v2 implicitly from the root or dual-write a Task.
 See [Delivery Lifecycle](./delivery-lifecycle.md) for the public authority and
 finite cutover prerequisites.
 
+Migration consumers pin `/task/legacy-migration` for the original predecessor
+projection and `/task/migration-v2` for `validateTaskV2Projection`. Neither is a
+current lifecycle writer. Plan-1 callers must not depend on future `/task`
+exports changing shape. The v2 store owns immutable result/preimage enforcement,
+Task-local relocation and `resolveTaskArtifactLocator`; consumers must use its
+origin-aware resolver rather than copying path rebasing into each reader.
+
+`/task/v2` also exports the read-only `verifyHistoricalCommit(root, fact)` for
+normal local delivery and explicit migration. It validates a closed DeliveryFact
+at the public boundary and accepts only `local_commit`; manual/PR results need
+their own original producer verification. The full SHA-1/SHA-256 commit OID must
+identify an actual commit whose selected tree blobs and executable bits match
+the candidate content digest. Current HEAD and worktree content do not replace
+that immutable historical tree. This helper performs no lifecycle or file write.
+
 Core exposes domains as explicit subpaths, not from one root barrel:
 
 ```ts

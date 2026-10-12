@@ -7,9 +7,13 @@ vi.mock("figlet", () => ({ default: { textSync: () => "Trellis" } }));
 vi.mock("inquirer", () => ({
   default: { prompt: vi.fn().mockResolvedValue({ proceed: true }) },
 }));
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(() => "Python 3.11.12"),
-}));
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    execSync: vi.fn(() => "Python 3.11.12"),
+  };
+});
 
 import { init } from "../../src/commands/init.js";
 import { update } from "../../src/commands/update.js";

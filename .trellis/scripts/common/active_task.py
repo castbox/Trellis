@@ -566,6 +566,15 @@ def _read_json(path: Path, repo_root: Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def _require_selected_runtime(task_path: Path, workspace: Path) -> None:
+    from .io import read_json_checked
+    from .runtime_contract import require_task_runtime
+    data, reason = read_json_checked(task_path / "task.json")
+    if data is None:
+        raise SessionBindingError(f"task_metadata_{reason}: {task_path}")
+    require_task_runtime(workspace, data)
+
+
 def resolve_active_task(
     repo_root: Path,
     platform_input: dict[str, Any] | None = None,
@@ -609,6 +618,7 @@ def resolve_active_task(
                     facts, record.task_id, record.lifecycle_generation,
                     preferred_workspace=root,
                 )
+                _require_selected_runtime(resolved.task_path, resolved.workspace)
                 return ActiveTask(resolved.task_ref, "session", context_key,
                                   invocation_root=root, repository_common_dir=facts.common_dir,
                                   task_workspace_root=resolved.workspace,
@@ -650,6 +660,7 @@ def _resolve_single_session_fallback(repo_root: Path) -> ActiveTask | None:
         facts, record.task_id, record.lifecycle_generation,
         preferred_workspace=repo_root,
     )
+    _require_selected_runtime(resolved.task_path, resolved.workspace)
     if resolved.workspace != repo_root.resolve():
         return None
     return ActiveTask(resolved.task_ref, "session-fallback", session_file.stem,
@@ -691,6 +702,7 @@ def set_active_task(
         raise SessionBindingError(
             f"ambiguous_task_identity: explicit target cannot be selected: {resolved}"
         )
+    _require_selected_runtime(resolved, workspace)
     context_path = session_path(repo_root, context_key, facts)
     context = {
         "schema_version": 2,
@@ -708,7 +720,7 @@ def set_active_task(
                       resolved_task_path=resolved)
 
 
-def task_workspace_for_path(path: Path, repo_root: Path) -> Path:
+def task_workspace_for_path(path: Path, repo_root: Path, *, allow_archived: bool = False) -> Path:
     """Find an explicit target's Trellis workspace, validated by live Git facts."""
     facts = repository_facts(repo_root)
     root = facts.invocation_root
@@ -716,7 +728,7 @@ def task_workspace_for_path(path: Path, repo_root: Path) -> Path:
         return validate_workspace(root, facts)
     # First preserve the caller's legitimate external tasks-root symlink.
     try:
-        task_location(str(path), root, metadata=False)
+        task_location(str(path), root, metadata=False, allow_archived=allow_archived)
         return validate_workspace(root, facts)
     except SessionBindingError:
         pass

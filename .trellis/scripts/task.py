@@ -52,7 +52,7 @@ from common.io import (
     write_json,
 )
 from common.task_utils import TaskIdentityError, read_task_identity, resolve_lifecycle_target, run_task_hooks
-from common.tasks import iter_active_tasks, children_progress, get_all_statuses, task_lifecycle_summary
+from common.tasks import iter_active_tasks, children_progress, get_all_statuses, task_lifecycle_summary, matches_task_inventory, task_inventory_label, task_inventory_summary
 
 # Import command handlers from split modules (also re-exports for plan.py compatibility)
 from common.task_store import (
@@ -161,13 +161,12 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(f"Error: {problem}. {hint}", file=sys.stderr)
         return 1
     is_v2 = selected_data.get("schema_version") == "2.0"
-    if is_v2:
-        from common.runtime_contract import read_runtime_contract
-        try:
-            read_runtime_contract(repo_root / DIR_WORKFLOW / "workflow.md")
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
+    from common.runtime_contract import RuntimeContractError, require_task_runtime
+    try:
+        require_task_runtime(repo_root, selected_data)
+    except RuntimeContractError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
     # Context-manifest gate (#573): a seeded-but-uncurated implement/check
     # manifest means every sub-agent dispatched for this task runs with zero
@@ -249,7 +248,11 @@ def cmd_start(args: argparse.Namespace) -> int:
             _record_start_state(task_json_path, repo_root)
 
         print()
-        print(colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE))
+        message = (
+            "Task selection is bound; Delivery context requires a separate exact Delivery selection."
+            if is_v2 else "The hook will now inject context from this task's jsonl files."
+        )
+        print(colored(message, Colors.BLUE))
 
         run_task_hooks("after_start", task_json_path, repo_root)
         return 0
@@ -319,6 +322,7 @@ def cmd_current(args: argparse.Namespace) -> int:
                 from common.delivery_session import get_current_delivery
                 task_obj.pop("status")
                 task_obj["schema_version"] = "2.0"
+                task_obj.update(task_lifecycle_summary(data))
                 task_obj["current_delivery"] = get_current_delivery(repo_root)
         payload = {
             "current_task": task_obj,
@@ -375,13 +379,15 @@ def _display_status(t, all_statuses: dict) -> str:
     list (#399 item 3). Show "active" instead when at least one child is
     past planning; the stored status.json value is left untouched.
     """
+    if t.inventory is not None or t.history_only:
+        return task_inventory_label(t)
     if t.status == "planning" and t.children:
         child_in_flight = any(
             all_statuses.get(c) not in (None, "planning") for c in t.children
         )
         if child_in_flight:
             return "active"
-    return t.status
+    return t.status or "unknown"
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -390,6 +396,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     tasks_dir = get_tasks_dir(repo_root)
     current_task = get_current_task(repo_root)
     filter_status = args.status
+    completion = getattr(args, "completion", None)
+    phase = getattr(args, "delivery_phase", None)
     as_json = getattr(args, "json", False)
 
     # Single pass: collect all tasks via shared iterator
@@ -400,7 +408,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         items = []
         for dir_name in sorted(all_tasks.keys()):
             t = all_tasks[dir_name]
-            if filter_status and t.status != filter_status:
+            if not matches_task_inventory(t, status=filter_status, completion=completion, phase=phase):
                 continue
             items.append({
                 "dir": f"{DIR_WORKFLOW}/{DIR_TASKS}/{dir_name}",
@@ -413,10 +421,10 @@ def cmd_list(args: argparse.Namespace) -> int:
                 "children": list(t.children),
                 "package": t.package,
             })
-            if t.raw.get("schema_version") == "2.0":
+            if t.inventory is not None or t.history_only:
                 items[-1].pop("status")
                 items[-1].pop("display_status")
-                items[-1].update(task_lifecycle_summary(t.raw))
+                items[-1].update(task_inventory_summary(t))
         print(json.dumps({"tasks": items}, ensure_ascii=False))
         return 0
 
@@ -424,7 +432,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     # remains visible as a root, just as it does in JSON output.
     all_tasks = {
         name: task for name, task in all_tasks.items()
-        if not filter_status or task.status == filter_status
+        if matches_task_inventory(task, status=filter_status, completion=completion, phase=phase)
     }
     print(colored("Project tasks:", Colors.BLUE))
     print()
@@ -437,7 +445,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         t = all_tasks[dir_name]
 
         # Apply --status filter
-        if filter_status and t.status != filter_status:
+        if not matches_task_inventory(t, status=filter_status, completion=completion, phase=phase):
             return
 
         relative_path = f"{DIR_WORKFLOW}/{DIR_TASKS}/{dir_name}"
@@ -540,7 +548,7 @@ Usage:
   python3 task.py archive <task-dir>                 Archive completed task
   python3 task.py add-subtask <parent> <child>       Link child task to parent
   python3 task.py remove-subtask <parent> <child>    Unlink child from parent
-  python3 task.py list [--status <status>] [--json]  List tasks
+  python3 task.py list [--json]                      List Task acceptance and Delivery inventory
   python3 task.py list-archive [YYYY-MM]             List archived tasks
 
 Monorepo options:
@@ -553,7 +561,9 @@ Archive options:
   --no-commit                Skip the auto git commit after archiving
 
 List options:
-  --status, -s <s>     Filter by status (planning, in_progress, review, completed)
+  --completion <c>     Filter schema-2 Tasks by complete or incomplete
+  --delivery-phase <p> Filter schema-2 Tasks by current-generation Delivery phase
+  --status, -s <s>     Filter legacy Tasks by status (D1 compatibility only)
   --json               Output machine-readable JSON (also available on `current`)
 
 Examples:
@@ -624,8 +634,8 @@ def main() -> int:
     p_create.add_argument("title", help="Task title (required, non-empty)")
     p_create.add_argument("--slug", "-s", help="Task slug without the MM-DD date prefix")
     p_create.add_argument("--task-id", help="Stable TaskId independent of the directory slug")
-    p_create.add_argument("--schema-version", choices=["legacy", "2.0"], default="legacy",
-                         help="Explicit opt-in Task/Delivery schema (legacy default during D1)")
+    p_create.add_argument("--schema-version", choices=["legacy", "2.0"], default=None,
+                         help="Task schema (default: validated installed workflow declaration; explicit values must match)")
     p_create.add_argument(
         "--source-json",
         help="Structured task source JSON (default: no_issue; issue create accepts exact_source or reference_only)",
@@ -650,7 +660,7 @@ def main() -> int:
     p_create.add_argument(
         "--no-start",
         action="store_true",
-        help="Create the task without making it active in this session",
+        help="Create the task without binding its selection to this session",
     )
     p_create.add_argument(
         "--force",
@@ -734,7 +744,10 @@ def main() -> int:
 
     # list
     p_list = subparsers.add_parser("list", help="List tasks")
-    p_list.add_argument("--status", "-s", help="Filter by status")
+    p_list.add_argument("--status", "-s", help="Filter legacy Tasks by status (D1 compatibility window only)")
+    p_list.add_argument("--completion", choices=("complete", "incomplete"), help="Filter schema-2 Tasks by current accepted Completion")
+    from common.delivery_schema import PHASES
+    p_list.add_argument("--delivery-phase", choices=PHASES, help="Filter schema-2 Tasks with a recorded current-generation Delivery phase; does not select a Delivery")
     p_list.add_argument("--json", action="store_true", help="Output machine-readable JSON")
 
     # add-subtask

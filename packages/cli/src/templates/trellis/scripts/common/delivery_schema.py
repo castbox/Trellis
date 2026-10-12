@@ -15,9 +15,9 @@ from .runtime_contract import PROFILES, is_nonempty_string
 
 PHASES = ("planning", "implementing", "checking", "reviewing", "publishing", "delivered", "stopped")
 GATES = ("planning", "check", "full_review", "readiness")
-V2_FIELD_ORDER = ("schema_version", "id", "name", "lifecycle_generation", "source", "title", "description", "dev_type", "scope", "package", "priority", "createdAt", "base_branch", "branch", "worktree_path", "children", "parent", "relatedFiles", "notes", "meta", "accepted_scope", "deliveries", "completion_results", "closure_results")
+V2_FIELD_ORDER = ("schema_version", "artifact_origin", "id", "name", "lifecycle_generation", "source", "title", "description", "dev_type", "scope", "package", "priority", "createdAt", "base_branch", "branch", "worktree_path", "children", "parent", "relatedFiles", "notes", "meta", "accepted_scope", "deliveries", "completion_results", "closure_results")
 V2_FIELDS = frozenset({
-    "schema_version", "id", "name", "lifecycle_generation", "source", "title",
+    "schema_version", "artifact_origin", "id", "name", "lifecycle_generation", "source", "title",
     "description", "dev_type", "scope", "package", "priority", "createdAt",
     "branch", "base_branch", "worktree_path", "children", "parent", "relatedFiles",
     "notes", "meta", "accepted_scope", "deliveries", "completion_results", "closure_results",
@@ -88,6 +88,13 @@ def relative_path(value: object) -> None:
     if (value.startswith("/") or "\\" in value or "\0" in value or re.match(r"[A-Za-z]:", value)
             or any(part in ("", ".", "..") for part in value.split("/"))):
         fail("invalid_locator", value)
+
+
+def task_artifact_root(value: object) -> None:
+    relative_path(value)
+    assert isinstance(value, str)
+    if value == ".trellis/tasks/archive" or not re.fullmatch(r"\.trellis/tasks/(?:archive/[0-9]{4}-(?:0[1-9]|1[0-2])/)?[^/]+", value):
+        fail("invalid_locator", "artifact_origin must be a Task root")
 
 
 def authority(value: object) -> None:
@@ -255,14 +262,16 @@ def parse_task_v2(value: object) -> dict:
     if value.get("schema_version") != "2.0":
         fail("unsupported_task_schema", str(value.get("schema_version")))
     from .io import _has_invalid_task_schema, _has_unsupported_task_fields
-    metadata = {k: v for k, v in value.items() if k not in ("schema_version", "accepted_scope", "deliveries", "completion_results", "closure_results")}
+    metadata = {k: v for k, v in value.items() if k not in ("schema_version", "artifact_origin", "accepted_scope", "deliveries", "completion_results", "closure_results")}
     for key in ("status", "commit", "pr_url", "completedAt"):
         if key in metadata:
             fail("invalid_record", f"Task v2 does not support {key}")
     metadata.update(status="planning", commit=None, pr_url=None, completedAt=None)
     if _has_unsupported_task_fields(Path("task.json"), metadata) or _has_invalid_task_schema(Path("task.json"), metadata):
         fail("invalid_record", "invalid Task metadata")
-    object_fields(value, tuple(V2_FIELDS - {"branch"}), ("branch",))
+    object_fields(value, tuple(V2_FIELDS - {"branch", "artifact_origin"}), ("branch", "artifact_origin"))
+    if "artifact_origin" in value:
+        task_artifact_root(value["artifact_origin"])
     if value["accepted_scope"] is not None:
         authority(value["accepted_scope"])
     for field in ("deliveries", "completion_results", "closure_results"):
@@ -307,7 +316,7 @@ def parse_task_v2(value: object) -> dict:
             authority(bag["source_result"])
         elif bag["source_result"] is not None:
             fail("invalid_record", "no_mutation has no source result")
-    for key in ("status", "phase", "candidate", "results", "accepted_scope", "deliveries", "completion_results", "closure_results"):
+    for key in ("artifact_origin", "status", "phase", "candidate", "results", "accepted_scope", "deliveries", "completion_results", "closure_results"):
         if key in value["meta"]:
             fail("invalid_record", f"meta cannot hold authoritative {key}")
     return {key: copy.deepcopy(value[key]) for key in V2_FIELD_ORDER if key in value}

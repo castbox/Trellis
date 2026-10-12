@@ -41,6 +41,7 @@ function hasCuratedJsonlEntry(ctx, jsonlPath) {
 }
 
 function getTaskStatus(ctx, platformInput = null) {
+  const callerCtx = ctx
   const active = ctx.getActiveTask(platformInput)
   if (active.error || active.stale) return `Status: TASK ERROR\nError: ${active.error || "stale binding"}\nSource: ${active.source}`
   const taskRef = active.taskPath
@@ -69,6 +70,17 @@ function getTaskStatus(ctx, platformInput = null) {
     } catch {
       // Ignore parse errors
     }
+  }
+
+  if (taskData.schema_version === "2.0") {
+    const query = callerCtx.getCurrentDelivery(platformInput)
+    const view = Object.fromEntries(["kind", "key", "code", "message"]
+      .filter(key => key in query).map(key => [key, query[key]]))
+    if (query.kind === "current" || query.kind === "terminal_delivery") {
+      view.phase = query.delivery.phase
+      view.planning_root = query.delivery.planning_root
+    }
+    return `Delivery query: ${JSON.stringify(view)}\nNext: Load get_context.py --mode continuation; the active workflow owns routing.`
   }
 
   const taskTitle = taskData.title || taskRef
@@ -134,6 +146,7 @@ function loadTrellisConfig(directory, contextKey = null) {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
+        PYTHONDONTWRITEBYTECODE: "1",
         ...(contextKey ? { TRELLIS_CONTEXT_ID: contextKey } : {}),
       },
     })
@@ -312,15 +325,25 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
     const taskDir = active.resolvedTaskPath
     const taskCtx = new TrellisContext(active.taskWorkspaceRoot)
     let status = "unknown"
+    let lifecycle = null
     if (taskDir) {
       try {
         const data = JSON.parse(taskCtx.readFile(join(taskDir, "task.json")) || "{}")
-        status = data.status || "unknown"
+        if (data.schema_version === "2.0") lifecycle = ctx.getCurrentDelivery(platformInput)
+        else status = data.status || "unknown"
       } catch {
         // Ignore parse errors
       }
     }
-    lines.push(`Current task: ${active.taskPath}; status=${status}.`)
+    if (lifecycle) {
+      lines.push(`Current task: ${active.taskPath}; schema_version=2.0.`)
+      lines.push(`Delivery selection: ${lifecycle.kind}; key=${JSON.stringify(lifecycle.key || null)}`)
+      if (lifecycle.kind === "current" || lifecycle.kind === "terminal_delivery") {
+        lines.push(`Delivery phase: ${lifecycle.delivery.phase}.`)
+      } else if (lifecycle.kind === "error") {
+        lines.push(`Delivery error: ${lifecycle.code}: ${lifecycle.message}`)
+      }
+    } else lines.push(`Current task: ${active.taskPath}; status=${status}.`)
     lines.push(`Task workspace: ${active.taskWorkspaceRoot}; caller workspace: ${directory}.`)
   } else {
     lines.push("Current task: none.")
@@ -432,7 +455,7 @@ Trellis compact SessionStart context. Use it to orient the session; load details
   )
   parts.push("</guidelines>")
 
-  const taskStatus = getTaskStatus(ctx, platformInput)
+  const taskStatus = getTaskStatus(callerCtx, platformInput)
   parts.push(`<task-status>\n${taskStatus}\n</task-status>`)
 
   parts.push(`<ready>

@@ -90,10 +90,24 @@ def repository_facts(root: Path) -> RepositoryFacts:
         _git(root, "rev-parse", "--show-toplevel").rstrip("\r\n")
     ).resolve()
     output = _git(root, "worktree", "list", "--porcelain", "-z")
-    worktrees = tuple(dict.fromkeys(
-        Path(field[len("worktree "):]).resolve()
-        for field in output.split("\0") if field.startswith("worktree ")
-    ))
+    registered: list[Path] = []
+    # With -z each field is NUL-terminated and an empty field ends a record.
+    # A stale registration can retain .trellis after its Git entry disappears.
+    # Only Git's explicit prunable marker plus an absent .git permits skipping
+    # that sibling; extant/corrupt/foreign Git entries still require validation.
+    for record in output.split("\0\0"):
+        fields = record.split("\0")
+        if not fields[0].startswith("worktree "):
+            continue
+        worktree = Path(fields[0][len("worktree "):]).resolve()
+        prunable = any(
+            field == "prunable" or field.startswith("prunable ")
+            for field in fields[1:]
+        )
+        if worktree != git_root and prunable and not os.path.lexists(worktree / ".git"):
+            continue
+        registered.append(worktree)
+    worktrees = tuple(dict.fromkeys(registered))
     if git_root not in worktrees:
         raise SessionBindingError(f"unregistered_workspace: {root}")
     facts = RepositoryFacts(root, common, worktrees, git_root)
@@ -214,7 +228,7 @@ def record_exists(path: Path) -> bool:
 
 
 def task_location(
-    ref: str, workspace: Path, *, metadata: bool = True
+    ref: str, workspace: Path, *, metadata: bool = True, allow_archived: bool = False
 ) -> tuple[str, Path]:
     """Validate an explicit CLI TaskRef inside one live workspace."""
     from .paths import get_tasks_dir
@@ -243,11 +257,25 @@ def task_location(
         relative = candidate.resolve().relative_to(tasks.resolve())
     except ValueError as exc:
         raise SessionBindingError(f"invalid_task_path: {ref}") from exc
-    if len(relative.parts) != 1 or relative.parts[0] == "archive":
+    archived = (len(relative.parts) == 3 and relative.parts[0] == "archive"
+                and re.fullmatch(r"[0-9]{4}-(?:0[1-9]|1[0-2])", relative.parts[1]) is not None)
+    active = len(relative.parts) == 1 and relative.parts[0] != "archive"
+    if not active and not (allow_archived and archived):
         raise SessionBindingError(
             f"invalid_task_path: not an active task: {ref}"
         )
     lexical = tasks / relative
+    if archived:
+        # Validate the supplied spelling before realpath strips nested links.
+        for component in (candidate, candidate.parent, candidate.parent.parent):
+            if component.is_symlink():
+                raise SessionBindingError(f"invalid_task_path: nested archive symlink: {component}")
+        # Archive is a history boundary, never an execution root alias.
+        component = tasks
+        for part in relative.parts:
+            component = component / part
+            if component.is_symlink():
+                raise SessionBindingError(f"invalid_task_path: nested archive symlink: {component}")
     if metadata:
         data, reason = read_json_checked(lexical / "task.json")
         if data is None:

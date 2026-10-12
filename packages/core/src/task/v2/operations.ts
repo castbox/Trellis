@@ -99,6 +99,15 @@ export function applyTaskOperation(input: unknown, request: unknown, declaration
       requireOwner(op, workflow, role); return output(false, op.result.result_id);
     }
   }
+  if (op.operation === "reopen_task" && op.key.lifecycle_generation !== record.lifecycle_generation) {
+    requireOwner(op, workflow, "task_scope");
+    // No reopen ledger: recover only the immediately preceding completed
+    // generation while the reopened scope has no subsequent business facts.
+    const untouched = ![...record.deliveries, ...record.completion_results, ...record.closure_results].some((row) => row.lifecycle_generation === record.lifecycle_generation);
+    if (record.lifecycle_generation === op.key.lifecycle_generation + 1 && same(record.accepted_scope, op.authority) && untouched && record.completion_results.some((row) => row.lifecycle_generation === op.key.lifecycle_generation)) {
+      return { ...output(false), key: { task_id: record.id, lifecycle_generation: record.lifecycle_generation } };
+    }
+  }
   if (op.key.lifecycle_generation !== record.lifecycle_generation && !historical) fail("stale_lifecycle_generation", String(op.key.lifecycle_generation));
   if (deliveryId !== null && op.operation !== "create_delivery") {
     if (!d) fail("delivery_not_found", deliveryId);

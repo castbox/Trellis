@@ -23,7 +23,13 @@ export function readDeliveryWorkflowContract(
   const closed = lines.flatMap((line, i) =>
     line.trim() === "[/trellis-runtime-contract]" ? [i] : [],
   );
-  if (!opened.length && !closed.length) return null;
+  if (!opened.length && !closed.length) {
+    if (
+      lines.some((line) => /^\[\/?trellis-runtime-contract/.test(line.trim()))
+    )
+      throw new Error("invalid_runtime_contract_block");
+    return null;
+  }
   if (opened.length !== 1 || closed.length !== 1 || opened[0] >= closed[0]) {
     throw new Error(
       "invalid_runtime_contract: expected exactly one ordered runtime declaration",
@@ -48,6 +54,15 @@ export function preflightDeliveryWorkflow(
 ): void {
   const contract = readDeliveryWorkflowContract(content);
   const workflowRoot = path.join(cwd, ".trellis");
+  // Only the actual installed declaration can make unrelated old records
+  // historical-only. Prospective switch content cannot authorize migration.
+  const installedWorkflowPath = path.join(workflowRoot, "workflow.md");
+  assertProjectPath(installedWorkflowPath, cwd);
+  const installedContract = fs.existsSync(installedWorkflowPath)
+    ? readDeliveryWorkflowContract(
+        fs.readFileSync(installedWorkflowPath, "utf8"),
+      )
+    : null;
   if (contract && fs.existsSync(workflowRoot)) {
     const versionPath = path.join(workflowRoot, ".version");
     assertProjectPath(versionPath, cwd);
@@ -97,6 +112,7 @@ export function preflightDeliveryWorkflow(
   const tasks = path.join(workflowRoot, "tasks");
   assertProjectPath(tasks, cwd);
   if (!fs.existsSync(tasks)) return;
+  const identities = new Set<string>();
   for (const entry of fs.readdirSync(tasks, { withFileTypes: true })) {
     if (
       (!entry.isDirectory() && !entry.isSymbolicLink()) ||
@@ -110,6 +126,20 @@ export function preflightDeliveryWorkflow(
     assertProjectPath(recordPath, cwd);
     if (!fs.existsSync(recordPath)) continue;
     const data: unknown = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    if (
+      data === null ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      !("id" in data) ||
+      typeof data.id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(data.id)
+    ) {
+      throw new Error(`invalid_task_identity: ${recordPath}`);
+    }
+    const identity = data.id.toLowerCase();
+    if (identities.has(identity))
+      throw new Error(`task_identity_collision: ${recordPath}`);
+    identities.add(identity);
     const v2 =
       data !== null &&
       typeof data === "object" &&
@@ -131,7 +161,12 @@ export function preflightDeliveryWorkflow(
         }
       }
     }
-    if (v2 !== Boolean(contract)) {
+    const preservedHistory =
+      !v2 &&
+      Boolean(contract) &&
+      Boolean(installedContract) &&
+      (!("schema_version" in data) || data.schema_version === "1.0");
+    if (v2 !== Boolean(contract) && !preservedHistory) {
       throw new Error(
         `delivery_migration_required: ${recordPath}; D1 does not migrate or mix task authorities`,
       );

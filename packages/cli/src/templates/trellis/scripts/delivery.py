@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in Delivery API 1.0; legacy task.py records remain unchanged.
+"""Delivery API 1.0 for declared schema-2 workflows; legacy records stay unchanged.
 
 Usage:
     python3 .trellis/scripts/delivery.py current --json
@@ -20,11 +20,13 @@ import uuid
 from pathlib import Path
 
 from common.active_task import resolve_active_task
-from common.delivery_schema import fail, parse_task_v2
+from common.delivery_operations import parse_operation
+from common.delivery_schema import fail, parse_task_v2, task_artifact_root
 from common.delivery_session import get_current_delivery, release_delivery, select_delivery
-from common.delivery_store import apply_to_store, candidate_content_ref
+from common.delivery_store import _checked_path, apply_to_store, candidate_content_ref
 from common.io import read_json_checked
 from common.paths import get_repo_root
+from common.session_storage import repository_facts, resolve_task_identity
 from common.task_utils import resolve_lifecycle_target
 
 ALIASES = {
@@ -35,9 +37,9 @@ ALIASES = {
 }
 
 
-def _target(ref: str | None, root: Path) -> tuple[Path, Path]:
+def _target(ref: str | None, root: Path, *, allow_archived: bool = False) -> tuple[Path, Path]:
     if ref:
-        target = resolve_lifecycle_target(ref, root)
+        target = resolve_lifecycle_target(ref, root, allow_archived=allow_archived)
         if target is None:
             fail("invalid_task_path", ref)
         assert target is not None
@@ -56,6 +58,32 @@ def _input(raw: str) -> dict:
     if not isinstance(value, dict):
         fail("invalid_operation", "input must be a JSON object")
     return value
+
+
+def _reopen_target(ref: str | None, root: Path, request: dict) -> tuple[Path, Path]:
+    """Recover a disappeared archive locator only from an explicit operation key."""
+    if ref is None:
+        return _target(ref, root, allow_archived=True)
+    normalized = ref.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith("tasks/"):
+        normalized = ".trellis/" + normalized
+    supplied = Path(normalized)
+    candidate = supplied if supplied.is_absolute() else root / supplied
+    if candidate.exists():
+        return _target(ref, root, allow_archived=True)
+    operation = parse_operation(request)
+    selected = resolve_task_identity(repository_facts(root), operation["key"]["task_id"], operation["key"]["lifecycle_generation"] + 1)
+    try:
+        locator = candidate.relative_to(selected.workspace).as_posix()
+    except ValueError:
+        fail("invalid_task_path", ref)
+    task_artifact_root(locator)
+    if not locator.startswith(".trellis/tasks/archive/"):
+        fail("invalid_task_path", "reopen recovery requires an explicit missing archive locator")
+    _checked_path(candidate, selected.workspace)
+    return selected.workspace, selected.task_path
 
 
 def main() -> int:
@@ -100,7 +128,11 @@ def main() -> int:
         if args.command == "candidate":
             print(json.dumps({"content_ref": candidate_content_ref(root, args.paths, args.kind)}, ensure_ascii=False))
             return 0
-        workspace, task_dir = _target(args.task, root)
+        request = None if args.command in ("list", "select") else _input(args.input)
+        history = args.command == "list" or (request is not None and request.get("operation") == "reopen_task")
+        workspace, task_dir = (_reopen_target(args.task, root, request)
+                               if request is not None and request.get("operation") == "reopen_task"
+                               else _target(args.task, root, allow_archived=history))
         if args.command == "list":
             record, reason = read_json_checked(task_dir / "task.json")
             if record is None:
@@ -109,7 +141,7 @@ def main() -> int:
         elif args.command == "select":
             print(json.dumps(select_delivery(task_dir, workspace, root, args.delivery), ensure_ascii=False, indent=2))
         else:
-            request = _input(args.input)
+            assert request is not None
             if args.command in ALIASES and request.get("operation") != ALIASES[args.command]:
                 fail("invalid_operation", f"{args.command} requires operation {ALIASES[args.command]}")
             print(json.dumps(apply_to_store(task_dir, workspace, request, args.expected_sha256), ensure_ascii=False, indent=2))
