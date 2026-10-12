@@ -151,6 +151,14 @@ identity and resolver facts; with no binding it owns only the initial entry.
 Invalid bindings stop before workflow extraction; never choose an invocation
 workflow as recovery fallback.
 
+The exact `[trellis-runtime-contract]` / `[/trellis-runtime-contract]` markers
+may coexist outside the continuation block. Continuation extraction does not
+validate their declaration; the separate runtime-contract parser owns it.
+Inside continuation, these sibling protocol markers remain mismatched markers.
+Regressions must exercise the actual bundled native-delivery-v1 workflow and
+custom schema-2 workflow through get_context.py, preserving body bytes and all
+existing malformed/nested/duplicate continuation errors.
+
 Mismatch detection is limited to Trellis marker-like lines. Unrelated Markdown
 inside the body, including standalone platform blocks such as
 `[Codex]...[/Codex]`, is returned verbatim rather than interpreted as protocol

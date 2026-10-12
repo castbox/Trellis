@@ -112,6 +112,12 @@ Ownership contract:
 - Every external/custom workflow is user-managed local content. After writing it,
   remove `.trellis/workflow.md` from `.trellis/.template-hashes.json` with
   `removeHash`.
+- Reinitialization without an explicit workflow choice preserves the existing
+  workflow's actual ownership. A missing workflow hash stays missing after both
+  forced full reinit and add-platform reinit, even when `options.workflow`
+  defaults to `native`. Hash initialization must not adopt retained custom
+  legacy/schema-2 content. Normal and forced update preserve its continuation
+  and declared owners; only explicit workflow selection changes this authority.
 - Do not add `workflow.variant` or any other long-lived config field to make
   `trellis update` chase a selected variant. Switching is an explicit project
   action.
@@ -208,6 +214,9 @@ Integration tests:
 - `--create-new` writes a generated `workflow.md.new` file beside `.trellis/workflow.md` and does not touch the active
   workflow or hash.
 - `trellis update` after switching to non-native does not restore native.
+- Custom legacy and schema-2 workflow -> `init --force --yes` without workflow
+  flags -> normal and forced update preserves exact content, owners and absent
+  workflow hash. Exercise the add-platform fast path as well as full reinit.
 - Marketplace native mirror matches bundled native workflow when the mirror file
   exists.
 - Real `marketplace/workflows/tdd/workflow.md` planning breadcrumbs include the

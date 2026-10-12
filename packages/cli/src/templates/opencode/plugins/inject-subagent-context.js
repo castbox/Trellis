@@ -43,9 +43,9 @@ function extractActiveTaskHint(prompt) {
  *   4. implement.md if present (execution plan)
  * All blocks share one total budget (issue #441).
  */
-function getImplementContext(ctx, taskDir) {
+function getImplementContext(ctx, taskDir, validatedTaskPath = null) {
   const parts = []
-  const taskDirFull = ctx.resolveContextDir(taskDir)
+  const taskDirFull = ctx.resolveContextDir(taskDir, validatedTaskPath)
   if (!taskDirFull) return ""
 
   const limits = readContextInjectionLimits(ctx.directory)
@@ -98,9 +98,9 @@ function getImplementContext(ctx, taskDir) {
  * Get context for check agent. `taskDir` may be relative or absolute.
  * Same read order and shared budget as the implement context.
  */
-function getCheckContext(ctx, taskDir) {
+function getCheckContext(ctx, taskDir, validatedTaskPath = null) {
   const parts = []
-  const taskDirFull = ctx.resolveContextDir(taskDir)
+  const taskDirFull = ctx.resolveContextDir(taskDir, validatedTaskPath)
   if (!taskDirFull) return ""
 
   const limits = readContextInjectionLimits(ctx.directory)
@@ -148,9 +148,9 @@ function getCheckContext(ctx, taskDir) {
 /**
  * Get context for finish phase (final check before PR)
  */
-function getFinishContext(ctx, taskDir) {
+function getFinishContext(ctx, taskDir, validatedTaskPath = null) {
   // Finish reuses check context (same JSONL source)
-  return getCheckContext(ctx, taskDir)
+  return getCheckContext(ctx, taskDir, validatedTaskPath)
 }
 
 
@@ -471,6 +471,7 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           // use the checkout-local compatibility fallback; errors never fall back.
           let taskDir = null
           let taskCtx = ctx
+          let validatedTaskPath = null
           const contextKey = ctx.getContextKey(input)
           const active = ctx.getActiveTask(input)
           if (active.error || active.stale) {
@@ -480,6 +481,7 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           if (active.resolvedTaskPath) {
             taskDir = active.taskPath
             taskCtx = new TrellisContext(active.taskWorkspaceRoot)
+            validatedTaskPath = active.resolvedTaskPath
           }
 
           if (!taskDir) {
@@ -515,7 +517,7 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
               debugLog("inject", "Skipping - no current task")
               return
             }
-            const taskDirFull = taskCtx.resolveTaskDir(taskDir)
+            const taskDirFull = taskCtx.resolveTaskDir(taskDir, validatedTaskPath)
             if (!taskDirFull || !existsSync(taskDirFull)) {
               debugLog("inject", "Skipping - task directory not found")
               return
@@ -523,14 +525,18 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           }
 
           if (taskDir) {
-            const metadata = JSON.parse(taskCtx.readFile(join(taskCtx.resolveTaskDir(taskDir), "task.json")) || "{}")
+            const metadata = JSON.parse(taskCtx.readFile(join(taskCtx.resolveTaskDir(taskDir, validatedTaskPath), "task.json")) || "{}")
             if (metadata.schema_version === "2.0") {
               const query = ctx.getCurrentDelivery(input)
               if (!["current", "terminal_delivery"].includes(query.kind)) {
                 output.args.prompt = `Delivery context error: ${JSON.stringify(query)}\n\n${originalPrompt}`
                 return
               }
-              taskDir = join(taskCtx.resolveTaskDir(taskDir), query.delivery.planning_root)
+              taskDir = join(taskCtx.resolveTaskDir(taskDir, validatedTaskPath), query.delivery.planning_root)
+              if (!taskCtx.resolveContextDir(taskDir, validatedTaskPath)) {
+                args.prompt = `Delivery context error: invalid planning directory beneath the validated Task\n\n${originalPrompt}`
+                return
+              }
             }
           }
 
@@ -541,12 +547,12 @@ export default async ({ directory, platform: hostPlatform = process.platform, en
           let context = ""
           switch (subagentType) {
             case "implement":
-              context = getImplementContext(taskCtx, taskDir)
+              context = getImplementContext(taskCtx, taskDir, validatedTaskPath)
               break
             case "check":
               context = isFinish
-                ? getFinishContext(taskCtx, taskDir)
-                : getCheckContext(taskCtx, taskDir)
+                ? getFinishContext(taskCtx, taskDir, validatedTaskPath)
+                : getCheckContext(taskCtx, taskDir, validatedTaskPath)
               break
             case "research":
               context = getResearchContext(taskCtx, taskDir)

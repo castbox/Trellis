@@ -97,3 +97,77 @@ sentinel leaks on the missing-identity path, and explicit identity loads the
 selected slice. Actual Droid carriers under `droid/droids/` must have the same
 exact-selection and read-only `delivery_review` guards as other agent carriers;
 registry tests inspect the collector's real files, not only skill availability.
+
+## Scenario: exact Git facts, permission modes and context roots
+
+### 1. Scope / Trigger
+
+D1 post-merge review exposed mutable historical commit refs, inherited Git
+repository redirects and incompatible workspace/Git-tree permission hashing.
+OpenCode also rejected already accepted storage-root aliases. These corrections
+change objective verification, not semantic ownership or D2 migration.
+
+### 2. Signatures
+
+- `computeCandidateContentRef(root, paths, kind?: CandidateRef["kind"]): string`.
+- `candidate_content_ref(root, paths, kind: str | None = None) -> str`.
+- `delivery.py candidate --paths <paths...> [--kind git|git_free]`.
+- Existing `record_delivery` input/output and lifecycle edges remain unchanged.
+
+### 3. Contracts
+
+The public contract owns hash serialization: Git mode normalizes owner execute
+bit to 0644/0755; git_free keeps all 0777 permissions. Explicit recorded kind
+controls verification. Two-argument computation infers Git-worktree membership;
+manual artifacts in a Git root can explicitly request git_free. All verifier
+Git subprocesses strip inherited GIT_* values, including binary reads.
+local_commit.commit is a complete lowercase 40/64-hex OID matching candidate
+head; the store requires a commit object whose resolved full OID exactly
+matches the input, so a 40-hex prefix in a SHA-256 repository is rejected.
+
+OpenCode may consume the real Task root returned by the strict active resolver.
+Delivery context is exactly that Task's deliveries/UUID descendant. The
+validated .trellis/tasks/selected-Task root alias remains valid; every nested
+Delivery component must be a directory without a symlink. Unvalidated hints
+cannot create another trusted root or override exact selection.
+
+### 4. Validation & Error Matrix
+
+| Input | Required result |
+| --- | --- |
+| local_commit HEAD/branch/tag-name/short SHA | invalid_record before write |
+| SHA-256 repository receives a 40-hex commit prefix | invalid_git_fact; no write |
+| Full OID points to blob/tag/nonexistent object | invalid_git_fact; no stored fact |
+| Exact commit tree differs from selected content | candidate_mismatch |
+| Git file permissions 0600/0640, regular committed file | Same normalized mode as 100644; normal/historical delivery may verify |
+| Owner execute bit changes | Different Git content ref; old candidate rejected |
+| git_free permission change | Different content ref; old candidate rejected |
+| Inherited Git redirect selects another repo | Ignore redirect; verify supplied root |
+| Legal validated storage-root alias | Inject exact selected Delivery plans/manifests |
+| Nested deliveries/UUID symlink or stale selection | Fail closed; no Task-root fallback |
+
+### 5. Good/Base/Bad Cases
+
+Good: historical exact commit survives current HEAD movement. Base: ordinary
+0644 Git candidates keep their digest. Bad: persist HEAD as a terminal fact,
+hash a Git regular file's private 0600 permissions as a Git tree mode, or let
+another repository's GIT_DIR supply the candidate HEAD.
+
+### 6. Tests Required
+
+Use two real controlled Git repositories for environment pollution, covering
+HEAD validation and binary historical blob reads. Verify branch/tag/HEAD/short
+ref rejection plus exact-commit recovery and non-commit OID rejection in both
+runtimes, including a real SHA-256 repository rejecting a 40-hex prefix with
+unchanged record bytes. Cover 0600, 0640 and executable modes, explicit git_free in a Git
+root, permission drift, and hash parity. Run actual OpenCode injection through
+validated root aliases and nested-symlink rejection with zero-write snapshots.
+Workflow ownership regressions live in commands-workflow: custom legacy/v2
+forced and add-platform reinit followed by normal/forced update.
+
+### 7. Wrong vs Correct
+
+Wrong: compute a manual git_free hash with automatic Git normalization or rely
+on cwd while passing inherited repository-redirect environment to Git.
+Correct: verify with candidate.kind, and invoke Git in the validated root with
+clean repository environment; store immutable commit OIDs only.

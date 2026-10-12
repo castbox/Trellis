@@ -57,7 +57,7 @@ export function deliveryFact(value: unknown): asserts value is DeliveryFact {
   const extra = value.profile === "manual" ? ["artifact"] : value.profile === "local_commit" ? ["commit"] : ["repo_ref", "pr_number", "reviewed_head", "merge_commit", "target_ref"];
   const bag = object(value, ["result_id", "owner_id", "evidence", "profile", "candidate", ...extra]); resultIdentity(bag); candidate(bag.candidate);
   if (bag.profile === "manual") authority(bag.artifact);
-  else if (bag.profile === "local_commit") { string(bag.commit); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.commit) fail("invalid_record", "local commit must match candidate head"); }
+  else if (bag.profile === "local_commit") { string(bag.commit); if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(bag.commit)) fail("invalid_record", "local commit must be a full immutable SHA"); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.commit) fail("invalid_record", "local commit must match candidate head"); }
   else { prFields(bag); string(bag.merge_commit); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.reviewed_head) fail("invalid_record", "reviewed head must match candidate"); }
 }
 function parseDelivery(value: unknown): DeliveryRecord {

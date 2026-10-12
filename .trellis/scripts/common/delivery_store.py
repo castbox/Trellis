@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .delivery_operations import apply_operation, parse_operation
-from .delivery_schema import candidate, fail, parse_task_v2, relative_path
+from .delivery_schema import DeliveryError, candidate, fail, parse_task_v2, relative_path
 from .delivery_session import release_delivery
 from .io import read_json_checked, write_text_atomic
 from .path_boundary import require_project_path
@@ -54,10 +54,17 @@ def _file(root: Path, locator: str) -> Path:
     return path
 
 
-def candidate_content_ref(root: Path, paths: list[str]) -> str:
-    """Hash explicit sorted file paths, modes and bytes; reject lifecycle files."""
+def candidate_content_ref(root: Path, paths: list[str], kind: str | None = None) -> str:
+    """Hash Git executable modes or full Git-free permissions, paths and bytes."""
     if not paths or len(set(paths)) != len(paths):
         fail("invalid_candidate", "nonempty unique paths required")
+    if kind is None:
+        try:
+            kind = "git" if _git(root, "rev-parse", "--is-inside-work-tree") == b"true" else "git_free"
+        except DeliveryError:
+            kind = "git_free"
+    if kind not in ("git", "git_free"):
+        fail("invalid_candidate", "kind must be git or git_free")
     entries = []
     for locator in sorted(paths):
         if _reserved(locator):
@@ -67,14 +74,16 @@ def candidate_content_ref(root: Path, paths: list[str]) -> str:
         if not path.exists():
             entries.append([locator, None, None])
         elif path.is_file():
-            entries.append([locator, path.stat().st_mode & 0o777, hashlib.sha256(path.read_bytes()).hexdigest()])
+            mode = path.stat().st_mode
+            mode = (0o755 if mode & 0o100 else 0o644) if kind == "git" else mode & 0o777
+            entries.append([locator, mode, hashlib.sha256(path.read_bytes()).hexdigest()])
         else:
             fail("invalid_candidate", f"not a file: {locator}")
     return _digest(json.dumps(entries, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 def _git(root: Path, *args: str, binary: bool = False) -> bytes:
-    env = {k: v for k, v in os.environ.items() if k not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"}}
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
     try:
         result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, timeout=20, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -86,7 +95,7 @@ def _git(root: Path, *args: str, binary: bool = False) -> bytes:
 
 def verify_candidate(root: Path, value: dict) -> None:
     candidate(value)
-    if candidate_content_ref(root, value["paths"]) != value["content_ref"]:
+    if candidate_content_ref(root, value["paths"], value["kind"]) != value["content_ref"]:
         fail("candidate_mismatch", "content bytes/modes changed")
     if value["kind"] == "git":
         if value["head_ref"] is not None and _git(root, "rev-parse", "HEAD").decode() != value["head_ref"]:
@@ -96,6 +105,9 @@ def verify_candidate(root: Path, value: dict) -> None:
 
 
 def _verify_commit(root: Path, result: dict) -> None:
+    if (_git(root, "cat-file", "-t", result["commit"]) != b"commit"
+            or _git(root, "rev-parse", "--verify", result["commit"] + "^{commit}").decode() != result["commit"]):
+        fail("invalid_git_fact", "local outcome must name a full actual commit object OID")
     entries = []
     for locator in sorted(result["candidate"]["paths"]):
         relative_path(locator)

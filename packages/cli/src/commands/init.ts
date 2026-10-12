@@ -677,6 +677,7 @@ function createBootstrapTask(
 async function handleReinit(
   cwd: string,
   options: InitOptions,
+  workflowIsManaged: boolean,
 ): Promise<boolean> {
   const TOOLS = getInitToolChoices();
   const configuredPlatforms = getConfiguredPlatforms(cwd);
@@ -801,6 +802,7 @@ async function handleReinit(
       trackedPaths: reinitWritten,
       merge: true,
     });
+    if (!workflowIsManaged) removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
     if (hashedCount > 0) {
       console.log(
         chalk.gray(`📋 Tracking ${hashedCount} template files for updates`),
@@ -974,6 +976,7 @@ export async function init(options: InitOptions): Promise<void> {
     workflowIdInput && workflowIdInput.length > 0
       ? workflowIdInput
       : NATIVE_WORKFLOW_ID;
+  let workflowIsManaged = isBundledWorkflow(workflowId);
   let workflowMdOverride: string | undefined;
   if (options.workflow || options.workflowSource) {
     const resolved = await resolveWorkflowTemplate(workflowId, {
@@ -993,11 +996,15 @@ export async function init(options: InitOptions): Promise<void> {
     fs.existsSync(existingWorkflow)
   ) {
     const existingContent = fs.readFileSync(existingWorkflow, "utf8");
+    const existingWorkflowHash = loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE];
     if (
       readDeliveryWorkflowContract(existingContent) ||
-      !loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE]
+      !existingWorkflowHash
     ) {
       workflowMdOverride = existingContent;
+      // Preserved content retains its actual ownership; the default selection
+      // of native is not authority to hash a user-managed workflow.
+      workflowIsManaged = Boolean(existingWorkflowHash);
     }
   }
   if (
@@ -1070,7 +1077,7 @@ export async function init(options: InitOptions): Promise<void> {
     !tasksEmptyEarly &&
     !hasTemplateRequest
   ) {
-    const reinitDone = await handleReinit(cwd, options);
+    const reinitDone = await handleReinit(cwd, options, workflowIsManaged);
     if (reinitDone) return;
     // reinitDone === false means user chose "full re-initialize" → fall through
   }
@@ -1822,11 +1829,9 @@ export async function init(options: InitOptions): Promise<void> {
     );
   }
 
-  // Non-native workflow is user-managed local content. Drop the
-  // `.trellis/workflow.md` hash entry so `trellis update` classifies it as
-  // modified and does not silently restore native bytes. See design.md
-  // "Durable-state contract".
-  if (workflowMdOverride !== undefined && !isBundledWorkflow(workflowId)) {
+  // The recursive hash initialization must not claim ownership of preserved
+  // custom content. Only an explicit bundled selection transfers that ownership.
+  if (!workflowIsManaged) {
     removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
   }
 

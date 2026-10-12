@@ -693,7 +693,7 @@ export class TrellisContext {
     }
   }
 
-  resolveTaskDir(taskRef) {
+  resolveTaskDir(taskRef, validatedTaskPath = null) {
     const normalized = this.normalizeTaskRef(taskRef)
     if (!normalized) {
       return null
@@ -711,6 +711,9 @@ export class TrellisContext {
       if (!lexical || lexical.split("/").length !== 1 || lexical === ".." || lexical === "archive" || isAbsolute(lexical)) return null
       const actualRoot = realpathSync(tasksRoot)
       const actual = realpathSync(candidate)
+      // The exact active resolver has already validated this Task identity and
+      // its supported direct-root alias. Hints never supply this authority.
+      if (validatedTaskPath && actual === realpathSync(validatedTaskPath) && statSync(actual).isDirectory()) return candidate
       const actualRef = relative(actualRoot, actual).split("\\").join("/")
       if (!actualRef || actualRef.split("/").length !== 1 || !pathWithin(actualRoot, actual) || actualRef === "archive") return null
       if (!statSync(actual).isDirectory()) return null
@@ -722,16 +725,26 @@ export class TrellisContext {
   }
 
   /** Delivery context is a contained child of an already validated Task. */
-  resolveContextDir(taskRef) {
-    const direct = this.resolveTaskDir(taskRef)
+  resolveContextDir(taskRef, validatedTaskPath = null) {
+    const direct = this.resolveTaskDir(taskRef, validatedTaskPath)
     if (direct) return direct
     const match = String(taskRef).replace(/\\/g, "/").match(/^(.*)\/deliveries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
     if (!match) return null
-    const task = this.resolveTaskDir(match[1])
+    const task = this.resolveTaskDir(match[1], validatedTaskPath)
     if (!task) return null
-    const directory = join(task, "deliveries", match[2])
-    if (!this.isActivePath(directory) || !existsSync(directory) || realpathSync(directory) !== directory || !statSync(directory).isDirectory()) return null
-    return directory
+    try {
+      const actualTask = realpathSync(task)
+      let directory = task
+      for (const component of ["deliveries", match[2]]) {
+        directory = join(directory, component)
+        const stat = lstatSync(directory)
+        if (stat.isSymbolicLink() || !stat.isDirectory()) return null
+      }
+      if (realpathSync(directory) !== join(actualTask, "deliveries", match[2])) return null
+      return directory
+    } catch {
+      return null
+    }
   }
 
   // ============================================================

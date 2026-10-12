@@ -112,24 +112,30 @@ function reserveIdentity(options: TaskStoreOptions, id: string): void {
 function reservedCandidatePath(locator: string): boolean {
   return locator === ".git" || locator.startsWith(".git/") || /(?:^|\/)trellis\/sessions(?:\/|$)/.test(locator) || /^\.trellis\/(?:sessions|\.runtime|\.internal|\.delivery-results)(?:\/|$)/.test(locator) || /^\.trellis\/tasks\/(?:archive\/[^/]+\/)?[^/]+\/task\.json$/.test(locator);
 }
-export function computeCandidateContentRef(root: string, paths: string[]): string {
+/** Git fingerprints retain Git's executable bit; Git-free fingerprints retain full file permissions. */
+export function computeCandidateContentRef(root: string, paths: string[], kind?: CandidateRef["kind"]): string {
   const entries: [string, number | null, string | null][] = [];
   if (!paths.length || new Set(paths).size !== paths.length) fail("invalid_candidate", "nonempty unique paths required");
+  if (kind === undefined) { try { kind = git(root, ["rev-parse", "--is-inside-work-tree"]) === "true" ? "git" : "git_free"; } catch { kind = "git_free"; } }
+  if (kind !== "git" && kind !== "git_free") fail("invalid_candidate", "kind must be git or git_free");
   for (const locator of [...paths].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))) {
     if (reservedCandidatePath(locator)) fail("invalid_candidate", `lifecycle/private file ${locator}`);
     const file = contained(root, locator, true);
     if (!fs.existsSync(file)) { entries.push([locator, null, null]); continue; }
     const stat = fs.statSync(file); if (!stat.isFile()) fail("invalid_candidate", `not a file: ${locator}`);
-    entries.push([locator, stat.mode & 0o777, digest(fs.readFileSync(file))]);
+    const mode = kind === "git" ? (stat.mode & 0o100 ? 0o755 : 0o644) : stat.mode & 0o777;
+    entries.push([locator, mode, digest(fs.readFileSync(file))]);
   }
   return `sha256:${digest(JSON.stringify(entries))}`;
 }
-function git(root: string, args: string[]): string {
-  try { return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); } catch { fail("invalid_git_fact", args.join(" ")); }
+function gitBytes(root: string, args: string[]): Buffer {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  try { return execFileSync("git", args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] }); } catch { fail("invalid_git_fact", args.join(" ")); }
 }
+function git(root: string, args: string[]): string { return gitBytes(root, args).toString("utf8").trim(); }
 export function verifyCandidate(root: string, value: CandidateRef): void {
   candidate(value);
-  if (computeCandidateContentRef(root, value.paths) !== value.content_ref) fail("candidate_mismatch", "content bytes/modes changed");
+  if (computeCandidateContentRef(root, value.paths, value.kind) !== value.content_ref) fail("candidate_mismatch", "content bytes/modes changed");
   if (value.kind === "git") {
     if (value.head_ref !== null && git(root, ["rev-parse", "HEAD"]) !== value.head_ref) fail("candidate_mismatch", "HEAD changed");
     if (value.base_ref !== null && git(root, ["rev-parse", "--verify", `${value.base_ref}^{commit}`]) !== value.base_ref) fail("candidate_mismatch", "base must be an exact commit");
@@ -137,14 +143,14 @@ export function verifyCandidate(root: string, value: CandidateRef): void {
 }
 function verifyHistoricalCommit(root: string, fact: DeliveryFact): void {
   if (fact.profile !== "local_commit") return;
+  if (git(root, ["cat-file", "-t", fact.commit]) !== "commit" || git(root, ["rev-parse", "--verify", `${fact.commit}^{commit}`]) !== fact.commit) fail("invalid_git_fact", "local outcome must name a full actual commit object OID");
   const entries: [string, number | null, string | null][] = [];
   for (const locator of [...fact.candidate.paths].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))) {
     if (reservedCandidatePath(locator)) fail("invalid_candidate", locator);
     const tree = git(root, ["ls-tree", fact.commit, "--", locator]);
     if (!tree) { entries.push([locator, null, null]); continue; }
     const matched = /^(100644|100755) blob [a-f0-9]+\t/.exec(tree); if (!matched) fail("invalid_git_fact", locator);
-    let bytes: Buffer;
-    try { bytes = execFileSync("git", ["show", `${fact.commit}:${locator}`], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }); } catch { fail("invalid_git_fact", locator); }
+    const bytes = gitBytes(root, ["show", `${fact.commit}:${locator}`]);
     entries.push([locator, matched[1] === "100755" ? 0o755 : 0o644, digest(bytes)]);
   }
   if (`sha256:${digest(JSON.stringify(entries))}` !== fact.candidate.content_ref) fail("candidate_mismatch", "commit tree differs from delivered content");

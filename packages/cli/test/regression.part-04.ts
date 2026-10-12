@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emptyTaskRecord } from "@mindfoldhq/trellis-core/task";
 import { getSharedHookScripts } from "../src/templates/shared-hooks/index.js";
-import { getAllScripts } from "../src/templates/trellis/index.js";
+import {
+  deliveryWorkflowMdTemplate,
+  getAllScripts,
+} from "../src/templates/trellis/index.js";
 describe("regression: current-task path normalization", () => {
   let tmpDir: string;
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -1096,6 +1099,22 @@ print(len(entries))
     expect(result.stdout).toBe("[Codex]\nroute text\n[/Codex]\n");
   });
 
+  it("[issue-31] continuation extracts the bundled Delivery workflow with its separate runtime declaration", () => {
+    writeTrellisScripts();
+    writeProjectFile(
+      path.join(".trellis", "workflow.md"),
+      deliveryWorkflowMdTemplate,
+    );
+    const body =
+      /^\[trellis-continuation\]\n([\s\S]*?)^\[\/trellis-continuation\]/m.exec(
+        deliveryWorkflowMdTemplate,
+      )?.[1];
+    expect(body).toBeDefined();
+    const result = runContinuation();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe(body);
+  });
+
   it.each([
     ["missing", "# Workflow\n", "missing_block"],
     [
@@ -1119,6 +1138,21 @@ print(len(entries))
       "nested",
       "[trellis-continuation]\nouter\n[trellis-continuation]\ninner\n[/trellis-continuation]\n[/trellis-continuation]\n",
       "nested_block",
+    ],
+    [
+      "runtime-open-in-body",
+      "[trellis-continuation]\n[trellis-runtime-contract]\nbody\n[/trellis-continuation]\n",
+      "mismatched_marker",
+    ],
+    [
+      "runtime-close-in-body",
+      "[trellis-continuation]\n[/trellis-runtime-contract]\nbody\n[/trellis-continuation]\n",
+      "mismatched_marker",
+    ],
+    [
+      "unknown-trellis-marker-outside-body",
+      "[trellis-unknown]\n[trellis-continuation]\nbody\n[/trellis-continuation]\n",
+      "mismatched_marker",
     ],
   ])(
     "[issue-6] continuation rejects %s structure",

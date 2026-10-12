@@ -187,6 +187,8 @@ def delivery_fact(value: object) -> None:
         authority(bag["artifact"])
     elif bag["profile"] == "local_commit":
         nonempty(bag["commit"])
+        if not re.fullmatch(r"[a-f0-9]{40}(?:[a-f0-9]{24})?", bag["commit"]):
+            fail("invalid_record", "local commit must be a full immutable SHA")
         if bag["candidate"]["kind"] != "git" or bag["candidate"]["head_ref"] != bag["commit"]:
             fail("invalid_record", "local commit must match candidate head")
     else:

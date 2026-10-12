@@ -75,6 +75,7 @@ def main() -> int:
     commands.add_parser("release", help="Release this session's execution selection; retain Task")
     fingerprint = commands.add_parser("candidate", help="Read-only content identity for explicit paths")
     fingerprint.add_argument("--paths", nargs="+", required=True)
+    fingerprint.add_argument("--kind", choices=("git", "git_free"), help="Candidate mode semantics; defaults to repository discovery")
     for name in ("apply", *ALIASES):
         command = commands.add_parser(name, help="Record a closed owner operation")
         command.add_argument("--task")
@@ -97,7 +98,7 @@ def main() -> int:
             print(json.dumps({"released": release_delivery(root)}))
             return 0
         if args.command == "candidate":
-            print(json.dumps({"content_ref": candidate_content_ref(root, args.paths)}, ensure_ascii=False))
+            print(json.dumps({"content_ref": candidate_content_ref(root, args.paths, args.kind)}, ensure_ascii=False))
             return 0
         workspace, task_dir = _target(args.task, root)
         if args.command == "list":

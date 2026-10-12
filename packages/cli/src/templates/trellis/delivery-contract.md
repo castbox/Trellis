@@ -147,14 +147,39 @@ already committed work, rather than only a recent chunk. A clean committed
 candidate can receive fresh Check and full Review without another commit.
 
 Hash serialization is compact UTF-8 JSON in UTF-8 byte path order:
-`[relative_path, mode & 0o777, sha256(file_bytes)]`. An explicitly selected
-deleted path is `[relative_path,null,null]`. Runtimes reject lifecycle/session
+`[relative_path, candidate_mode, sha256(file_bytes)]`. For `kind:"git"`,
+`candidate_mode` is `0o755` when the owner execute bit (`mode & 0o100`) is set,
+and `0o644` otherwise, matching Git's regular/executable tree modes. For
+`kind:"git_free"`, it is the full `mode & 0o777`; permission changes remain
+part of retained-artifact identity. An explicitly selected deleted path is
+`[relative_path,null,null]`. Runtimes reject lifecycle/session
 paths and checked symlink components; a deletion has no mutation side effect.
 Custom owners exclude their own private-result files from candidate paths.
 Existing owned aliases at `.trellis`, `.trellis/tasks` and a selected Task
 directory retain their canonical-root containment boundary. Nested/file or
 dangling symlinks do not become additional owned roots. Candidate business
 paths and per-Delivery artifact descendants remain checked at each boundary.
+
+`computeCandidateContentRef(root,paths,kind?)` and Python
+`candidate_content_ref(root,paths,kind=None)` accept an explicit `git` or
+`git_free` kind. The two-argument form detects whether the root belongs to a
+Git worktree. `delivery.py candidate --paths <paths...> [--kind git|git_free]`
+exposes the same choice. Candidate verification always uses the recorded kind;
+a manual artifact in a Git repository can select `git_free` to retain full
+permission identity. Readers never silently rewrite existing candidate hashes;
+if an older noncanonical Git-mode hash is inapplicable, return to its original
+producer to refresh the candidate and affected gates.
+
+A `local_commit` fact requires a complete lowercase 40- or 64-hex commit OID,
+matching `candidate.head_ref`. Store verification resolves that exact object
+and requires its type to be `commit` and its resolved full OID to equal the
+input, including historical-success recovery. A 40-hex prefix in a SHA-256
+repository is an abbreviated hash and fails objective verification.
+`HEAD`, branch/tag names and abbreviated hashes are not immutable facts;
+commit-looking blob or tag object IDs also fail objective verification. All
+Git subprocesses, including binary blob reads and kind detection, discard
+inherited `GIT_*` variables so the validated root owns the verified repository.
+These verifiers read actual facts and perform no Git mutation.
 
 Formal writes validate exact identity, declared owner, expected phase and
 preimage, predecessor results and objective profile facts. They use atomic
