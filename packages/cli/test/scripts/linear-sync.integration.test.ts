@@ -65,9 +65,20 @@ describe.skipIf(!available)(
       );
       const bin = path.join(root, "bin");
       fs.mkdirSync(bin);
+      // POSIX kernels do not search PATH for a shebang interpreter. Resolve the
+      // selected Python so Linux's `python3` command also yields an executable
+      // fake client, while retaining the minimum interpreter selected on macOS.
+      const interpreter = spawnSync(
+        python,
+        ["-c", "import sys; print(sys.executable)"],
+        { encoding: "utf8" },
+      );
+      expect(interpreter.status, interpreter.stderr).toBe(0);
+      const pythonExecutable = interpreter.stdout.trim();
+      expect(path.isAbsolute(pythonExecutable)).toBe(true);
       fs.writeFileSync(
         path.join(bin, "linearis"),
-        `#!${python}\nimport json,os,sys\nwith open(os.environ['FAKE_LINEAR_LOG'],'a',encoding='utf-8') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nprint(json.dumps({'identifier':'TEAM-1'}))\n`,
+        `#!${pythonExecutable}\nimport json,os,sys\nwith open(os.environ['FAKE_LINEAR_LOG'],'a',encoding='utf-8') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nprint(json.dumps({'identifier':'TEAM-1'}))\n`,
         { mode: 0o755 },
       );
       env = {
