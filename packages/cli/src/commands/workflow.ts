@@ -27,16 +27,11 @@ import { preflightDeliveryWorkflow } from "../utils/delivery-workflow.js";
 import { DIR_NAMES, PATHS } from "../constants/paths.js";
 import { collectMissingAgents } from "../utils/agent-refs.js";
 import { replacePythonCommandLiterals } from "../configurators/shared.js";
-import {
-  computeHash,
-  loadHashes,
-  removeHash,
-  updateHashes,
-} from "../utils/template-hash.js";
+import { computeHash, loadHashes, saveHashes } from "../utils/template-hash.js";
+import { projectWorkflowHashes } from "../utils/workflow-hash-contract.js";
 import {
   listWorkflowTemplates,
   resolveWorkflowTemplate,
-  isBundledWorkflow,
   WorkflowResolveError,
   type ResolvedWorkflowTemplate,
   type WorkflowTemplateListing,
@@ -143,19 +138,8 @@ async function confirmOverwriteInteractively(): Promise<
 }
 
 function applyHashContract(cwd: string, templateId: string): void {
-  const relPath = PATHS.WORKFLOW_GUIDE_FILE;
-  if (isBundledWorkflow(templateId)) {
-    const filePath = workflowFilePath(cwd);
-    const current = fs.readFileSync(filePath, "utf-8");
-    const files = new Map<string, string>();
-    files.set(relPath, current);
-    updateHashes(cwd, files);
-  } else {
-    // Non-native workflow is user-managed local content. Drop the hash entry
-    // so `trellis update` treats it as modified and does not silently restore
-    // native bytes.
-    removeHash(cwd, relPath);
-  }
+  const current = fs.readFileSync(workflowFilePath(cwd), "utf-8");
+  saveHashes(cwd, projectWorkflowHashes(loadHashes(cwd), templateId, current));
 }
 
 async function writeWorkflow(

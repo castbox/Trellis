@@ -26,9 +26,12 @@ from `task.py list`).
 
 ```ts
 // packages/cli/src/utils/atomic-write.ts
-export function writeFileAtomic(filePath: string, data: string | Uint8Array): void
+export function writeFileAtomic(filePath: string, data: string | Uint8Array, mode?: number): void
 // writes `<dir>/.<basename>.<pid>.tmp` then fs.renameSync over filePath;
 // removes the tmp and rethrows on failure. Same-dir tmp keeps rename atomic.
+// When a reviewed mode is supplied, set it on the temporary file before rename;
+// a chmod failure leaves the original target intact. Existing two-argument
+// callers keep their existing behavior.
 ```
 
 ```python

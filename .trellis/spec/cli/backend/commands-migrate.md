@@ -1,15 +1,20 @@
 # `trellis migrate` Command
 
-This is the existing plan-1.0 predecessor-to-legacy/current-default executor.
-Issue #31 D1 does not change its projection semantics or migrate schema-2
-Tasks. The reviewed plan-2.0 Task/Delivery migration belongs to D2 and is
-pending matching actual consumer readiness; see [Delivery Lifecycle](./delivery-lifecycle.md).
+The private plan's `schema_version` selects the executor. Plan 1.0 retains its
+original predecessor-to-legacy projection through the explicit legacy SDK
+namespace. Plan 2.0 performs the reviewed Task/Delivery cutover described below.
+Implementing migration is separate from retiring the default compatibility path;
+that retirement still requires actual matching consumer readiness.
+See [Delivery Lifecycle](./delivery-lifecycle.md).
 
-This explicit one-way executor supports actual core `0.6.x` and
+The plan-1.0 one-way executor supports actual core `0.6.x` and
 `0.7.0-castbox.N` predecessor installations to the candidate CLI version.
 The source is the installed `.trellis/.version`, not a Guru release tag or
-extension revision. A same-version install uses ordinary `update`; a source
-at or above the target is not an upgrade. Ordinary `init`, `update`, and task readers/writers remain current-only.
+extension revision. For plan 1.0, a same-version install uses ordinary
+`update`, and a source at or above the target is not an upgrade. Plan 2.0 also
+supports an explicitly declared same-package-version schema cutover. Ordinary
+`init` and `update` do not migrate authority; selected task readers/writers
+require the schema declared by the active workflow.
 It does not choose task sources, review planning, establish branch/session
 bindings, install a Guru preset, or execute remote delivery.
 
@@ -109,3 +114,101 @@ also fails. This minimal projection does not determine migration disposition:
 the reviewed current/converted/deferred rules above retain their independent
 classification and raw-byte requirements. The standard complete task
 reader/writer still accepts only current records.
+
+## Plan 2.0: Task / Delivery migration
+
+The source/target package version, Task schema and Delivery API are separate
+identities. Source Task schema is `legacy` or `1.0` with no Delivery API; the
+target is the candidate package, Task schema `2.0`, API `1.0`. Unlike plan 1,
+same-package-version schema cutover is legal. No version switch infers approval.
+
+The closed plan fields and their consumers are:
+
+| Field | Required reviewed input |
+| --- | --- |
+| `workspaces` | Unique ID, live registered absolute project root, and contained monorepo suffix or null. Include all installed roots at that suffix in the same repository. Git-free selects the exact invocation root. |
+| `installations` | Per-workspace raw version/receipt snapshots; these fixed files are executor-owned targets, never arbitrary file decisions. |
+| `tasks` | Exact active/archive ref and `convert_active`, `convert_archive`, `current`, `defer` or `history_only`; original raw snapshot (null only for missing-record `history_only` roots); complete owner-reviewed v2 record for conversions. |
+| `legacy_facts` within a converted Task | Every nonempty old commit/PR/date fact has an explicit producer-owned disposition: matching normalized result, or retained `source_snapshot` with reason ref. Dates cannot manufacture Completion. |
+| `sessions` | Exact common-dir or workspace-local session filename, source snapshot and optional reviewed schema-3 projection. Preserve Task/generation; Delivery selection is null or a valid current-generation nonterminal identity. |
+| `workflows` | Per-workspace required `template_id` and exact target runtime contract, matched by the actual supplied workflow content. No replacement fallback or inferred template identity for custom workflows. |
+| `templates` | Frozen candidate digest and exact owned path/raw hash/mode set from the prospective collector. |
+| `files` | Typed project target, owner (`template`, `workflow`, `artifact`, `preserve`), exact action/source snapshot and optional target bytes/full mode. Ownership bounds the action; preserve grants no write capability. |
+
+Workspace enumeration uses the closed live-root policy in
+[Task Lifecycle](./task-lifecycle.md#git-inventory-with-prunable-registrations).
+An explicitly obsolete sibling is not a missing required migration workspace;
+all eligible live roots still require exact reviewed inventory. Git failures
+never silently convert the invocation into a Git-free migration target.
+
+A raw snapshot is `{content_base64,sha256,mode}`. The canonical base64 bytes and
+raw digest must agree. Converted source Task bytes/mode remain under
+`<task_ref>/migration/source-task.json` as history, never execution authority.
+Identity, source, generation and business/tree metadata survive projection.
+The caller chooses each Delivery scope/plan/outcome attribution; old status
+never creates a Delivery or a gate. Unknown history-only archives remain raw
+history with visible identity occupation, while selected conversion is strict.
+Every occupied active/archive Task leaf, including empty and evidence-only
+directories, belongs in the inventory. `history_only` with `source: null` means
+that exact root exists but its `task.json` is absent; it reserves the visible
+name and preserves every raw artifact without fabricating a record. This is
+also legal for missing-record active roots. Other dispositions require a raw
+record snapshot, and record-bearing active roots cannot use `history_only`.
+The absent record is a frozen preimage: its later appearance is a third state.
+Only typed Task/Delivery authority slots are verified as AuthorityRefs;
+arbitrary business metadata is preserved even when it has locator/revision keys.
+Retained local-commit results must pass Core's public historical commit verifier:
+the exact commit tree bytes and Git modes must match the result's candidate
+content digest. An existing commit object alone is insufficient. This read uses
+the immutable tree, so later HEAD/worktree changes do not invalidate a matching
+historical delivery result; malformed or mismatched results reject before writes.
+Fixed Git authority refs use Core's schema-validated relative locator and
+immutable object reader; a later same-name worktree symlink does not redirect
+that historical read. SHA refs still validate the prospective frozen path
+through containment, and every migration write target retains its symlink checks.
+
+The prospective collector includes actual shipped runtime dependencies, agents,
+platform carriers and the public Delivery contract. Its collection does not
+probe the old installed runtime or write files. Supported Codex agent `model`
+and `model_reasoning_effort` keys are retained using the existing configurator
+helpers before candidate bytes and hashes are frozen. Execution reconstructs
+those desired bytes from reviewed raw source snapshots, including during a
+partial retry; edited live model keys cannot redefine the frozen candidate.
+Root planning files receive
+explicit raw preservation decisions; only reviewed Delivery-owned artifact
+targets may receive mapped planning bytes. Each known source artifact is covered
+by the plan. Retirement is limited to exact receipt-owned core template files.
+Legal established storage-root aliases retain the existing boundary; nested
+artifact/session symlinks do not become owned roots.
+
+Preview exposes the entire raw byte/mode write set. All source/target states,
+identity occupation, selected session/Delivery, prospective profile/authority
+and workflow/template obligations are checked before the first mutation.
+Replay accepts exact source or exact target bytes and modes; a third state
+fails before writes. The target receipt comes from the frozen original receipt
+and template plan, not a partially changed live receipt. Caller backup/rollback
+restores only this preview's paths/modes before new business writes.
+Workflow receipt ownership uses the same pure hash projection as the workflow
+command. A bundled `template_id` additionally requires byte-identical rendered
+content from that exact bundled template. Other explicit IDs are user-managed,
+including copies with identical native bytes; no remote lookup is needed.
+For custom write and preserve decisions, any old native workflow receipt entry
+is removed. Native decisions track the actual target bytes. Contract validity
+alone never grants bundled ownership. Same-plan retries derive this receipt
+from the reviewed original snapshots; normal/forced reapply retains custom owners.
+Every live `.json` session in the shared common directory and each registered
+workspace's local session directory needs an explicit `sessions` entry, including
+preserve-only records. A generic file decision does not replace that disposition.
+Omitted or newly appeared sessions fail with `missing_session_disposition` before
+writes; execution never freezes unreviewed live session bytes into the plan.
+
+An already installed valid schema-2 declaration treats retained old active data
+as historical-only on reapply. It reserves valid identities and preserves bytes;
+exact selection/start rejects the old schema without writes. Initial switching
+from a legacy declaration still requires reviewed migration. No separate
+disposition ledger or permanent status/Delivery dual writes are introduced.
+
+Verify controlled old copies with actual installed Python contract/continuation,
+registered sibling worktrees and common sessions, raw modes, stale zero-write,
+ordinary-failure replay and exact rollback. Plan-1 regressions remain required.
+These upstream tests do not supply Guru's private migration or joint acceptance.

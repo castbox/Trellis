@@ -154,6 +154,13 @@ def apply_operation(input_record: object, request: object, declaration: object) 
             role = result["owner_role"] if op["operation"] == "record_gate" else {"record_publication": "publication", "record_delivery": "delivery", "complete_task": "completion", "close_task": "closure"}.get(op["operation"], op["owner_role"])
             _require_owner(op, workflow, str(role))
             return output(False, result["result_id"])
+    if op["operation"] == "reopen_task" and op["key"]["lifecycle_generation"] != record["lifecycle_generation"]:
+        _require_owner(op, workflow, "task_scope")
+        untouched = not any(row["lifecycle_generation"] == record["lifecycle_generation"] for row in (*record["deliveries"], *record["completion_results"], *record["closure_results"]))
+        if (record["lifecycle_generation"] == op["key"]["lifecycle_generation"] + 1
+                and record["accepted_scope"] == op["authority"] and untouched
+                and any(row["lifecycle_generation"] == op["key"]["lifecycle_generation"] for row in record["completion_results"])):
+            return {**output(False), "key": {"task_id": record["id"], "lifecycle_generation": record["lifecycle_generation"]}}
     if op["key"]["lifecycle_generation"] != record["lifecycle_generation"] and not historical:
         fail("stale_lifecycle_generation", str(op["key"]["lifecycle_generation"]))
     if delivery_id is not None and op["operation"] != "create_delivery":

@@ -251,7 +251,8 @@ def write_json(path: Path, data: dict) -> bool:
     The write is atomic: content goes to a temp file in the same directory
     and is then renamed over the target. A crash or Ctrl-C mid-write leaves
     the existing file intact rather than truncated, so a corrupted task.json
-    can never make a task silently vanish from `task.py list`.
+    can never make a task silently vanish from `task.py list`. Existing JSON
+    files retain their permission bits; new files retain mkstemp's private 0600.
 
     Returns True on success, False on error.
     """
@@ -267,14 +268,20 @@ def write_json(path: Path, data: dict) -> bool:
             if reason is not None:
                 return False
         if (previous is not None and previous.get("schema_version") == "2.0") or data.get("schema_version") == "2.0":
-            domain = ("lifecycle_generation", "accepted_scope", "deliveries", "completion_results", "closure_results")
+            domain = ("artifact_origin", "lifecycle_generation", "accepted_scope", "deliveries", "completion_results", "closure_results")
             if previous is not None:
                 if previous.get("schema_version") != data.get("schema_version") or any(previous.get(k) != data.get(k) for k in ("id", "source", *domain)):
                     return False
-            elif (data["lifecycle_generation"] != 0 or data["accepted_scope"] is not None
+            elif ("artifact_origin" in data or data["lifecycle_generation"] != 0 or data["accepted_scope"] is not None
                   or any(data[k] for k in ("deliveries", "completion_results", "closure_results"))):
                 return False
-    return write_text_atomic(path, json.dumps(data, indent=2, ensure_ascii=False))
+    try:
+        mode = path.stat().st_mode & 0o777
+    except FileNotFoundError:
+        mode = None
+    except OSError:
+        return False
+    return write_text_atomic(path, json.dumps(data, indent=2, ensure_ascii=False), mode=mode)
 
 
 def write_text_atomic(path: Path, text: str, *, mode: int | None = None) -> bool:

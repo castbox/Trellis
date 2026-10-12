@@ -214,8 +214,8 @@ function readActiveText(projectRoot: string, file: string): string | null {
 function resolveActiveTaskStatus(
    projectRoot: string,
    contextKey: string | null,
-): { status: string; taskDir: string | null; taskTitle: string | null; taskRoot: string; error: string | null } {
-   const empty = { status: "no_task", taskDir: null, taskTitle: null, taskRoot: projectRoot, error: null };
+): { status: string; taskDir: string | null; taskTitle: string | null; taskRoot: string; error: string | null; deliveryQuery: Record<string, unknown> | null } {
+   const empty = { status: "no_task", taskDir: null, taskTitle: null, taskRoot: projectRoot, error: null, deliveryQuery: null };
    if (!contextKey) return empty;
    const invalid = (error: string) => ({ ...empty, status: "invalid_task", error });
    const script = join(projectRoot, ".trellis", "scripts", "task.py");
@@ -238,8 +238,12 @@ function resolveActiveTaskStatus(
       if (data.error || data.stale) return invalid(JSON.stringify(data.error ?? "Stale task binding"));
       if (data.current_task === null && data.source === "none" && result.status === 1) return empty;
       if (result.status !== 0 || !isObject(data.current_task)) return invalid("Task resolver failed");
-      const status = data.current_task.status;
-      if (typeof status !== "string" || !status.trim()) return invalid("Invalid task status: expected a nonempty string");
+      const isV2 = data.current_task.schema_version === "2.0";
+      const query = isV2 ? data.current_task.current_delivery : null;
+      if (isV2 && (!isObject(query) || !["current", "terminal_delivery", "no_current_delivery"].includes(String(query.kind)))) return invalid(`Delivery query error: ${JSON.stringify(query)}`);
+      const delivery = isObject(query) && (query.kind === "current" || query.kind === "terminal_delivery") && isObject(query.delivery) ? query.delivery : null;
+      const status = isObject(query) ? (delivery?.phase ?? query.kind) : data.current_task.status;
+      if (typeof status !== "string" || !status.trim()) return invalid(query ? "Invalid public phase query" : "Invalid task status: expected a nonempty string");
       const taskRoot = data.task_workspace_root;
       const taskDir = data.resolved_task_path;
       if (typeof taskRoot !== "string" || typeof taskDir !== "string" || !isAbsolute(taskRoot) || !isAbsolute(taskDir) || !isActiveDataPath(taskRoot, taskDir)) {
@@ -247,7 +251,8 @@ function resolveActiveTaskStatus(
       }
       return {
          status,
-         taskDir, taskRoot,
+         deliveryQuery: isObject(query) ? query : null,
+         taskDir: query ? (delivery && typeof delivery.planning_root === "string" ? join(taskDir, delivery.planning_root) : null) : taskDir, taskRoot,
          taskTitle: typeof data.current_task.title === "string" ? data.current_task.title : null,
          error: null,
       };
@@ -271,12 +276,10 @@ function buildSessionContext(projectRoot: string, contextKey: string | null): st
    if (!isActiveDataPath(projectRoot, script) || !existsSync(script)) return "";
 
    try {
-      const result = spawnSync("python3", [script], {
+      const result = spawnSync(process.platform === "win32" ? "python" : "python3", [script], {
          cwd: projectRoot,
          encoding: "utf-8",
-         env: contextKey
-            ? { ...process.env, TRELLIS_CONTEXT_ID: contextKey }
-            : process.env,
+         env: { ...process.env, ...(contextKey ? { TRELLIS_CONTEXT_ID: contextKey } : {}), PYTHONDONTWRITEBYTECODE: "1" },
          timeout: SESSION_CONTEXT_TIMEOUT_MS,
          windowsHide: true,
       });
@@ -813,13 +816,21 @@ class TurnContextCache {
          return { workflowMsg: this.workflowMsg };
       }
 
-      const { status, taskRoot, error } = resolveActiveTaskStatus(projectRoot, contextKey);
+      const { status, taskRoot, error, deliveryQuery } = resolveActiveTaskStatus(projectRoot, contextKey);
 
       const workflowPath = join(taskRoot, ".trellis", "workflow.md");
       const workflowMd = error ? null : readActiveText(taskRoot, workflowPath);
 
       let workflowBody = error ? `Status: invalid_task\n${error}` : "";
-      if (workflowMd) {
+      if (deliveryQuery) {
+         const script = join(projectRoot, ".trellis", "scripts", "get_context.py");
+         const result = spawnSync(process.platform === "win32" ? "python" : "python3", [script, "--mode", "continuation"], {
+            cwd: projectRoot, encoding: "utf-8", timeout: SESSION_CONTEXT_TIMEOUT_MS, windowsHide: true,
+            env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey ?? "", PYTHONDONTWRITEBYTECODE: "1" },
+         });
+         const continuation = result.status === 0 ? result.stdout.trim() : `Trellis continuation error: ${result.error?.message ?? (result.stderr.trim() || "query failed")}`;
+         workflowBody = `Delivery query: ${JSON.stringify(deliveryQuery)}\n${continuation}`;
+      } else if (workflowMd) {
          const blocks = parseWorkflowStateBlocks(workflowMd);
          const activeBlock = blocks.find((b) => b.status === status);
          if (activeBlock) {

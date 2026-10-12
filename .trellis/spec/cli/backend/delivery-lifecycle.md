@@ -2,15 +2,17 @@
 
 ## Scope and authority
 
-Issue #31 D1 introduces opt-in Task schema 2.0 / Delivery API 1.0. The shipped
+Issue #31 introduces Task schema 2.0 / Delivery API 1.0 and reviewed
+plan-2.0 installation migration. The shipped
 public contract is `packages/cli/src/templates/trellis/delivery-contract.md`;
 that document owns the lifecycle, ownership, result and recovery semantics.
 Do not duplicate the transition table in platform hooks or route code.
 
-Legacy `/task` and default legacy installs retain their existing contract until
+Fresh no-flag native initialization uses bundled `native-delivery-v1`. Existing
+legacy installs and the current legacy `/task` retain their contract until
 reviewed D2 migration/cutover. The older task-lifecycle and workflow-state specs
 describe that compatibility path. A Task must never receive both legacy status
-and Delivery phase writes. Default retirement awaits actual matching consumer
+and Delivery phase writes. Global legacy retirement awaits actual matching consumer
 and migration evidence; the presence of schema-2 code is insufficient.
 
 First-install onboarding under the exact bundled `native-delivery-v1` workflow
@@ -18,6 +20,50 @@ creates its explicit guideline scope and a `manual` Delivery before Planning;
 it records no Planning or subsequent gate approval. A custom schema-2 workflow
 creates a Task only, with no accepted scope or Delivery. Its declared owners
 choose those semantics; init must not select the first supported profile.
+Bootstrap eligibility requires the selected bundled template identity and
+effective managed native workflow, not byte equality alone. A custom ID or
+preserved user-owned workflow remains Task-only even when its bytes match the
+native bundle. Test both fresh custom installation and retained-content reinit.
+
+No-explicit-workflow reinit preserves the actual installed workflow and receipt
+ownership for legacy, declared native and custom installations. A changed fresh
+default never authorizes migration of an existing installation. Omitted
+`task.py create --schema-version` follows the actual validated installed runtime
+declaration: schema 2 for Delivery workflows and legacy only for retained
+undeclared compatibility workflows. Explicit schema mismatches and malformed or
+unsupported declarations reject before Task/session writes. This only selects
+the record format; it cannot approve scope, create a Delivery or pass a gate.
+
+Schema-2 Task creation instructions and generated root PRD describe whole Task
+scope/acceptance only. Planning design, implementation plan and context manifests
+belong to the explicitly created/selected Delivery and its PlanningRoot. Consult
+the active workflow's declared owners/continuation; do not prescribe a native
+owner for a custom workflow. `task.py start` binds a Task and cannot activate
+implementation. Keep legacy root-planning prose only in its explicit
+compatibility branch. Regressions inspect actual create output and PRD bytes,
+not only the aggregate schema. Schema-2 bootstrap guidance uses the same
+Delivery-scoped planning and declared owner chain through Check, complete
+Review, readiness and actual delivery, followed by separate whole-Task
+Completion and Closure. It must not prescribe legacy finish-to-archive as
+Completion or hard-code native owners for a custom declaration.
+
+No-explicit-workflow reinit passes an explicit preserve decision to the actual
+workflow writer, skipping its write and Python-command rendering entirely.
+Retained bytes, mode and exact original workflow receipt hash stay unchanged
+even when they contain raw Python commands or local edits. Recomputing the
+receipt from retained edited bytes falsely marks those edits as pristine and
+can let a later update overwrite them; verify reinit followed by update. Fresh/explicitly selected templates still render for the selected
+platform. Do not write then restore an owned workflow to simulate preservation.
+
+The optional bundled Linear hook validates Task shape/path before any client
+call. For schema 2, Task start is selection only and performs zero external calls,
+including description synchronization. Archive-to-Done mapping requires actual
+current Completion matching generation and accepted scope, using the existing
+inventory projection; missing or stale Completion fails before calls. Metadata
+linking uses canonical atomic metadata-only IO and preserves lifecycle facts.
+Explicit legacy mappings remain compatibility behavior. Tests use a fake client
+for configured actual start, manual archive, invalid records and metadata linking;
+they never contact a real external service or manufacture Completion results.
 
 Workflow replacement preflight inspects supported direct Task-directory aliases
 through the same containment and actual-directory checks as ordinary Task roots.
@@ -51,6 +97,43 @@ before writes. Delivered/stopped history remains eligible for owner recovery.
 | Actual success with missing/obsolete gates | Original owner records historical success; no fabricated gates or repeated remote action. |
 | Archive without current Completion/Closure | Reject; archive must not create completed facts. |
 
+Task-local relocation uses an optional immutable `artifact_origin`, initialized
+only by the closed move helper. SHA AuthorityRefs normalize to that origin for
+new operations and resolve against the selected Task's current root; fixed Git
+refs keep their original object locator, and candidate paths never remap.
+Retained result objects stay unchanged through rename/archive/reopen. Context
+JSONL relocation changes parsed `file` fields only, including Delivery manifests,
+and preserves modes. Ordinary metadata writers cannot initialize/change origin.
+Explicit archive queries read history; formal reopen moves the same Task to
+active storage and records a new generation without selecting a Delivery.
+
+Archive refuses a direct Task-leaf symlink before any writes; legal active
+aliases and `.trellis`/tasks-store root aliases remain available. Reopen fully
+prevalidates session releases before aggregate/location mutation. A late writer
+failure is recoverable with the original operation by the current declared
+task_scope owner only at generation old+1, with matching canonical authority,
+old Completion and no current-generation Delivery/Completion/Closure. Retry
+verifies authority, returns changed=false/current key, and completes remaining
+old-generation session releases. New business facts or mismatching inputs reject
+without writes. Equivalent current state is the boundary; no reopen ledger or
+historical invoking-owner claim is introduced. SDK callers reread the current
+exact active locator/raw preimage; Python CLI recovers a missing explicit archive
+locator via the operation key's exact identity resolver, never inventory inference.
+
+Task context add/list/validate share one selected-record boundary. Checked reads
+distinguish genuinely missing task.json (existing evidence-only handling) from
+invalid, unreadable, unsupported or undecodable metadata, which fail with a
+concrete reason before reading/writing root manifests. Existing valid records
+must match the workspace's declared runtime before context routing: retained
+legacy Tasks cannot execute under schema 2, and schema-2 Tasks require a valid
+Delivery declaration and exact selected/explicit Delivery planning root. Legacy
+undeclared workflows retain their context handling; no malformed Task becomes
+an evidence-only directory or supplies a root-planning fallback.
+
+Actual hook/SDK/installed regressions cover two renames, formal Check after a
+move, archive queries by relative/absolute path, validation-only reopen, intact
+retained history and no-write refusal on occupied destinations/invalid refs.
+
 ## Required evidence
 
 Meaningful tests cover transitions, rework, stop, result identity/applicability,
@@ -66,6 +149,26 @@ result must not invalidate the content it describes. Owner-selected business
 docs and tests remain part of the intended candidate. Runtime validates
 objective facts and containment; AI owners decide sufficiency and earliest
 affected stage. A read-only Review carrier cannot self-fix.
+
+Default checker `quality` is whole-Task/code/evidence verification, not a formal
+Delivery gate. With exact validated Task identity and no selected Delivery,
+hooks may inject TaskKey, accepted scope references/local scope contents and an
+explicit `task_scope_only` limitation. Do not load root design/implement or
+manifests as Delivery planning, guess a slice, or write lifecycle results.
+External authority remains a reference for the owner to verify; hooks make no
+remote request. Actual `delivery_check`/`delivery_review` dispatches and all
+implementation still require exact Delivery/candidate/PlanningRoot/owner inputs.
+Known formal missing selection fails closed; binding/runtime/stale errors never
+downgrade. Codex SubagentStart normally carries no prompt/profile, so its hook
+envelope cannot assert formal dispatch. Carrier instructions enforce the actual
+dispatch profile; hook recognition uses only explicit profile fields/whole lines.
+
+Native delivery has separate normal-forward and original-producer recovery
+routes. Publishing and applicable current gates constrain forward work. They
+must not block read-only verification and `historical_success` projection of
+already-successful exact Task/Delivery/generation/candidate/result facts by the
+original declared producer. Recovery never invents gates or repeats remote
+actions; mismatched identity or retained result content is a concrete error.
 
 Current gate slots do not retain cleared/replaced gate identity history. The
 producer must allocate a new ID for a revised invocation and cannot reinterpret
@@ -97,3 +200,101 @@ sentinel leaks on the missing-identity path, and explicit identity loads the
 selected slice. Actual Droid carriers under `droid/droids/` must have the same
 exact-selection and read-only `delivery_review` guards as other agent carriers;
 registry tests inspect the collector's real files, not only skill availability.
+
+The Task and Delivery queries within a hook reuse the same detected platform.
+Native `session_id` payloads are sufficient without `TRELLIS_CONTEXT_ID`; never
+drop the platform on a second query and accidentally search `session_probe`
+instead of the host's binding. Preserve explicit override precedence and Codex
+SubagentStart's refusal of inherited parent overrides. Test same session IDs on
+different hosts, multiple sessions, registered sibling worktrees, unknown/absent
+identity and zero writes through actual SessionStart and implement/check hooks.
+
+Schema-2 inventory exposes Task scope/current Completion and separate current-
+generation Delivery records. `TaskInfo.status` is null for schema 2 and for
+historical-only legacy data under a schema-2 declaration; no `task_scope` or
+`task_completed` development status is fabricated. Pending Task inventory means
+whole-Task acceptance remains outstanding, never automatic implementation.
+Delivery-phase filters inspect current-generation records only. Parent progress
+counts actual matching child Completion, including archive history; unknown or
+missing children are not complete.
+
+OpenCode SessionStart and Pi/OMP extensions consume the exact public query and
+actual selected-workspace continuation. They do not derive schema-2 routes from
+legacy status tags or read root planning when no Delivery is selected. A legacy
+binding in an already declared schema-2 workspace is historical-only and cannot
+execute. Preserve concrete structured runtime errors even when the Python query
+exits nonzero; read-only carriers disable Python bytecode writes.
+
+## Scenario: exact Git facts, permission modes and context roots
+
+### 1. Scope / Trigger
+
+D1 post-merge review exposed mutable historical commit refs, inherited Git
+repository redirects and incompatible workspace/Git-tree permission hashing.
+OpenCode also rejected already accepted storage-root aliases. These corrections
+change objective verification, not semantic ownership or D2 migration.
+
+### 2. Signatures
+
+- `computeCandidateContentRef(root, paths, kind?: CandidateRef["kind"]): string`.
+- `candidate_content_ref(root, paths, kind: str | None = None) -> str`.
+- `delivery.py candidate --paths <paths...> [--kind git|git_free]`.
+- Existing `record_delivery` input/output and lifecycle edges remain unchanged.
+
+### 3. Contracts
+
+The public contract owns hash serialization: Git mode normalizes owner execute
+bit to 0644/0755; git_free keeps all 0777 permissions. Explicit recorded kind
+controls verification. Two-argument computation infers Git-worktree membership;
+manual artifacts in a Git root can explicitly request git_free. All verifier
+Git subprocesses strip inherited GIT_* values, including binary reads.
+local_commit.commit is a complete lowercase 40/64-hex OID matching candidate
+head; the store requires a commit object whose resolved full OID exactly
+matches the input, so a 40-hex prefix in a SHA-256 repository is rejected.
+
+OpenCode may consume the real Task root returned by the strict active resolver.
+Delivery context is exactly that Task's deliveries/UUID descendant. The
+validated .trellis/tasks/selected-Task root alias remains valid; every nested
+Delivery component must be a directory without a symlink. Unvalidated hints
+cannot create another trusted root or override exact selection.
+
+### 4. Validation & Error Matrix
+
+| Input | Required result |
+| --- | --- |
+| local_commit HEAD/branch/tag-name/short SHA | invalid_record before write |
+| SHA-256 repository receives a 40-hex commit prefix | invalid_git_fact; no write |
+| Full OID points to blob/tag/nonexistent object | invalid_git_fact; no stored fact |
+| Exact commit tree differs from selected content | candidate_mismatch |
+| Git file permissions 0600/0640, regular committed file | Same normalized mode as 100644; normal/historical delivery may verify |
+| Owner execute bit changes | Different Git content ref; old candidate rejected |
+| git_free permission change | Different content ref; old candidate rejected |
+| Inherited Git redirect selects another repo | Ignore redirect; verify supplied root |
+| Legal validated storage-root alias | Inject exact selected Delivery plans/manifests |
+| Nested deliveries/UUID symlink or stale selection | Fail closed; no Task-root fallback |
+
+### 5. Good/Base/Bad Cases
+
+Good: historical exact commit survives current HEAD movement. Base: ordinary
+0644 Git candidates keep their digest. Bad: persist HEAD as a terminal fact,
+hash a Git regular file's private 0600 permissions as a Git tree mode, or let
+another repository's GIT_DIR supply the candidate HEAD.
+
+### 6. Tests Required
+
+Use two real controlled Git repositories for environment pollution, covering
+HEAD validation and binary historical blob reads. Verify branch/tag/HEAD/short
+ref rejection plus exact-commit recovery and non-commit OID rejection in both
+runtimes, including a real SHA-256 repository rejecting a 40-hex prefix with
+unchanged record bytes. Cover 0600, 0640 and executable modes, explicit git_free in a Git
+root, permission drift, and hash parity. Run actual OpenCode injection through
+validated root aliases and nested-symlink rejection with zero-write snapshots.
+Workflow ownership regressions live in commands-workflow: custom legacy/v2
+forced and add-platform reinit followed by normal/forced update.
+
+### 7. Wrong vs Correct
+
+Wrong: compute a manual git_free hash with automatic Git normalization or rely
+on cwd while passing inherited repository-redirect environment to Git.
+Correct: verify with candidate.kind, and invoke Git in the validated root with
+clean repository environment; store immutable commit OIDs only.

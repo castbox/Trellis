@@ -81,6 +81,8 @@ export interface TaskClosureResult extends ResultIdentity {
 }
 export type TaskRecordV2 = Omit<TrellisTaskRecord, "status" | "commit" | "pr_url" | "completedAt"> & {
   schema_version: "2.0";
+  /** Immutable original Task artifact root, initialized only by explicit relocation. */
+  artifact_origin?: string;
   accepted_scope: AuthorityRef | null;
   deliveries: DeliveryRecord[];
   completion_results: TaskCompletionResult[];

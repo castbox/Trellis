@@ -1,9 +1,13 @@
-# Native Delivery Workflow (opt-in API 1.0)
+# Native Delivery Workflow (API 1.0)
 
-This is the D1 opt-in workflow, selected with `trellis init --workflow native-delivery-v1`
-or `trellis workflow --template native-delivery-v1`. Default `native` stays on the
-legacy contract until explicit migration and consumer retirement. Existing active
-legacy tasks require reviewed migration; selecting this workflow does not migrate them.
+This is the fresh no-flag `trellis init` default, using Task schema 2.0 / Delivery
+API 1.0. It can also be explicitly selected with `trellis init --workflow native-delivery-v1`
+or `trellis workflow --template native-delivery-v1`. Explicit `native` names the
+temporary legacy compatibility workflow; implicit reinitialization preserves the
+actual installed workflow and its ownership. Existing active legacy Tasks require
+reviewed migration; selecting this workflow does not migrate them. Current SDK
+`/task` and legacy-execution retirement remain pending matching consumer and
+migration evidence plus public breaking-change guidance.
 
 Read `.trellis/delivery-contract.md` for public types, operations and errors.
 The Markdown owners below decide semantic sufficiency. Runtime commands only

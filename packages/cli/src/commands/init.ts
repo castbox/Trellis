@@ -22,6 +22,7 @@ import {
 import {
   getPythonCommandForPlatform,
   setResolvedPythonCommand,
+  replacePythonCommandLiterals,
 } from "../configurators/shared.js";
 import { AI_TOOLS, type CliFlag } from "../types/ai-tools.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
@@ -54,9 +55,11 @@ import {
   initializeHashes,
   removeHash,
   loadHashes,
+  saveHashes,
 } from "../utils/template-hash.js";
 import {
   NATIVE_WORKFLOW_ID,
+  DELIVERY_WORKFLOW_ID,
   isBundledWorkflow,
   resolveWorkflowTemplate,
 } from "../utils/workflow-resolver.js";
@@ -384,11 +387,21 @@ function getBootstrapPrdContent(
   projectType: ProjectType,
   pythonCmd: string,
   packages?: DetectedPackage[],
+  deliveryWorkflow = false,
 ): string {
   const checklistItems = getBootstrapChecklistItems(projectType, packages);
   const checklistMarkdown = checklistItems
     .map((item) => `- [ ] ${item}`)
     .join("\n");
+  const selectionGuidance = deliveryWorkflow
+    ? "Bind Task selection to a session with Trellis identity. This root PRD is whole-Task scope; selection starts no implementation. Follow the active workflow's declared owners to create/select the exact Delivery before Planning, and load its artifacts and context manifests from its planning_root. Custom owners judge their own accepted scope and Delivery creation; never infer either from this scaffold."
+    : "When they want to work on it, they should start this task from a session that provides Trellis session identity.";
+  const runtimeGuidance = deliveryWorkflow
+    ? "- The active workflow's declared owners control each Delivery's Planning, Implementation, Check and full Review.\n- Each Delivery's `planning_root` contains its `prd.md`, `design.md`, `implement.md` and context manifests.\n- Hooks load the exact selected Delivery's artifacts and manifests; root Task scope remains separate.\n"
+    : "- Every AI coding task spawns two sub-agents: `trellis-implement` (writes code) and `trellis-check` (verifies quality).\n- Each task has `implement.jsonl` / `check.jsonl` manifests listing which spec files to load.\n- The platform hook auto-injects those spec files + the task's `prd.md` into every sub-agent prompt, so the sub-agent codes/reviews per team conventions without anyone pasting them manually.\n";
+  const completionGuidance = deliveryWorkflow
+    ? "When the checklist contains real examples, follow the active workflow's declared Check, full-Review, readiness and delivery owners under the applicable profile. A checklist or gate pass is not delivery or Task Completion.\n\nThe Task Completion owner independently judges the whole accepted scope and required evidence, including historical Deliveries and any remaining work. The Closure owner then records the actual source disposition for that Completion. Archive is permitted only after the matching Completion and Closure; it creates neither. `task.py finish` only clears session selection.\n"
+    : `When the developer confirms the checklist items above are done with real\nexamples (not placeholders), guide them to run:\n\n\`\`\`bash\n${pythonCmd} ./.trellis/scripts/task.py finish\n${pythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines\n\`\`\`\n`;
 
   const header = `# Bootstrap Task: Fill Project Development Guidelines
 
@@ -396,13 +409,12 @@ function getBootstrapPrdContent(
 
 The developer just ran \`trellis init\` on this project for the first time.
 \`.trellis/\` now exists with empty spec scaffolding, and this bootstrap task
-exists under \`.trellis/tasks/\`. When they want to work on it, they should start
-this task from a session that provides Trellis session identity.
+exists under \`.trellis/tasks/\`. ${selectionGuidance}
 
 **Your job**: help them populate \`.trellis/spec/\` with the team's real
 coding conventions. Every future AI session — this project's
 \`trellis-implement\` and \`trellis-check\` sub-agents — auto-loads spec files
-listed in per-task jsonl manifests. Empty spec = sub-agents write generic
+listed in ${deliveryWorkflow ? "Delivery-scoped" : "per-task"} jsonl manifests. Empty spec = sub-agents write generic
 code. Real spec = sub-agents match the team's actual patterns.
 
 Don't dump instructions. Open with a short greeting, figure out if the repo
@@ -499,13 +511,7 @@ is a separate conversation, not a bootstrap concern.
 
 ## Quick explainer of the runtime (share when they ask "why do we need spec at all")
 
-- Every AI coding task spawns two sub-agents: \`trellis-implement\` (writes
-  code) and \`trellis-check\` (verifies quality).
-- Each task has \`implement.jsonl\` / \`check.jsonl\` manifests listing which
-  spec files to load.
-- The platform hook auto-injects those spec files + the task's \`prd.md\`
-  into every sub-agent prompt, so the sub-agent codes/reviews per team
-  conventions without anyone pasting them manually.
+${runtimeGuidance}
 - Source of truth: \`.trellis/spec/\`. That's why filling it well now pays
   off forever.
 
@@ -513,13 +519,7 @@ is a separate conversation, not a bootstrap concern.
 
 ## Completion
 
-When the developer confirms the checklist items above are done with real
-examples (not placeholders), guide them to run:
-
-\`\`\`bash
-${pythonCmd} ./.trellis/scripts/task.py finish
-${pythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
-\`\`\`
+${completionGuidance}
 
 After archive, these project guidelines are available to every new session.
 Create any additional onboarding task explicitly when it is needed.
@@ -593,13 +593,17 @@ function createBootstrapTask(
   cwd: string,
   pythonCmd: string,
   projectType: ProjectType,
-  packages?: DetectedPackage[],
-  workflowContent?: string,
+  packages: DetectedPackage[] | undefined,
+  workflowContent: string,
+  nativeBootstrap: boolean,
 ): boolean {
   const legacy = getBootstrapTaskJson(projectType, packages);
-  const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
-  const contract = readDeliveryWorkflowContract(
-    workflowContent ?? workflowMdTemplate,
+  const contract = readDeliveryWorkflowContract(workflowContent);
+  const prdContent = getBootstrapPrdContent(
+    projectType,
+    pythonCmd,
+    packages,
+    Boolean(contract),
   );
   if (!contract)
     return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, legacy, prdContent);
@@ -612,7 +616,10 @@ function createBootstrapTask(
   } = legacy;
   // Only the bundled native workflow defines accepted bootstrap scope/profile.
   // Custom owners must judge their own scope and create a Delivery explicitly.
-  if (workflowContent !== deliveryWorkflowMdTemplate) {
+  if (
+    !nativeBootstrap ||
+    workflowContent !== replacePythonCommandLiterals(deliveryWorkflowMdTemplate)
+  ) {
     return writeTaskSkeleton(
       cwd,
       BOOTSTRAP_TASK_NAME,
@@ -677,6 +684,7 @@ function createBootstrapTask(
 async function handleReinit(
   cwd: string,
   options: InitOptions,
+  workflowIsManaged: boolean,
 ): Promise<boolean> {
   const TOOLS = getInitToolChoices();
   const configuredPlatforms = getConfiguredPlatforms(cwd);
@@ -801,6 +809,7 @@ async function handleReinit(
       trackedPaths: reinitWritten,
       merge: true,
     });
+    if (!workflowIsManaged) removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
     if (hashedCount > 0) {
       console.log(
         chalk.gray(`📋 Tracking ${hashedCount} template files for updates`),
@@ -973,32 +982,33 @@ export async function init(options: InitOptions): Promise<void> {
   const workflowId =
     workflowIdInput && workflowIdInput.length > 0
       ? workflowIdInput
-      : NATIVE_WORKFLOW_ID;
-  let workflowMdOverride: string | undefined;
+      : DELIVERY_WORKFLOW_ID;
+  let workflowIsManaged = isBundledWorkflow(workflowId);
+  let workflowMdOverride: string | undefined = deliveryWorkflowMdTemplate;
+  let preserveExistingWorkflow = false;
+  let retainedWorkflowHash: string | undefined;
   if (options.workflow || options.workflowSource) {
     const resolved = await resolveWorkflowTemplate(workflowId, {
       source: options.workflowSource,
     });
+    workflowMdOverride = resolved.content;
     if (resolved.id !== NATIVE_WORKFLOW_ID) {
-      workflowMdOverride = resolved.content;
       console.log(
         chalk.blue(`🧭 Using workflow template: ${chalk.cyan(resolved.id)}`),
       );
     }
   }
 
-  if (
-    !options.workflow &&
-    !options.workflowSource &&
-    fs.existsSync(existingWorkflow)
-  ) {
+  if (!options.workflow && !options.workflowSource && !isFirstInit) {
     const existingContent = fs.readFileSync(existingWorkflow, "utf8");
-    if (
-      readDeliveryWorkflowContract(existingContent) ||
-      !loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE]
-    ) {
-      workflowMdOverride = existingContent;
-    }
+    const existingWorkflowHash = loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE];
+    workflowMdOverride = existingContent;
+    // Retain the actual installed authority, including managed legacy bytes.
+    // A fresh-install default is not authority to change an existing workflow
+    // or claim ownership of user-managed content.
+    workflowIsManaged = Boolean(existingWorkflowHash);
+    retainedWorkflowHash = existingWorkflowHash;
+    preserveExistingWorkflow = true;
   }
   if (
     !isFirstInit &&
@@ -1070,7 +1080,7 @@ export async function init(options: InitOptions): Promise<void> {
     !tasksEmptyEarly &&
     !hasTemplateRequest
   ) {
-    const reinitDone = await handleReinit(cwd, options);
+    const reinitDone = await handleReinit(cwd, options, workflowIsManaged);
     if (reinitDone) return;
     // reinitDone === false means user chose "full re-initialize" → fall through
   }
@@ -1732,7 +1742,7 @@ export async function init(options: InitOptions): Promise<void> {
   }
 
   // ==========================================================================
-  // Resolve workflow template (default: native bundled)
+  // Resolve workflow template (fresh-install default: native-delivery-v1)
   // ==========================================================================
 
   // ==========================================================================
@@ -1754,6 +1764,7 @@ export async function init(options: InitOptions): Promise<void> {
       packages: monorepoPackages,
       remoteSpecPackages,
       workflowMdOverride,
+      preserveExistingWorkflow,
     });
 
     // Write monorepo packages to config.yaml (non-destructive patch)
@@ -1822,12 +1833,16 @@ export async function init(options: InitOptions): Promise<void> {
     );
   }
 
-  // Non-native workflow is user-managed local content. Drop the
-  // `.trellis/workflow.md` hash entry so `trellis update` classifies it as
-  // modified and does not silently restore native bytes. See design.md
-  // "Durable-state contract".
-  if (workflowMdOverride !== undefined && !isBundledWorkflow(workflowId)) {
+  // The recursive hash initialization must not claim ownership of preserved
+  // custom content. Only an explicit bundled selection transfers that ownership.
+  if (!workflowIsManaged) {
     removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
+  } else if (preserveExistingWorkflow && retainedWorkflowHash) {
+    // Reinitializing other files must not adopt local workflow edits as a
+    // pristine managed baseline. Retain the exact original receipt value.
+    const hashes = loadHashes(cwd);
+    hashes[PATHS.WORKFLOW_GUIDE_FILE] = retainedWorkflowHash;
+    saveHashes(cwd, hashes);
   }
 
   if (
@@ -1837,7 +1852,12 @@ export async function init(options: InitOptions): Promise<void> {
       pythonCmd,
       projectType,
       monorepoPackages,
-      workflowMdOverride,
+      fs.readFileSync(existingWorkflow, "utf8"),
+      // Explicit identity or retained managed ownership authorizes the native
+      // policy; matching template bytes alone never grants custom ownership.
+      workflowIsManaged &&
+        (workflowId === DELIVERY_WORKFLOW_ID ||
+          (!options.workflow && !options.workflowSource)),
     )
   ) {
     throw new Error("Could not create bootstrap task.");

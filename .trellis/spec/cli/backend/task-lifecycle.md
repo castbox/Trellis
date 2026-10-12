@@ -1,14 +1,16 @@
 # Task Lifecycle
 
-This spec describes the legacy/current-default compatibility contract during
-Issue #31 D1. Opt-in schema-2 Tasks use [Delivery Lifecycle](./delivery-lifecycle.md)
+This spec describes the retained legacy compatibility contract during
+Issue #31's staged cutover. Fresh default native and other schema-2 Tasks use [Delivery Lifecycle](./delivery-lifecycle.md)
 and the shipped public contract; they must not receive legacy status writes.
 
 ## Task Records
 
-`task.py create`, `trellis init`, and task factories write the current task
-schema. Task selection uses explicit task arguments or a validated session
-binding. `task.py list` and the default context support status filtering and
+Under a retained undeclared legacy workflow, `task.py create` and explicit
+legacy-compatible init/factories write the legacy task schema. Fresh no-flag
+init uses schema 2; omitted create schema follows the installed validated
+declaration as specified in Delivery Lifecycle. Task selection uses explicit
+task arguments or a validated session binding. Legacy `task.py list` and context support status filtering and
 project task inventory; the current session task is reported separately.
 
 `task.py create --source-json` accepts `no_issue` (also the default) or an
@@ -64,6 +66,65 @@ Finish clears the selected session. Archive clears bindings matching the
 archived TaskId and generation. Rename changes the directory, mutable name,
 and TaskRef references while leaving session bytes, TaskId, and generation
 unchanged. Lifecycle hooks run from the task worktree.
+
+## Git Inventory with Prunable Registrations
+
+### 1. Scope / Trigger
+
+Apply when enumerating repository worktrees for Task/session resolution or
+plan-2.0 migration preflight. Git
+can retain an obsolete registration after its `.git` entry disappears while
+the old directory still contains `.trellis`; that directory is not a live
+registered execution workspace. Enumeration never prunes or repairs resources.
+
+### 2. Signatures
+
+`repository_facts(root)` reads `git worktree list --porcelain -z` and returns
+the invocation root, common directory, Git root and eligible worktree roots.
+Public `task.py current` and `get_context.py --mode continuation` retain their
+existing output/error contracts. CLI `migration2.repository(cwd)` applies the
+same live-root eligibility rule before exact workspace inventory validation.
+
+### 3. Contracts
+
+Parse complete NUL-separated porcelain records, including the record's
+`prunable` field. Exclude only a non-invocation Git root whose record has that
+explicit marker and whose `.git` entry is absent, using lexical existence so
+dangling symlinks count as extant entries. Do not infer this from missing Task
+data, a failed Git command or the presence/absence of `.trellis` alone.
+Git-free fallback requires the actual Git diagnostic `not a git repository`
+and no lexical `.git` entry in the invocation root or any ancestor; timeout,
+other Git errors and dangling entries do not become Git-free installations.
+
+### 4. Validation & Error Matrix
+
+| Inventory/selection | Required behavior |
+| --- | --- |
+| Prunable sibling with absent `.git` | Exclude from live workspace discovery; retain all files and registration metadata. |
+| Extant, corrupt, dangling or foreign `.git` | Keep ordinary membership/error validation; never skip it as a dead sibling. |
+| Invocation Git root or failed Git query | Preserve strict validation/error; no best-effort inventory. |
+| Selected Task/generation no longer resolves | Return the existing stale/error result; never infer another Task or normal `no_task`. |
+
+### 5. Good / Base / Bad Cases
+
+Good: a valid session still resolves across live sibling worktrees despite an
+unrelated prunable residual directory. Base: ordinary one-worktree discovery is
+unchanged. Bad: catching all Git errors and treating the session as task-free.
+
+### 6. Tests Required
+
+Use real Git worktrees and preserve an obsolete registration after removing
+only its controlled fixture's Git entry. Assert exact Task/generation selection,
+live sibling resolution, stale selected identity, corrupt/foreign entry errors,
+Git-query failure, byte/mode preservation and unchanged registration inventory.
+For migration, the same frozen caller plan must remain previewable after an
+unrelated explicitly obsolete sibling appears, with zero preview writes.
+
+### 7. Wrong vs Correct
+
+Wrong: validate every raw path as live, or skip any path whose Git query fails.
+Correct: filter the explicitly obsolete record under the closed conditions,
+then strictly validate every remaining workspace and the exact selected Task.
 
 ## Archive and Paths
 

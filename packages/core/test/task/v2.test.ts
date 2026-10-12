@@ -4,15 +4,15 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyTaskOperation, applyTaskOperationToStore, computeCandidateContentRef, emptyTaskRecordV2, getCurrentDelivery, getGateApplicability, loadTaskRecordV2, parseTaskRecordV2, serializeTaskRecordV2, TaskV2Error, writeTaskRecordV2, type AuthorityRef, type CandidateRef, type TaskOperation, type TaskRecordV2, type WorkflowContract } from "../../src/task/v2/index.js";
+import { applyTaskOperation, applyTaskOperationToStore, computeCandidateContentRef, emptyTaskRecordV2, getCurrentDelivery, getGateApplicability, loadTaskRecordV2, parseTaskRecordV2, serializeTaskRecordV2, TaskV2Error, verifyCandidate, writeTaskRecordV2, type AuthorityRef, type CandidateRef, type TaskOperation, type TaskRecordV2, type WorkflowContract } from "../../src/task/v2/index.js";
 
 interface FixtureStep { operation: TaskOperation; expect_error?: string; expected_phase?: string; expected_changed?: boolean }
-interface Fixture { workflow: WorkflowContract; initial: TaskRecordV2; steps: FixtureStep[]; schema_cases?: { name: string; input: unknown; expect_error: string }[]; hash_cases?: { name: string; paths: string[]; files: Record<string, string>; content_ref: string }[] }
+interface Fixture { workflow: WorkflowContract; initial: TaskRecordV2; steps: FixtureStep[]; schema_cases?: { name: string; input: unknown; expect_error: string }[]; hash_cases?: { name: string; paths: string[]; files: Record<string, string>; modes?: Record<string, number>; kind?: CandidateRef["kind"]; content_ref: string }[] }
 const fixtures = path.resolve(import.meta.dirname, "../fixtures/task-v2");
 const native = JSON.parse(fs.readFileSync(path.join(fixtures, "native-multi.json"), "utf8")) as Fixture;
 const key = { task_id: "fixture-task", lifecycle_generation: 0, delivery_id: "11111111-1111-4111-8111-111111111111" };
 const directories: string[] = [];
-afterEach(() => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
 function errorCode(callback: () => unknown, code: string): void {
   try { callback(); throw new Error("operation unexpectedly succeeded"); } catch (error) { expect(error).toBeInstanceOf(TaskV2Error); expect((error as TaskV2Error).code).toBe(code); }
 }
@@ -20,8 +20,8 @@ function runFixture(fixture: Fixture, until = fixture.steps.length): TaskRecordV
   for (const item of fixture.schema_cases ?? []) errorCode(() => parseTaskRecordV2(item.input), item.expect_error);
   for (const item of fixture.hash_cases ?? []) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-v2-hash-")); directories.push(root);
-    for (const [name, contents] of Object.entries(item.files)) { fs.writeFileSync(path.join(root, name), contents); fs.chmodSync(path.join(root, name), 0o644); }
-    expect(computeCandidateContentRef(root, item.paths)).toBe(item.content_ref);
+    for (const [name, contents] of Object.entries(item.files)) { fs.writeFileSync(path.join(root, name), contents); fs.chmodSync(path.join(root, name), item.modes?.[name] ?? 0o644); }
+    expect(computeCandidateContentRef(root, item.paths, item.kind)).toBe(item.content_ref);
   }
   let record = fixture.initial;
   for (const step of fixture.steps.slice(0, until)) {
@@ -34,11 +34,11 @@ function runFixture(fixture: Fixture, until = fixture.steps.length): TaskRecordV
   return record;
 }
 function op<T extends TaskOperation>(operation: T): T { return operation; }
-function makeStore(gitProject = false): { root: string; taskDir: string; authority: AuthorityRef; plan: AuthorityRef; candidate: CandidateRef } {
+function makeStore(gitProject = false, objectFormat: "sha1" | "sha256" = "sha1"): { root: string; taskDir: string; authority: AuthorityRef; plan: AuthorityRef; candidate: CandidateRef } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-v2-")); directories.push(root);
   fs.writeFileSync(path.join(root, "requirements.md"), "R1: deliver an artifact\n"); fs.writeFileSync(path.join(root, "plan.md"), "Plan\n"); fs.writeFileSync(path.join(root, "artifact.txt"), "Accepted artifact\n"); fs.chmodSync(path.join(root, "artifact.txt"), 0o644);
   if (gitProject) {
-    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["init", "-q", `--object-format=${objectFormat}`], { cwd: root });
     execFileSync("git", ["add", "."], { cwd: root });
     execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "actual content"], { cwd: root });
   }
@@ -170,6 +170,80 @@ describe("Task v2 closed lifecycle", () => {
 });
 
 describe("Task v2 objective atomic store", () => {
+  it("rejects mutable commit refs and annotated tag objects while recovering the exact immutable commit", () => {
+    const store = makeStore(true); prepareStore(store, "local_commit");
+    const head = store.candidate.head_ref; if (!head) throw new Error("missing exact commit");
+    const request = (commit: string): TaskOperation => op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "implementing", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "immutable-commit-result", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "local_commit", candidate: { ...store.candidate, head_ref: commit }, commit } });
+    const before = loadTaskRecordV2(store).preimage;
+    const branch = execFileSync("git", ["branch", "--show-current"], { cwd: store.root, encoding: "utf8" }).trim();
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "tag", "-am", "tag object", "candidate-tag"], { cwd: store.root });
+    for (const commit of ["HEAD", branch, "candidate-tag", head.slice(0, 12)]) {
+      errorCode(() => storeApply(store, request(commit)), "invalid_record");
+      expect(loadTaskRecordV2(store).preimage).toBe(before);
+    }
+    const tag = execFileSync("git", ["rev-parse", "candidate-tag"], { cwd: store.root, encoding: "utf8" }).trim();
+    errorCode(() => storeApply(store, request(tag)), "invalid_git_fact");
+    const hexNamedBranch = "1".repeat(40);
+    execFileSync("git", ["branch", hexNamedBranch], { cwd: store.root });
+    errorCode(() => storeApply(store, request(hexNamedBranch)), "invalid_git_fact");
+    expect(loadTaskRecordV2(store).preimage).toBe(before);
+    expect(storeApply(store, request(head)).phase).toBe("delivered");
+  });
+  it("verifies an actual SHA-256 commit object through historical local delivery", () => {
+    const store = makeStore(true, "sha256"); prepareStore(store, "local_commit");
+    const commit = store.candidate.head_ref; if (!commit) throw new Error("missing commit");
+    expect(commit).toMatch(/^[a-f0-9]{64}$/);
+    const before = loadTaskRecordV2(store).preimage;
+    const prefix = commit.slice(0, 40);
+    errorCode(() => storeApply(store, op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "implementing", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "truncated-sha256-commit", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "local_commit", candidate: { ...store.candidate, head_ref: prefix }, commit: prefix } })), "invalid_git_fact");
+    expect(loadTaskRecordV2(store).preimage).toBe(before);
+    expect(storeApply(store, op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "implementing", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "actual-sha256-commit", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "local_commit", candidate: store.candidate, commit } })).phase).toBe("delivered");
+  });
+  it("isolates all Git reads, including historical blob bytes, from another repository's environment", () => {
+    const store = makeStore(true); const foreign = makeStore(true);
+    fs.writeFileSync(path.join(store.root, "artifact.txt"), "Own accepted repository content\n");
+    execFileSync("git", ["add", "artifact.txt"], { cwd: store.root });
+    execFileSync("git", ["-c", "user.name=Own", "-c", "user.email=own@example.invalid", "commit", "-qm", "own candidate"], { cwd: store.root });
+    store.candidate = { ...store.candidate, head_ref: execFileSync("git", ["rev-parse", "HEAD"], { cwd: store.root, encoding: "utf8" }).trim(), content_ref: computeCandidateContentRef(store.root, ["artifact.txt"]) };
+    prepareStore(store, "local_commit");
+    fs.writeFileSync(path.join(foreign.root, "artifact.txt"), "Unrelated repository content\n");
+    execFileSync("git", ["add", "artifact.txt"], { cwd: foreign.root });
+    execFileSync("git", ["-c", "user.name=Foreign", "-c", "user.email=foreign@example.invalid", "commit", "-qm", "foreign candidate"], { cwd: foreign.root });
+    const foreignHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: foreign.root, encoding: "utf8" }).trim();
+    const foreignBefore = loadTaskRecordV2(foreign).preimage;
+    const contaminated = { GIT_DIR: path.join(foreign.root, ".git"), GIT_WORK_TREE: foreign.root, GIT_COMMON_DIR: path.join(foreign.root, ".git"), GIT_INDEX_FILE: path.join(foreign.root, ".git/index"), GIT_OBJECT_DIRECTORY: path.join(foreign.root, ".git/objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(foreign.root, ".git/objects"), GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.worktree", GIT_CONFIG_VALUE_0: foreign.root };
+    for (const [name, value] of Object.entries(contaminated)) vi.stubEnv(name, value);
+    const begin = op({ api_version: "1.0", operation: "begin_check", key, owner_role: "implementation", owner_id: native.workflow.owners.implementation, expected_phase: "implementing", candidate: store.candidate });
+    expect(storeApply(store, begin).phase).toBe("checking");
+    errorCode(() => verifyCandidate(store.root, { ...store.candidate, head_ref: foreignHead }), "candidate_mismatch");
+    const commit = store.candidate.head_ref; if (!commit) throw new Error("missing own commit");
+    const request = op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "checking", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "own-repo-outcome", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "local_commit", candidate: store.candidate, commit } });
+    expect(storeApply(store, request).phase).toBe("delivered");
+    expect(fs.readFileSync(path.join(foreign.root, "artifact.txt"), "utf8")).toBe("Unrelated repository content\n");
+    expect(loadTaskRecordV2(foreign).preimage).toBe(foreignBefore);
+  });
+  it.each([0o600, 0o640, 0o700, 0o750])("normalizes Git mode %s for actual commit recovery and retains full Git-free permissions", (mode) => {
+    const store = makeStore(true); const file = path.join(store.root, "artifact.txt"); fs.chmodSync(file, mode);
+    execFileSync("git", ["add", "artifact.txt"], { cwd: store.root });
+    if (mode & 0o100) execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "make candidate executable"], { cwd: store.root });
+    const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: store.root, encoding: "utf8" }).trim();
+    const contents = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+    const expected = `sha256:${createHash("sha256").update(JSON.stringify([["artifact.txt", mode & 0o100 ? 0o755 : 0o644, contents]])).digest("hex")}`;
+    expect(computeCandidateContentRef(store.root, ["artifact.txt"])).toBe(expected);
+    expect(computeCandidateContentRef(store.root, ["artifact.txt"], "git")).toBe(expected);
+    expect(computeCandidateContentRef(store.root, ["artifact.txt"], "git_free")).not.toBe(expected);
+    store.candidate = { ...store.candidate, content_ref: expected, head_ref: commit }; prepareStore(store, "local_commit");
+    expect(storeApply(store, op({ api_version: "1.0", operation: "begin_check", key, expected_phase: "implementing", owner_role: "implementation", owner_id: native.workflow.owners.implementation, candidate: store.candidate })).phase).toBe("checking");
+    expect(storeApply(store, op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "checking", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "normalized-mode-outcome", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "local_commit", candidate: store.candidate, commit } })).phase).toBe("delivered");
+  });
+  it("verifies explicit Git-free permissions inside a Git checkout independently of Git mode normalization", () => {
+    const store = makeStore(true); const file = path.join(store.root, "artifact.txt"); fs.chmodSync(file, 0o640);
+    const candidate: CandidateRef = { ...store.candidate, kind: "git_free", content_ref: computeCandidateContentRef(store.root, ["artifact.txt"], "git_free"), head_ref: null };
+    expect(() => verifyCandidate(store.root, candidate)).not.toThrow();
+    fs.chmodSync(file, 0o600);
+    errorCode(() => verifyCandidate(store.root, candidate), "candidate_mismatch");
+    expect(() => verifyCandidate(store.root, store.candidate)).not.toThrow();
+  });
   it("verifies revised PR postconditions before replacing the publication and normally delivering the same slice", () => {
     const store = makeStore(true); prepareStore(store, "pull_request");
     const apply = (operation: TaskOperation, verifyFact?: Parameters<typeof applyTaskOperationToStore>[0]["verifyFact"]) => applyTaskOperationToStore({ ...store, operation, workflow: native.workflow, expected_preimage: loadTaskRecordV2(store).preimage, verifyFact });

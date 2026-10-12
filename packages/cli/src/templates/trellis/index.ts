@@ -85,6 +85,9 @@ export const commonDeliverySession = readTemplate(
 export const commonDeliveryStore = readTemplate(
   "scripts/common/delivery_store.py",
 );
+export const commonTaskArtifacts = readTemplate(
+  "scripts/common/task_artifacts.py",
+);
 
 // Python scripts - main
 export const taskScript = readTemplate("scripts/task.py");
@@ -144,6 +147,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/delivery_operations.py", commonDeliveryOperations);
   scripts.set("common/delivery_session.py", commonDeliverySession);
   scripts.set("common/delivery_store.py", commonDeliveryStore);
+  scripts.set("common/task_artifacts.py", commonTaskArtifacts);
 
   // Main
   scripts.set("task.py", taskScript);

@@ -7,13 +7,14 @@ import {
   taskRecordSchema,
   isKnownLegacyTaskRecord,
   validateLegacyTaskProjection,
-} from "@mindfoldhq/trellis-core/task";
+} from "@mindfoldhq/trellis-core/task/legacy-migration";
 import { VERSION } from "../constants/version.js";
 import { collectTemplateFiles } from "./update.js";
 import { computeHash, loadHashes } from "../utils/template-hash.js";
 import { assertProjectPath } from "../utils/path-boundary.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
 import { compareVersions } from "../utils/compare-versions.js";
+import { migrate2 } from "./migration2.js";
 import {
   getConfiguredPlatforms,
   collectPlatformTemplates,
@@ -180,6 +181,14 @@ export async function migrate(
   options: MigrateOptions,
 ): Promise<MigrationResult> {
   const cwd = process.cwd();
+  const input: unknown = JSON.parse(fs.readFileSync(options.plan, "utf8"));
+  if (
+    input !== null &&
+    typeof input === "object" &&
+    "schema_version" in input &&
+    input.schema_version === "2.0"
+  )
+    return migrate2(options, input);
   if (
     !/^(?:0\.6\.(?:0|[1-9]\d*)|0\.7\.0-castbox\.[1-9]\d*)$/.test(
       options.from,
@@ -194,9 +203,7 @@ export async function migrate(
     .trim();
   if (installed !== options.from && installed !== VERSION)
     throw new Error(`Unsupported installed migration version ${installed}`);
-  const plan = planSchema.parse(
-    JSON.parse(fs.readFileSync(options.plan, "utf8")) as unknown,
-  );
+  const plan = planSchema.parse(input);
   if (plan.target_version !== VERSION)
     throw new Error(`Migration plan target must be ${VERSION}`);
   const hashes = loadHashes(cwd);

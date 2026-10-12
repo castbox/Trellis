@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +24,7 @@ import {
 import injectSubagentContextPlugin from "../../src/templates/opencode/plugins/inject-subagent-context.js";
 import sessionStartPlugin from "../../src/templates/opencode/plugins/session-start.js";
 import injectWorkflowStatePlugin from "../../src/templates/opencode/plugins/inject-workflow-state.js";
+import { seedDeliveryContext } from "./delivery-fixture.js";
 
 interface TestContextCollector {
   processed: Set<string>;
@@ -927,6 +929,82 @@ describe("opencode inject-subagent-context (issue #264)", () => {
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  function prepareDelivery(): string {
+    fs.cpSync(new URL("../../src/templates/trellis/scripts/", import.meta.url), join(dir, ".trellis/scripts"), { recursive: true });
+    const id = seedDeliveryContext(dir, "demo-task", "demo-task");
+    writeFileSync(join(dir, ".trellis/.runtime/sessions/opencode_exact.json"), JSON.stringify({
+      schema_version: 3, task_id: "demo-task", lifecycle_generation: 0, delivery_id: id,
+    }));
+    return id;
+  }
+
+  function snapshotWorkspace(): Map<string, string> {
+    const result = new Map<string, string>();
+    const walk = (directory: string, prefix: string): void => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const name = `${prefix}${entry.name}`;
+        const target = join(directory, entry.name);
+        if (entry.isSymbolicLink()) result.set(name, `symlink:${fs.readlinkSync(target)}`);
+        else if (entry.isDirectory()) walk(target, `${name}/`);
+        else result.set(name, fs.readFileSync(target).toString("base64"));
+      }
+    };
+    walk(dir, "");
+    return result;
+  }
+
+  it.each([".trellis", ".trellis/tasks", ".trellis/tasks/demo-task"])("loads selected Delivery through validated storage-root alias %s without writes", async (alias) => {
+    prepareDelivery();
+    const target = join(dir, "owned-storage");
+    fs.renameSync(join(dir, alias), target);
+    fs.symlinkSync(target, join(dir, alias), process.platform === "win32" ? "junction" : "dir");
+    const active = new TrellisContext(dir).getActiveTask({ sessionID: "exact" });
+    expect(active.error).toBeNull();
+    expect(active.taskPath).not.toBeNull();
+    const before = snapshotWorkspace();
+    for (const subagent_type of ["trellis-implement", "trellis-check"]) {
+      const output: TaskToolOutput = { args: { subagent_type, prompt: "Work on selected Delivery" } };
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "exact" }, output);
+      expect(output.args.prompt).toContain("SELECTED DELIVERY PRD");
+      expect(output.args.prompt).toContain("SELECTED DELIVERY DESIGN");
+      expect(output.args.prompt).toContain("SELECTED WORKSPACE SPEC");
+      expect(output.args.prompt).not.toContain("ROOT TASK ARTIFACT");
+    }
+    expect(snapshotWorkspace()).toEqual(before);
+  });
+
+  it.each(["deliveries", "delivery"])("rejects a nested %s directory symlink beneath the validated Task without writes", async (component) => {
+    const id = prepareDelivery();
+    const nested = join(dir, ".trellis/tasks/demo-task/deliveries", ...(component === "delivery" ? [id] : []));
+    const outside = join(dir, "unapproved-context");
+    fs.renameSync(nested, outside);
+    fs.symlinkSync(outside, nested, process.platform === "win32" ? "junction" : "dir");
+    const before = snapshotWorkspace();
+    const output: TaskToolOutput = { args: { subagent_type: "trellis-check", prompt: "Review selected Delivery" } };
+    await hooks["tool.execute.before"]({ tool: "task", sessionID: "exact" }, output);
+    expect(output.args.prompt).toContain("Delivery context error");
+    expect(output.args.prompt).not.toContain("SELECTED DELIVERY PRD");
+    expect(output.args.prompt).not.toContain("ROOT TASK ARTIFACT");
+    expect(snapshotWorkspace()).toEqual(before);
+  });
+
+  it("does not authorize an external Task-root alias from an unverified prompt hint", async () => {
+    prepareDelivery();
+    const target = join(dir, "unverified-task-storage");
+    const taskPath = join(dir, ".trellis/tasks/demo-task");
+    fs.renameSync(taskPath, target);
+    fs.symlinkSync(target, taskPath, process.platform === "win32" ? "junction" : "dir");
+    expect(new TrellisContext(dir).getActiveTask({ sessionID: "missing" }).taskPath).toBeNull();
+    const before = snapshotWorkspace();
+    const prompt = "Active task: .trellis/tasks/demo-task\n\nWork on selected Delivery";
+    for (const subagent_type of ["trellis-implement", "trellis-check"]) {
+      const output: TaskToolOutput = { args: { subagent_type, prompt } };
+      await hooks["tool.execute.before"]({ tool: "task", sessionID: "missing" }, output);
+      expect(output.args.prompt).toBe(prompt);
+    }
+    expect(snapshotWorkspace()).toEqual(before);
   });
 
   it("does not inject another session's task when sessionID misses", async () => {

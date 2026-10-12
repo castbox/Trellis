@@ -1,7 +1,7 @@
 import { isPlainObject, taskRecordSchema } from "../schema.js";
 import { DELIVERY_PHASES, OWNER_ROLES, type AuthorityRef, type CandidateRef, type DeliveryFact, type DeliveryRecord, type GateResult, type PublicationFact, type SliceScopeRef, type TaskRecordV2, type WorkflowContract } from "./types.js";
 
-export const TASK_RECORD_V2_FIELD_ORDER = ["schema_version", "id", "name", "lifecycle_generation", "source", "title", "description", "dev_type", "scope", "package", "priority", "createdAt", "base_branch", "branch", "worktree_path", "children", "parent", "relatedFiles", "notes", "meta", "accepted_scope", "deliveries", "completion_results", "closure_results"] as const;
+export const TASK_RECORD_V2_FIELD_ORDER = ["schema_version", "artifact_origin", "id", "name", "lifecycle_generation", "source", "title", "description", "dev_type", "scope", "package", "priority", "createdAt", "base_branch", "branch", "worktree_path", "children", "parent", "relatedFiles", "notes", "meta", "accepted_scope", "deliveries", "completion_results", "closure_results"] as const;
 
 export class TaskV2Error extends Error {
   constructor(public readonly code: string, message: string) { super(`${code}: ${message}`); this.name = "TaskV2Error"; }
@@ -22,6 +22,11 @@ export function member<T extends string>(value: unknown, values: readonly T[]): 
 export function relativePath(value: unknown): asserts value is string {
   string(value);
   if (value.startsWith("/") || value.includes("\\") || value.includes("\0") || /[\uD800-\uDFFF]/u.test(value) || /^[A-Za-z]:/.test(value) || value.split("/").some((part) => !part || part === "." || part === "..")) fail("invalid_locator", value);
+}
+/** Managed active or archived Task root; no artifact or traversal suffix. */
+export function taskArtifactRoot(value: unknown): asserts value is string {
+  relativePath(value);
+  if (value === ".trellis/tasks/archive" || !/^\.trellis\/tasks\/(?:archive\/[0-9]{4}-(?:0[1-9]|1[0-2])\/)?[^/]+$/.test(value)) fail("invalid_locator", "artifact_origin must be a Task root");
 }
 export function authority(value: unknown): asserts value is AuthorityRef {
   const bag = object(value, ["locator", "revision"]); string(bag.locator); string(bag.revision);
@@ -57,7 +62,7 @@ export function deliveryFact(value: unknown): asserts value is DeliveryFact {
   const extra = value.profile === "manual" ? ["artifact"] : value.profile === "local_commit" ? ["commit"] : ["repo_ref", "pr_number", "reviewed_head", "merge_commit", "target_ref"];
   const bag = object(value, ["result_id", "owner_id", "evidence", "profile", "candidate", ...extra]); resultIdentity(bag); candidate(bag.candidate);
   if (bag.profile === "manual") authority(bag.artifact);
-  else if (bag.profile === "local_commit") { string(bag.commit); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.commit) fail("invalid_record", "local commit must match candidate head"); }
+  else if (bag.profile === "local_commit") { string(bag.commit); if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(bag.commit)) fail("invalid_record", "local commit must be a full immutable SHA"); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.commit) fail("invalid_record", "local commit must match candidate head"); }
   else { prFields(bag); string(bag.merge_commit); if (bag.candidate.kind !== "git" || bag.candidate.head_ref !== bag.reviewed_head) fail("invalid_record", "reviewed head must match candidate"); }
 }
 function parseDelivery(value: unknown): DeliveryRecord {
@@ -80,8 +85,9 @@ function parseDelivery(value: unknown): DeliveryRecord {
 }
 export function parseTaskRecordV2(input: unknown): TaskRecordV2 {
   if (!isPlainObject(input)) fail("invalid_record", "task must be an object");
-  const { schema_version, accepted_scope, deliveries, completion_results, closure_results, ...metadata } = input;
+  const { schema_version, artifact_origin, accepted_scope, deliveries, completion_results, closure_results, ...metadata } = input;
   if (schema_version !== "2.0") fail("unsupported_task_schema", String(schema_version));
+  if (artifact_origin !== undefined) taskArtifactRoot(artifact_origin);
   // Reuse the unchanged metadata/source boundary without accepting old writable authority.
   for (const key of ["status", "commit", "pr_url", "completedAt"]) if (key in metadata) fail("invalid_record", `Task v2 does not support ${key}`);
   try { taskRecordSchema.parse({ ...metadata, status: "planning", commit: null, pr_url: null, completedAt: null }); }
@@ -105,7 +111,7 @@ export function parseTaskRecordV2(input: unknown): TaskRecordV2 {
     if (bag.disposition === "source_closed") authority(bag.source_result); else if (bag.source_result !== null) fail("invalid_record", "no_mutation has no source result");
   }
   const meta = metadata.meta as Record<string, unknown>;
-  for (const key of ["status", "phase", "candidate", "results", "accepted_scope", "deliveries", "completion_results", "closure_results"]) if (key in meta) fail("invalid_record", `meta cannot hold authoritative ${key}`);
+  for (const key of ["artifact_origin", "status", "phase", "candidate", "results", "accepted_scope", "deliveries", "completion_results", "closure_results"]) if (key in meta) fail("invalid_record", `meta cannot hold authoritative ${key}`);
   const ordered: Record<string, unknown> = {};
   for (const key of TASK_RECORD_V2_FIELD_ORDER) if (key in input) ordered[key] = structuredClone(input[key]);
   return ordered as TaskRecordV2;

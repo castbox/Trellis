@@ -16,7 +16,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Module organization, file layout, design decisions | Done |
 | [Task Lifecycle](./task-lifecycle.md) | Task records, session binding, and archive | Done |
-| [Delivery Lifecycle](./delivery-lifecycle.md) | Opt-in schema-2 / API-1.0 public contract and staged retirement boundary | D1 |
+| [Delivery Lifecycle](./delivery-lifecycle.md) | Fresh native schema-2 / API-1.0 runtime, explicit migration and pending legacy retirement | Staged |
 | [Script Conventions](./script-conventions.md) | Python script standards for .trellis/scripts/ | Done |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | Done |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |

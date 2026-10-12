@@ -479,14 +479,42 @@ export class TrellisContext {
     return null
   }
 
-  _validateBinding({ data, root, facts, contextKey }) {
-    if (data.schema_version === 3) {
-      if (!contextKey) throw new Error("context_required")
-      const response = JSON.parse(execFileSync(PYTHON_CMD, [join(root, ".trellis", "scripts", "task.py"), "current", "--json"], {
+  _readActiveTaskResponse(root, contextKey) {
+    if (!contextKey) throw new Error("context_required")
+    let output
+    let failed = false
+    try {
+      output = execFileSync(PYTHON_CMD, [join(root, ".trellis", "scripts", "task.py"), "current", "--json"], {
         cwd: root, encoding: "utf8", timeout: 10000,
         env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey, PYTHONDONTWRITEBYTECODE: "1" },
-      }))
-      if (response.error || response.stale || !response.current_task) throw new Error(response.error || "invalid_task_binding")
+      })
+    } catch (error) {
+      failed = true
+      if (!error.stdout) throw new Error(`task_resolver_failed: ${error.message}`)
+      output = error.stdout.toString()
+    }
+    let response
+    try { response = JSON.parse(output) }
+    catch { throw new Error("task_resolver_failed: invalid JSON response") }
+    if (!response || typeof response !== "object" || Array.isArray(response)) throw new Error("task_resolver_failed: invalid response")
+    if (failed && !response.error && !response.stale) throw new Error("task_resolver_failed: unsuccessful response")
+    if (response.error || response.stale || !response.current_task) throw new Error(response.error || "invalid_task_binding")
+    return response
+  }
+
+  _validateTaskRuntime(selected, contextKey) {
+    const content = new TrellisContext(selected.taskWorkspaceRoot).readProjectFile(".trellis/workflow.md")
+    if (content && content.split(/\r?\n/).some(line => /^\[\/?trellis-runtime-contract\]$/.test(line.trim()))) {
+      // An explicitly declared runtime owns schema compatibility. Legacy
+      // inventory is not authority to bypass its exact selected-record check.
+      this._readActiveTaskResponse(this.directory, contextKey)
+    }
+    return selected
+  }
+
+  _validateBinding({ data, root, facts, contextKey }) {
+    if (data.schema_version === 3) {
+      const response = this._readActiveTaskResponse(root, contextKey)
       return { taskPath: response.current_task.dir, taskWorkspaceRoot: response.task_workspace_root, resolvedTaskPath: response.resolved_task_path }
     }
     if (data.schema_version !== 2) throw new Error("unsupported_schema")
@@ -561,14 +589,14 @@ export class TrellisContext {
     if (casefoldConflicts.length) throw new Error(`task_id_casefold_collision: ${casefoldConflicts.join(", ")}`)
     if (exact.length > 1 || (exact.length && mismatches.length)) {
       const local = exact.filter(item => realpathSync(item.taskWorkspaceRoot) === realpathSync(this.directory))
-      if (local.length === 1) return { ...local[0] }
+      if (local.length === 1) return this._validateTaskRuntime({ ...local[0] }, contextKey)
       throw new Error("ambiguous_task_identity")
     }
     if (!exact.length && mismatches.length) throw new Error(`stale_lifecycle_generation: ${mismatches.join(", ")}`)
     if (!exact.length) throw new Error("stale_task_identity")
-    return {
+    return this._validateTaskRuntime({
       ...exact[0],
-    }
+    }, contextKey)
   }
 
   getCurrentDelivery(platformInput = null) {
@@ -693,7 +721,7 @@ export class TrellisContext {
     }
   }
 
-  resolveTaskDir(taskRef) {
+  resolveTaskDir(taskRef, validatedTaskPath = null) {
     const normalized = this.normalizeTaskRef(taskRef)
     if (!normalized) {
       return null
@@ -711,6 +739,9 @@ export class TrellisContext {
       if (!lexical || lexical.split("/").length !== 1 || lexical === ".." || lexical === "archive" || isAbsolute(lexical)) return null
       const actualRoot = realpathSync(tasksRoot)
       const actual = realpathSync(candidate)
+      // The exact active resolver has already validated this Task identity and
+      // its supported direct-root alias. Hints never supply this authority.
+      if (validatedTaskPath && actual === realpathSync(validatedTaskPath) && statSync(actual).isDirectory()) return candidate
       const actualRef = relative(actualRoot, actual).split("\\").join("/")
       if (!actualRef || actualRef.split("/").length !== 1 || !pathWithin(actualRoot, actual) || actualRef === "archive") return null
       if (!statSync(actual).isDirectory()) return null
@@ -722,16 +753,26 @@ export class TrellisContext {
   }
 
   /** Delivery context is a contained child of an already validated Task. */
-  resolveContextDir(taskRef) {
-    const direct = this.resolveTaskDir(taskRef)
+  resolveContextDir(taskRef, validatedTaskPath = null) {
+    const direct = this.resolveTaskDir(taskRef, validatedTaskPath)
     if (direct) return direct
     const match = String(taskRef).replace(/\\/g, "/").match(/^(.*)\/deliveries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
     if (!match) return null
-    const task = this.resolveTaskDir(match[1])
+    const task = this.resolveTaskDir(match[1], validatedTaskPath)
     if (!task) return null
-    const directory = join(task, "deliveries", match[2])
-    if (!this.isActivePath(directory) || !existsSync(directory) || realpathSync(directory) !== directory || !statSync(directory).isDirectory()) return null
-    return directory
+    try {
+      const actualTask = realpathSync(task)
+      let directory = task
+      for (const component of ["deliveries", match[2]]) {
+        directory = join(directory, component)
+        const stat = lstatSync(directory)
+        if (stat.isSymbolicLink() || !stat.isDirectory()) return null
+      }
+      if (realpathSync(directory) !== join(actualTask, "deliveries", match[2])) return null
+      return directory
+    } catch {
+      return null
+    }
   }
 
   // ============================================================

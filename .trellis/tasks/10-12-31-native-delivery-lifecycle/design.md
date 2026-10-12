@@ -127,7 +127,7 @@ Delivered/stopped identities never return to execution. New implementation after
 
 `CandidateRef` separates content from commit: `{content_ref, head_ref?, base_ref?}` plus the exact covered content/range locators needed by that profile. A Git SHA is a commit fact; content identity can be a deterministic SHA-256 of the owner's explicit candidate path set (bytes, relative path and mode), excluding canonical lifecycle/session/private-result files. Include actual business docs and tests in the candidate where relevant. Planning artifacts are bound separately through `plan_ref`. Computing a result must not invalidate itself merely because the result was written to task.json.
 
-Git-free/manual candidate refs use retained files or immutable exported artifacts plus their content hashes. Lifecycle APIs validate locators/content matches; the workflow owner chooses the candidate and relevant obligations. Runtime never decides “these files suffice.” Independent Review binds the entire intended delivery change, not just a most recent chunk or a changed-path whitelist.
+Git-free/manual candidate refs use retained files or immutable exported artifacts plus their content hashes. Git candidate modes normalize the owner execute bit to 0644/0755, while git_free keeps full 0777 permissions; explicit candidate kind controls verification and optional hashing arguments. Manual artifacts in Git worktrees may choose git_free. Git verifiers discard inherited GIT_* repository overrides. local_commit facts require full immutable lowercase 40/64-hex OIDs and actual commit objects, including historical recovery; mutable refs are not facts. Lifecycle APIs validate locators/content matches; the workflow owner chooses the candidate and relevant obligations. Runtime never decides “these files suffice.” Independent Review binds the entire intended delivery change, not just a most recent chunk or a changed-path whitelist.
 
 A changed token is a reason to obtain a producer applicability judgment, not automatic full-chain replay. The original owner may rematerialize an applicable same-result outcome against semantically equivalent updated refs after actual review of the change. Results affected by content, applicable authority, baseline or gate obligations require that owner's fresh gate. Continue/hook/renderers cannot perform this rebinding. Base integration preserves old commits; Check/Review bind the new exact candidate/range. If no real delta remains, use existing commit facts and perform the necessary gates without `git commit`.
 
@@ -198,6 +198,28 @@ Package versions remain Core/CLI lockstep. Actual candidate version/commit is as
 
 New native installations can use the complete new model before Guru integration completes. An installation with a custom/marketplace workflow can switch only when its owner supplies a matching runtime declaration and migration consumer. `init`, `update`, workflow switch/apply and migration preflight must reject incompatible combinations before replacing files. For an old user-managed workflow, preserve content and emit an explicit incompatibility diagnosis rather than activate an unreachable native fallback. Upstream cannot promise to change Guru's installer; #531 owns its preflight/apply side, while Trellis supplies queryable version/contract facts.
 
+Fresh no-flag initialization adopts bundled `native-delivery-v1` independently of
+the destructive retirement gate below. During this staged window, explicit
+`native` identifies the named legacy compatibility workflow; it is not the new
+installation default. Existing no-explicit-workflow reinitialization preserves
+the actual installed workflow and its managed/user ownership, including managed
+legacy installs. Omitted `task.py create --schema-version` follows the validated
+installed declaration: schema 2 for a declared Delivery owner, legacy only for
+the retained undeclared compatibility installation. Explicit mismatches and
+malformed/unsupported declarations fail before writes. Declaration-based format
+selection never supplies scope acceptance, a Delivery or semantic gate success;
+custom declared workflows continue to receive a Task-only bootstrap. Current
+SDK/legacy execution retirement remains pending under the conditions below.
+
+The bundled optional Linear hook follows the same schema-2 boundary: a Task
+start is selection only and performs no external state or description mutation.
+Direct archive synchronization requires an actual current-generation Completion
+matching accepted scope before mapping the configured external issue to Done;
+it never creates that result. Read and metadata linking use canonical checked
+Task IO before external calls, rejecting invalid aggregates without side effects.
+Legacy mappings remain explicit compatibility behavior. Controlled verification
+uses a fake client exclusively; this Task authorizes no real external messages.
+
 Retire the old execution/API path only after: new native entry/phase/result/migration tests pass; a consumable Guru candidate declares and actually consumes the same API; representative old-install cutover is proven; public breaking-change guidance identifies SDK replacements and version incompatibilities. Joint evidence is required for paired acceptance, not Guru Issue CLOSED. If those conditions are pending, the interface/native capability can be delivered and reported, but destructive compatibility retirement remains pending. Never keep permanent status/Delivery dual writes.
 
 ### 8.2 Migration plan 2.0
@@ -217,7 +239,7 @@ Extend `trellis migrate` with an explicitly discriminated plan 2.0; retain plan 
 
 If an owner cannot establish scope/Delivery attribution or gate input, preflight reports the exact unresolved selected record and owner requirement; it does not create a fake phase/result or rewrite Task identity. A reviewed migration can establish a planning Delivery when fresh Planning is actually required; otherwise the original producer restores still-applicable real results. No universal downgrade from old status and no new arbitrary recovery state are needed.
 
-Preview enumerates all prospective writes/removals/preserves, expected bytes/modes and compatibility conflicts before the first write. It covers registered sibling worktrees and exact owned common-dir session records; no unregistered path scanning or global pointer fallback. Caller backs up the exact write set. Existing atomic writes and old/target byte recognition support same-plan ordinary-failure resume; unexpected edits require review. Restore only backup paths/newly-added paths before new business writes; after new business work, use forward reconciliation or owner-reviewed rollback, not git reset. No upstream migration parses Guru private state or cleans resources.
+Preview enumerates all prospective writes/removals/preserves, expected bytes/modes and compatibility conflicts before the first write. It covers registered sibling worktrees and exact owned common-dir and workspace-local session records; every live `.json` session, including preserve-only data, requires an explicit frozen source snapshot in `plan.sessions`. Omitted or newly appeared sessions reject before writes; execution never adopts their live bytes into a reviewed plan. No unregistered path scanning or global pointer fallback. Caller backs up the exact write set. Existing atomic writes and old/target byte recognition support same-plan ordinary-failure resume; unexpected edits require review. Restore only backup paths/newly-added paths before new business writes; after new business work, use forward reconciliation or owner-reviewed rollback, not git reset. No upstream migration parses Guru private state or cleans resources.
 
 ## 9. Integration footprint and trade-offs
 
@@ -228,3 +250,148 @@ The owner block and continuation remain Markdown authority; hooks provide one st
 Marketplace/workflow mirrors and docs-site are separate Git repositories (submodule refs observed in research). Upstream does not advance a gitlink to pretend another repository implemented migration. Their edits/commits or upstream handoff require explicit ownership and applicable authorization before mutation; all outstanding profile-template compatibility is reported. If an external template lacks a v2 contract, the old version remains pinned and migration stops for that installation.
 
 The aggregate is simpler than separate Task/Delivery ledgers; closed APIs are narrower than arbitrary transitions; bounded native profiles preserve real support without hardcoding Guru. Added native owner entries have actual direct consumers and missing semantic responsibilities. The accepted design does not add background automation, release-only stages, audit state, persisted user consent or a general workflow policy engine.
+
+## 10. Whole-scope review-loop corrections
+
+The human-authorized completion goal requires two consecutive independent whole
+Issue reviews without confirmed defects or missing required evidence on the
+same stable candidate. D1 correctness does not close D2 retirement/migration
+or the matching Guru installed boundary. Review records remain evidence, not
+another lifecycle authority; current source Task is not silently migrated.
+
+### 10.1 Hook identity continuity
+
+A hook must use the same detected platform for the exact Task and Delivery
+queries. Native platform session input remains sufficient when no environment
+context override exists. Override precedence and Codex SubagentStart's explicit
+`allow_environment_context=False` contract remain intact. Multiple bindings do
+not authorize inventory fallback for schema-2 context. SessionStart and dispatched
+implementation/check carriers verify the same identity before reading a plan.
+
+### 10.2 Relocatable Task artifacts and immutable results
+
+Task moves retain all Delivery, stopped, Completion and Closure facts byte-for-byte
+as JSON values. Schema 2 gains an optional `artifact_origin`, an immutable original
+repo-relative managed Task directory. Existing D1 records remain readable without
+this field; the first explicit rename/archive initializes it to the source root.
+Only the closed relocation helper may initialize it, with exact source Task
+identity/preimage and validated source/target boundaries. Ordinary metadata
+writers cannot set or change it. No list of old paths or relocation ledger exists.
+
+Within this exact Task's store context, SHA authority/plan/evidence/manual-artifact
+refs under the exact origin prefix resolve to the current Task directory. New SHA
+operation refs under the current physical directory canonicalize to the original
+prefix before domain equality and retry checks. This changes addresses, never
+content revisions or existing results. Other Task roots never match. Fixed Git
+refs use their unchanged locator in the immutable Git object and need not exist
+in the current tree. Candidate paths/hashes remain physical and are never mapped;
+moving a candidate-owned file requires its original producer to refresh affected
+results. Core and Python implement the same context and normalization rules.
+
+Context manifests are live readers rather than retained lifecycle results. Moves
+rewrite only parsed JSONL `file` fields within the exact source Task root, including
+per-Delivery manifests; preserve free text and file modes. Explicit archive queries
+may read historical records, while execution selection remains active-only. An
+explicit reopen validates authority, operation and target occupation before any
+write, moves the same Task back to active storage, increments generation through
+the existing owner operation and preserves all history. It creates no Delivery or
+execution binding. Failures remain explicit and resumable under the same operation.
+
+Archive preflight rejects a direct Task-leaf symlink before metadata, manifests,
+sessions or directories change. The legal active alias remains usable; archival
+never moves the alias itself or copies its external target. Supported `.trellis`
+and tasks-store root aliases retain their existing behavior.
+
+Reopen first reads and validates the complete session-release plan, including
+supported binding schemas, before writing the aggregate or moving the Task.
+A later ordinary session-writer failure may leave the new generation and some
+updated bindings committed. Recovery uses the original TaskKey/authority and
+the currently declared `task_scope` owner: only immediately preceding generation
+Completion, equal canonical authority, and no Delivery/Completion/Closure in the
+new generation permit `changed=false` with the current key. Retry re-verifies
+authority content and completes only the old-generation release set; no second
+increment or automatic selection. Wrong key/owner/authority or new-generation
+business facts reject without writes. No ledger is added, so equivalent current
+state is recoverable; past transient scope edits and past invoking owners are
+not asserted as retained facts.
+
+Core SDK recovery requires rereading the exact current active Task locator and
+raw preimage, then submitting the original operation. Old archive StoreOptions
+do not auto-resolve. Python CLI may recover a disappeared explicit archive path
+only through the original operation's exact TaskId/generation+1 lookup in the
+registered workspace resolver, followed by the same full owner/state/authority
+validation; no sole-inventory or current-session inference chooses the Task.
+
+### 10.3 Implementable migration and consumer preparation
+
+Plan 2.0 is a separate executor selected by the plan discriminant, not a changed
+plan-1.0 projection. Its source/target package versions, Task schemas and Delivery
+API are explicit; schema cutover may occur at the same package version. Task
+projections preserve exact stable identity, source, generation and business/tree
+metadata, and retain the exact original source bytes/mode as historical data.
+Status never supplies a gate, result or automatic first Delivery. Original facts
+require reviewed outcome attribution; incomplete selected attribution is an
+explicit conflict. Archives default to inventoried raw history; active deferral
+and current-v2 preservation are explicit dispositions, never execution authority.
+
+Write targets are typed project/workspace/common-session selectors whose roots
+come from live registered repository/worktree facts. No arbitrary absolute target
+or parent traversal is accepted. Every write/preserve/removal has a raw source
+SHA and full mode, exact target bytes/mode, ownership and scope. Sessions preserve
+context/Task/generation and receive null or an explicitly reviewed valid Delivery
+selection. Planning artifacts preserve source bytes and map only to their reviewed
+Delivery. Workflow/template decisions reference the exact prospective contract;
+custom content cannot be replaced by a native fallback. Each `workflows` entry
+requires an explicit `template_id`; bundled identity requires exact rendered
+bundled bytes. The shared pure workflow hash contract tracks only bundled IDs
+and removes old native receipt entries for custom write or preserve decisions.
+A valid runtime declaration does not imply bundled ownership. Preflight covers
+the entire write set before mutation. Replay accepts only exact source or target
+states, including modes; third states fail before writes. Caller-owned exact
+backup/rollback does not reset Git or touch resources or Guru-private state.
+
+The explicit legacy SDK migration endpoint retains plan-1.0 schemas and behavior
+independently of future current `/task` exports. Schema-2 inventory and carriers
+must read real Task/Delivery projections, including OpenCode SessionStart and
+queue/child progress; no pseudo Task development status for schema 2. This work
+can be prepared and validated in controlled native installations now. Default
+retirement remains a separate activation after the accepted matching-consumer
+readiness boundary in section 8; missing Guru evidence is not silently waived.
+
+Under an already installed valid schema-2 workflow declaration, retained old
+active data is historical-only for ordinary reapply: reserve its valid portable
+identity and preserve bytes, but never accept its status or other fields as
+current execution authority. Exact selection/binding/start diagnoses the old
+schema before any write. Invalid identity/JSON remains a concrete error. Initial
+legacy-to-schema-2 workflow switching still requires explicit reviewed migration
+and inventory dispositions; this rule does not let a prospective declaration
+bypass that preflight. The installed declaration and strict selection boundary
+provide this distinction; no new per-Task disposition ledger is introduced.
+
+### 10.4 Native quality and original-producer recovery routes
+
+Default checker quality/evidence refresh can operate on a verified exact Task
+without a selected Delivery. Hook injection supplies TaskKey, accepted scope
+references/local scope contents and explicit `task_scope_only` limitations;
+root design/implement/manifests are not replacement slice planning. Explicit
+caller quality/evidence inputs and applicable specs supply the verification
+scope. No lifecycle result or automatic Delivery selection follows. External
+scope authorities remain refs, verified by their actual semantic owner.
+
+Formal delivery_check/delivery_review and implementation still require exact
+Delivery identity, generation, candidate, validated PlanningRoot and applicable
+active-workflow owner inputs. Missing selection and all binding/runtime/stale
+errors fail closed. Only explicit dispatch profile fields/whole lines identify
+formal carrier profiles; incidental prose cannot. A Codex SubagentStart envelope
+without prompt/profile can supply exact Task scope but does not assert a formal
+gate. Carrier instructions enforce the actual dispatch profile even when that
+hook envelope cannot observe it.
+
+Normal native publication/delivery requires publishing and applicable current
+gates. Original-producer recovery instead verifies already-successful exact
+Task/Delivery/generation/original candidate/result facts read-only and records
+only their historical_success projection. Lost selection/gates do not justify
+repeating commit/push/PR/merge or manufacturing fresh gate approvals. Explicit
+historical identity is required; mismatched producers/facts or changed retained
+result content stop recovery. This changes the native owner entry instructions,
+not the public lifecycle operation/state machine or another workflow's owner.

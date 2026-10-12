@@ -69,6 +69,8 @@ export interface WorkflowOptions {
    * entry for non-native workflows so update.ts treats them as user-managed.
    */
   workflowMdOverride?: string;
+  /** Retain a validated existing workflow byte-for-byte, including its mode. */
+  preserveExistingWorkflow?: boolean;
 }
 
 /**
@@ -101,11 +103,14 @@ export async function createWorkflowStructure(
     executable: true,
   });
 
-  // Copy workflow.md (native bundled template or selected marketplace variant)
-  await writeFile(
-    path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE),
-    replacePythonCommandLiterals(workflowMd),
-  );
+  // Implicit reinit retains the actual installed authority. Even rendering
+  // Python literals again would change user bytes if the host command changed.
+  if (!options?.preserveExistingWorkflow) {
+    await writeFile(
+      path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE),
+      replacePythonCommandLiterals(workflowMd),
+    );
+  }
 
   await writeFile(
     path.join(cwd, DIR_NAMES.WORKFLOW, "delivery-contract.md"),

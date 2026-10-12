@@ -46,8 +46,8 @@ for case in fixture.get('hash_cases',[]):
     with tempfile.TemporaryDirectory() as directory:
         root=Path(directory)
         for name,contents in case['files'].items():
-            file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(contents,encoding='utf-8');file.chmod(0o644)
-        observations.append({'name':case['name'],'content_ref':candidate_content_ref(root,case['paths'])})
+            file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(contents,encoding='utf-8');file.chmod(case.get('modes',{}).get(name,0o644))
+        observations.append({'name':case['name'],'content_ref':candidate_content_ref(root,case['paths'],case.get('kind'))})
 for case in fixture.get('schema_cases',[]):
     try: parse_task_v2(case['input']); observations.append({'name':case['name'],'error':None})
     except DeliveryError as exc: observations.append({'name':case['name'],'error':exc.code})
@@ -99,7 +99,7 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     return resultId;
   }
   function candidate(gitProject = false): CandidateRef {
-    const hash = JSON.parse(ok(root, "delivery", ["candidate", "--paths", "artifact.txt"])) as { content_ref: string };
+    const hash = JSON.parse(ok(root, "delivery", ["candidate", "--paths", "artifact.txt", "--kind", gitProject ? "git" : "git_free"])) as { content_ref: string };
     return { kind: gitProject ? "git" : "git_free", ...hash, paths: ["artifact.txt"], head_ref: gitProject ? git(root, "rev-parse", "HEAD") : null, base_ref: null };
   }
   function ready(gitProject = false): CandidateRef {
@@ -178,6 +178,79 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     apply(operation("record_delivery", "delivery", { expected_phase: "implementing", historical_success: true, result: { result_id: "historical-local", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "local_commit", commit: beforeHead } }, d2));
     expect(record().deliveries[1]?.results.check).toBeNull();
     expect(record().deliveries[1]?.phase).toBe("delivered");
+  });
+
+  it("rejects mutable local commit refs and tag objects, then normally delivers exact SHA with Git-normalized permissions", () => {
+    git(root, "init", "-q"); git(root, "add", "artifact.txt", "requirements.md", "plan.md");
+    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "actual immutable commit");
+    prepare(d1, "local_commit"); const original = candidate(true); const head = original.head_ref; if (!head) throw new Error("missing own commit");
+    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "tag", "-am", "actual tag object", "candidate-tag");
+    const request = (commit: string) => operation("record_delivery", "delivery", { expected_phase: "planning", historical_success: true, result: { result_id: "exact-sha-delivery", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], profile: "local_commit", candidate: { ...original, head_ref: commit }, commit } }, d1);
+    const before = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    for (const commit of ["HEAD", git(root, "branch", "--show-current"), "candidate-tag", head.slice(0, 12)]) {
+      expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request(commit))]).stderr).toContain("invalid_record");
+      expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
+    }
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request(git(root, "rev-parse", "candidate-tag")))]).stderr).toContain("invalid_git_fact");
+    const hexNamedBranch = "1".repeat(40); git(root, "branch", hexNamedBranch);
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request(hexNamedBranch))]).stderr).toContain("invalid_git_fact");
+    expect(ready(true)).toEqual(original);
+    fs.chmodSync(path.join(root, "artifact.txt"), 0o600);
+    expect(candidate(true)).toEqual(original);
+    const gitFree = candidate(false);
+    expect(gitFree.content_ref).not.toBe(original.content_ref);
+    expect(apply({ ...request(head), expected_phase: "publishing", historical_success: false }).phase).toBe("delivered");
+    expect(record().deliveries[0]?.delivery_result?.candidate).toEqual(original);
+  });
+
+  it("isolates Python candidate and historical blob reads from a different real repository", () => {
+    git(root, "init", "-q"); git(root, "add", "artifact.txt", "requirements.md", "plan.md");
+    git(root, "-c", "user.name=Own", "-c", "user.email=own@example.invalid", "commit", "-qm", "own immutable candidate");
+    prepare(d1, "local_commit"); const current = candidate(true);
+    const foreign = fs.mkdtempSync(path.join(os.tmpdir(), "delivery-foreign-git-")); extra.push(foreign);
+    fs.writeFileSync(path.join(foreign, "artifact.txt"), "Unrelated foreign content\n");
+    git(foreign, "init", "-q"); git(foreign, "add", "artifact.txt");
+    git(foreign, "-c", "user.name=Foreign", "-c", "user.email=foreign@example.invalid", "commit", "-qm", "foreign candidate");
+    const request = operation("record_delivery", "delivery", { expected_phase: "planning", historical_success: true, result: { result_id: "own-isolated-delivery", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], profile: "local_commit", candidate: current, commit: current.head_ref } }, d1);
+    const program = `
+import json,sys
+from pathlib import Path
+from common.delivery_store import verify_candidate,apply_to_store
+root=Path(sys.argv[1]);task=root/sys.argv[2];operation=json.loads(sys.argv[3])
+verify_candidate(root,operation['result']['candidate'])
+print(json.dumps(apply_to_store(task,root,operation)))
+`;
+    const process = spawnSync(python, ["-c", program, root, task, JSON.stringify(request)], { encoding: "utf8", env: { ...globalThis.process.env, PYTHONPATH: scripts, GIT_DIR: path.join(foreign, ".git"), GIT_WORK_TREE: foreign, GIT_COMMON_DIR: path.join(foreign, ".git"), GIT_INDEX_FILE: path.join(foreign, ".git/index"), GIT_OBJECT_DIRECTORY: path.join(foreign, ".git/objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(foreign, ".git/objects"), GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.worktree", GIT_CONFIG_VALUE_0: foreign } });
+    expect(process.status, process.stderr).toBe(0);
+    expect(JSON.parse(process.stdout).phase).toBe("delivered");
+    expect(fs.readFileSync(path.join(foreign, "artifact.txt"), "utf8")).toBe("Unrelated foreign content\n");
+    expect(git(root, "rev-parse", "HEAD")).toBe(current.head_ref);
+  });
+
+  it("verifies an actual SHA-256 commit through normal local delivery", () => {
+    git(root, "init", "-q", "--object-format=sha256"); git(root, "add", "artifact.txt", "requirements.md", "plan.md");
+    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "actual SHA256 commit");
+    prepare(d1, "local_commit"); const current = ready(true);
+    expect(current.head_ref).toMatch(/^[a-f0-9]{64}$/);
+    const head = current.head_ref; if (!head) throw new Error("missing commit");
+    const before = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    const prefix = head.slice(0, 40);
+    const truncated = operation("record_delivery", "delivery", { expected_phase: "publishing", historical_success: true, result: { result_id: "truncated-sha256-delivery", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], profile: "local_commit", candidate: { ...current, head_ref: prefix }, commit: prefix } }, d1);
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(truncated)]).stderr).toContain("invalid_git_fact");
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
+    expect(apply(operation("record_delivery", "delivery", { expected_phase: "publishing", result: { result_id: "actual-sha256-delivery", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], profile: "local_commit", candidate: current, commit: current.head_ref } }, d1)).phase).toBe("delivered");
+  });
+
+  it("Git-free/manual candidates retain permission changes inside a Git repository", () => {
+    git(root, "init", "-q");
+    prepare(d1, "manual"); fs.chmodSync(path.join(root, "artifact.txt"), 0o640); const current = ready();
+    fs.chmodSync(path.join(root, "artifact.txt"), 0o600);
+    const deliver = operation("record_delivery", "delivery", { expected_phase: "publishing", result: { result_id: "manual-permission-outcome", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "manual", artifact: ref("artifact.txt") } }, d1);
+    const before = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(deliver)]).stderr).toContain("candidate_mismatch");
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
+    fs.chmodSync(path.join(root, "artifact.txt"), 0o640);
+    expect(apply(deliver).phase).toBe("delivered");
   });
 
   it("refreshes same-PR publication after real candidate rework and recovers lost projection with missing gates", () => {

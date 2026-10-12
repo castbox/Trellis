@@ -122,7 +122,7 @@ program
   )
   .option(
     "--workflow <id>",
-    "Workflow template id for .trellis/workflow.md (default: native; e.g., tdd, channel-driven-subagent-dispatch)",
+    "Workflow template id for .trellis/workflow.md (new-install default: native-delivery-v1; native: temporary legacy compatibility)",
   )
   .option(
     "--workflow-source <source>",
@@ -156,13 +156,16 @@ program
 program
   .command("migrate")
   .description(
-    "Explicit one-way migration from a supported legacy installation",
+    "Explicit reviewed migration: predecessor plan 1.0 or Task/Delivery plan 2.0",
   )
   .requiredOption(
     "--from <version>",
-    "Source core predecessor (0.6.x or 0.7.0-castbox.N)",
+    "Exact source core version (plan 2.0 also supports same-version schema cutover)",
   )
-  .requiredOption("--plan <file>", "Private reviewed core/task projection")
+  .requiredOption(
+    "--plan <file>",
+    "Private reviewed versioned core/task projection; back up preview paths before execution",
+  )
   .option("--dry-run", "Print exact migration actions without writes")
   .action(async (options: { from: string; plan: string; dryRun?: boolean }) => {
     try {
@@ -328,11 +331,11 @@ program
 program
   .command("workflow")
   .description(
-    "List or switch the project's .trellis/workflow.md template (native, tdd, channel-driven-subagent-dispatch, or marketplace)",
+    "List or switch .trellis/workflow.md (native-delivery-v1: new-install default; native: temporary legacy compatibility; or marketplace)",
   )
   .option(
     "-t, --template <id>",
-    "Workflow template id (e.g., native, tdd, channel-driven-subagent-dispatch)",
+    "Workflow template id (native-delivery-v1, native for legacy compatibility, or marketplace)",
   )
   .option(
     "-m, --marketplace <source>",
