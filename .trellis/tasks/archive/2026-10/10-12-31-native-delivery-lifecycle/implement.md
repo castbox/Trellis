@@ -1,6 +1,6 @@
 # Implementation and verification plan
 
-Status: Human scope revision accepted on 2026-10-13. D1/D2 upstream increments merged in PR #32/#33; actual final source `bfff3db2` passed Ubuntu/Python 3.9 CI and matches main `ad56d408` tree. #31 has no prerequisite relationship with #531, requires no joint acceptance and does not wait for downstream evidence. Global unversioned SDK/legacy execution retirement is a future breaking-release workstream outside this Task. Independent upstream acceptance still requires all revised PRD ACs and two complete clean review rounds. The retained legacy Task/session is not silently migrated, completed or archived.
+Status: Completed under the retained legacy workflow on 2026-10-13. Revised upstream scope passed two consecutive complete independent reviews on one exact candidate; the final increment merged in PR #34 after actual Ubuntu/Python 3.9 CI. Issue #31 is closed as completed. Downstream adoption/joint acceptance, global legacy retirement and software release remain outside this completed scope.
 
 ## 1. Delivery policy and ownership
 
@@ -93,9 +93,9 @@ Exit: fresh/default schema-2 runtime uses Delivery, and controlled old-install m
 
 ### P5 — Independent upstream acceptance and whole-task finish
 
-- [ ] Verify every revised AC against exact upstream source/API/schema/package identities and actual observation layers. External integrations and software release remain disclosed out-of-scope boundaries, not required missing evidence.
-- [ ] Complete two consecutive independent whole-scope clean reviews on the same final candidate. A finding resets the streak; fixes require fresh review. Scope removal is recorded as a human decision, never relabeled as implementation of a removed obligation.
-- [ ] Apply actual whole-task Completion/finish judgment under the retained workflow after required work is complete. Source disposition, archive/bookkeeping and cleanup require their own later authority; a delivery PR keyword never closes #31.
+- [x] Verify every revised AC against exact upstream source/API/schema/package identities and actual observation layers. External integrations and software release remain disclosed out-of-scope boundaries, not required missing evidence.
+- [x] Complete two consecutive independent whole-scope clean reviews on the same final candidate. A finding resets the streak; fixes require fresh review. Scope removal is recorded as a human decision, never relabeled as implementation of a removed obligation.
+- [x] Apply actual whole-task Completion/finish judgment under the retained workflow after required work is complete. Source disposition, archive/bookkeeping and cleanup require their own later authority; a delivery PR keyword never closes #31.
 
 ## 3. Verification matrix
 
@@ -162,3 +162,19 @@ For schema-2 consumer auditing, use focused `rg` queries for inferTaskPhase, Tas
 Docs strategy: update upstream public contract and affected executable specs before final code Check; task-local plan remains the implementation design source until reviewed changes are promoted. No second Guru contract copy. Include API migration notes, supported/unsupported combinations, finite old-contract exit and evidence ownership in durable upstream docs. External docs-site/marketplace changes are handed to their owner or explicitly scoped before editing.
 
 Planning readiness requires: requirement convergence; all source design commitments mapped; concrete types/closed APIs/phases/native owner conditions; upstream interface mapping examples; explicit version/migration/rollback; scenario AC/owner coverage; valid spec/research manifests; and a final artifact presentation. Implementation begins only after reviewed plan acceptance and task activation under the current workflow. Planning authorization alone does not authorize that activation.
+
+## 7. Final upstream acceptance and closeout — 2026-10-13
+
+The main-session retained legacy workflow owner accepts the entire revised Task scope, not merely the known D1/D2 outcomes. All R1–R12 and AC1–AC12 were supported at their stated observation layers in two consecutive complete independent quality reviews, with no remaining accepted or unallocated requirement. The candidate stayed unchanged between reviews. This acceptance does not create schema-2 formal gate, Completion or Closure records for this retained legacy Task.
+
+- Accepted source digest: `5181ab6671cc2ed441feaa33e080f830e57c4f8266d927355cf69d272b85d77f`; 1,158 source/spec/carrier/planning files and 20 local increment files checked for exact bytes/modes.
+- Local implementation commit: `fdc831e78a6e9bf60b6702557ac78b952bc47d61`; main-based equivalent: `82610126d11f556b59055548a17cc1444b18bf92`. Both complete Git trees were identical.
+- Historical D1/D2 delivery: [PR #32](https://github.com/castbox/Trellis/pull/32) and [PR #33](https://github.com/castbox/Trellis/pull/33). Final independently accepted scope and quality-entry correction: [PR #34](https://github.com/castbox/Trellis/pull/34).
+- Actual PR #34 merge: `bd18d5c91ffb10e3ee9e783f04dadc5cb3fccd14`, parent `ad56d40863ce1032278e4e1fca677eb14b08cc5f`, tree `f56ef8b149f3784cf8e07a1b21915e9c4afe37dd`; actual merge tree equals the two-review candidate tree.
+- Actual [Ubuntu/Python 3.9 CI run 38323886406](https://github.com/castbox/Trellis/actions/runs/38323886406) passed Python syntax/type checks, TypeScript checks, lint, build and complete tests: CLI 99 files/2,178 passed; Core 27 files/475 passed and one existing optional SQLite skip. Normal local commit hooks independently passed those suites.
+- Regression for shared checker ingress was demonstrated red (8 failures) then green (160 relevant tests). Final generated Gemini/Qoder/Copilot preludes support noDelivery quality while formal profiles and implementation retain selected Delivery requirements. Actual Codex uses its own native fallback; the shared TOML insertion helper is separate test coverage.
+- Actual offline install matched 983 regular package files in bytes/modes. CLI tar SHA256 `6763278a436c754e9d97e85d9ae953983541b97041e0f0d167a9b8cde0434c16`; Core `45bbfee507ed4964649610f703a90ba01c5f5cea21fb95d0845f92ed45302967`. Fresh native default, schema-2 create/no implicit Delivery and custom reinit preservation passed.
+- Review evidence: `/tmp/trellis31-independent-round3.md` and `/tmp/trellis31-independent-round4.md`, with corresponding JSON reports; exact candidate/package/merge proofs retained separately. The reports are quality evidence, never fabricated native lifecycle outcomes.
+- Human instruction on 2026-10-13 was to continue completing #31. After live merge/tree verification, Issue #31 was separately closed with reason `COMPLETED` at `2026-10-12T23:51:04Z` (2026-10-13 07:51:04 Asia/Shanghai); the PR used `Refs #31`, so closure was not a keyword side effect.
+
+Completion is limited to the human-revised upstream scope. Actual remote schema-2 owner execution, external AI-host dispatch, Guru/private/business migration, joint acceptance, destructive global legacy retirement and release publication remain unclaimed/out of scope. Historical F2/F3 findings retain their original scope; they are not relabeled implemented or passed. Task archive is subsequent bookkeeping, and worktree/branch deletion or main-checkout synchronization is not part of this closeout.
