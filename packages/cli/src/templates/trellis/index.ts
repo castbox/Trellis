@@ -70,13 +70,32 @@ export const commonTrellisConfig = readTemplate(
   "scripts/common/trellis_config.py",
 );
 export const commonSafeCommit = readTemplate("scripts/common/safe_commit.py");
+export const commonRuntimeContract = readTemplate(
+  "scripts/common/runtime_contract.py",
+);
+export const commonDeliverySchema = readTemplate(
+  "scripts/common/delivery_schema.py",
+);
+export const commonDeliveryOperations = readTemplate(
+  "scripts/common/delivery_operations.py",
+);
+export const commonDeliverySession = readTemplate(
+  "scripts/common/delivery_session.py",
+);
+export const commonDeliveryStore = readTemplate(
+  "scripts/common/delivery_store.py",
+);
 
 // Python scripts - main
 export const taskScript = readTemplate("scripts/task.py");
+export const deliveryScript = readTemplate("scripts/delivery.py");
 export const getContextScript = readTemplate("scripts/get_context.py");
 
 // Configuration files
 export const workflowMdTemplate = readTemplate("workflow.md");
+export const deliveryWorkflowMdTemplate = readTemplate(
+  "workflow-delivery-v1.md",
+);
 export const configYamlTemplate = readTemplate("config.yaml");
 export const gitignoreTemplate = readTemplate("gitignore.txt");
 
@@ -120,9 +139,15 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/workflow_phase.py", commonWorkflowPhase);
   scripts.set("common/trellis_config.py", commonTrellisConfig);
   scripts.set("common/safe_commit.py", commonSafeCommit);
+  scripts.set("common/runtime_contract.py", commonRuntimeContract);
+  scripts.set("common/delivery_schema.py", commonDeliverySchema);
+  scripts.set("common/delivery_operations.py", commonDeliveryOperations);
+  scripts.set("common/delivery_session.py", commonDeliverySession);
+  scripts.set("common/delivery_store.py", commonDeliveryStore);
 
   // Main
   scripts.set("task.py", taskScript);
+  scripts.set("delivery.py", deliveryScript);
   scripts.set("get_context.py", getContextScript);
   scripts.set(
     "hooks/linear_sync.py",

@@ -27,6 +27,11 @@
       "import": "./dist/task/index.js",
       "default": "./dist/task/index.js"
     },
+    "./task/v2": {
+      "types": "./dist/task/v2/index.d.ts",
+      "import": "./dist/task/v2/index.js",
+      "default": "./dist/task/v2/index.js"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js",

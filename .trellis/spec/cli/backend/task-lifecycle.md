@@ -1,5 +1,9 @@
 # Task Lifecycle
 
+This spec describes the legacy/current-default compatibility contract during
+Issue #31 D1. Opt-in schema-2 Tasks use [Delivery Lifecycle](./delivery-lifecycle.md)
+and the shipped public contract; they must not receive legacy status writes.
+
 ## Task Records
 
 `task.py create`, `trellis init`, and task factories write the current task

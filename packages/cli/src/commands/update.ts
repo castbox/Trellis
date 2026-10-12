@@ -1,4 +1,9 @@
+import {
+  readDeliveryWorkflowContract,
+  preflightDeliveryWorkflow,
+} from "../utils/delivery-workflow.js";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -25,6 +30,7 @@ import {
   configYamlTemplate,
   gitignoreTemplate,
   workflowMdTemplate,
+  deliveryWorkflowMdTemplate,
 } from "../templates/trellis/index.js";
 import { agentsMdContent } from "../templates/markdown/index.js";
 import {
@@ -481,7 +487,30 @@ export async function collectTemplateFiles(
   // --force behavior applies. Partial tag-block merging is unsafe because
   // platform routing markers outside [workflow-state:*] blocks are also
   // script-consumed.
-  files.set(`${DIR_NAMES.WORKFLOW}/workflow.md`, workflowMdTemplate);
+  const activeWorkflowPath = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
+  assertProjectPath(activeWorkflowPath, cwd);
+  const activeWorkflow = fs.existsSync(activeWorkflowPath)
+    ? fs.readFileSync(activeWorkflowPath, "utf8")
+    : "";
+  const deliveryContract = readDeliveryWorkflowContract(activeWorkflow);
+  if (deliveryContract) preflightDeliveryWorkflow(cwd, activeWorkflow);
+  const workflowHash = loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE];
+  // Custom workflows remain user-owned, including forced update/reapply.
+  if (!activeWorkflow || workflowHash) {
+    files.set(
+      `${DIR_NAMES.WORKFLOW}/workflow.md`,
+      deliveryContract ? deliveryWorkflowMdTemplate : workflowMdTemplate,
+    );
+  }
+  files.set(
+    `${DIR_NAMES.WORKFLOW}/delivery-contract.md`,
+    fs.readFileSync(
+      fileURLToPath(
+        new URL("../templates/trellis/delivery-contract.md", import.meta.url),
+      ),
+      "utf8",
+    ),
+  );
   files.set(FILE_NAMES.AGENTS, buildAgentsMdTemplate(cwd));
 
   // Platform-specific templates (only for configured platforms)

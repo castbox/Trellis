@@ -1,5 +1,10 @@
 # `trellis migrate` Command
 
+This is the existing plan-1.0 predecessor-to-legacy/current-default executor.
+Issue #31 D1 does not change its projection semantics or migrate schema-2
+Tasks. The reviewed plan-2.0 Task/Delivery migration belongs to D2 and is
+pending matching actual consumer readiness; see [Delivery Lifecycle](./delivery-lifecycle.md).
+
 This explicit one-way executor supports actual core `0.6.x` and
 `0.7.0-castbox.N` predecessor installations to the candidate CLI version.
 The source is the installed `.trellis/.version`, not a Guru release tag or

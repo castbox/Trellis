@@ -22,6 +22,15 @@ from .paths import FILE_TASK_JSON, get_repo_root
 from .types import TaskInfo
 
 
+def task_lifecycle_summary(data: dict) -> dict:
+    """Inventory-only Task acceptance projection; never a Delivery selector."""
+    completion = next((r for r in data["completion_results"] if r["lifecycle_generation"] == data["lifecycle_generation"] and r["accepted_scope"] == data["accepted_scope"]), None)
+    return {"schema_version": "2.0", "lifecycle_generation": data["lifecycle_generation"],
+            "accepted_scope": data["accepted_scope"],
+            "completion_result_id": completion["result_id"] if completion else None,
+            "delivery_count": len(data["deliveries"])}
+
+
 def load_task(task_dir: Path, repo_root: Path | None = None) -> TaskInfo | None:
     """Load task from a directory containing task.json.
 
@@ -57,7 +66,7 @@ def load_task(task_dir: Path, repo_root: Path | None = None) -> TaskInfo | None:
         dir_name=task_dir.name,
         directory=task_dir,
         title=data.get("title") or data.get("name") or "unknown",
-        status=data.get("status", "unknown"),
+        status=("task_completed" if task_lifecycle_summary(data)["completion_result_id"] else "task_scope") if data.get("schema_version") == "2.0" else data.get("status", "unknown"),
         priority=data.get("priority", "P2"),
         children=tuple(data.get("children", [])),
         parent=data.get("parent"),
@@ -97,7 +106,7 @@ def iter_active_tasks(tasks_dir: Path, repo_root: Path | None = None) -> Iterato
             yield info
 
 
-def get_all_statuses(tasks_dir: Path) -> dict[str, str]:
+def get_all_statuses(tasks_dir: Path, repo_root: Path | None = None) -> dict[str, str]:
     """Get a {dir_name: status} mapping for all active tasks.
 
     Useful for computing children progress without loading full TaskInfo.
@@ -108,12 +117,26 @@ def get_all_statuses(tasks_dir: Path) -> dict[str, str]:
     Returns:
         Dict mapping directory names to status strings.
     """
-    return {t.dir_name: t.status for t in iter_active_tasks(tasks_dir)}
+    root = repo_root if repo_root is not None else get_repo_root()
+    statuses = {t.dir_name: t.status for t in iter_active_tasks(tasks_dir, root)}
+    archive = tasks_dir / "archive"
+    require_project_path(archive, root)
+    if archive.is_dir():
+        for month in sorted(archive.iterdir()):
+            require_project_path(month, root)
+            if not month.is_dir():
+                continue
+            for directory in sorted(month.iterdir()):
+                info = load_task(directory, root)
+                if info is not None and info.raw.get("schema_version") == "2.0":
+                    statuses.setdefault(info.dir_name, info.status)
+    return statuses
 
 
 def children_progress(
     children: tuple[str, ...] | list[str],
     all_statuses: dict[str, str],
+    *, allow_missing_legacy: bool = True,
 ) -> str:
     """Format children progress string like " [2/3 done]".
 
@@ -131,6 +154,6 @@ def children_progress(
     # parent progress doesn't regress when children are archived.
     done = sum(
         1 for c in children
-        if c not in all_statuses or all_statuses.get(c) in ("completed", "done")
+        if (allow_missing_legacy and c not in all_statuses) or all_statuses.get(c) in ("completed", "done", "task_completed")
     )
     return f" [{done}/{len(children)} done]"

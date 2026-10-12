@@ -160,6 +160,7 @@ class ActiveTask:
     task_workspace_root: Path | None = None
     resolved_task_path: Path | None = None
     error: str | None = None
+    delivery_id: str | None = None
 
     @property
     def source(self) -> str:
@@ -611,7 +612,8 @@ def resolve_active_task(
                 return ActiveTask(resolved.task_ref, "session", context_key,
                                   invocation_root=root, repository_common_dir=facts.common_dir,
                                   task_workspace_root=resolved.workspace,
-                                  resolved_task_path=resolved.task_path)
+                                  resolved_task_path=resolved.task_path,
+                                  delivery_id=record.data.get("delivery_id"))
             # A known key never falls through to somebody else's session.
         elif allow_single_session_fallback:
             return _resolve_single_session_fallback(root) or ActiveTask(
@@ -653,7 +655,8 @@ def _resolve_single_session_fallback(repo_root: Path) -> ActiveTask | None:
     return ActiveTask(resolved.task_ref, "session-fallback", session_file.stem,
                       invocation_root=repo_root, repository_common_dir=facts.common_dir,
                       task_workspace_root=resolved.workspace,
-                      resolved_task_path=resolved.task_path)
+                      resolved_task_path=resolved.task_path,
+                      delivery_id=record.data.get("delivery_id"))
 
 
 def set_active_task(
@@ -694,6 +697,11 @@ def set_active_task(
         "task_id": identity.task_id,
         "lifecycle_generation": identity.lifecycle_generation,
     }
+    from .io import read_json_checked
+    task_data, _ = read_json_checked(resolved / "task.json")
+    if task_data is not None and task_data.get("schema_version") == "2.0":
+        context["schema_version"] = 3
+        context["delivery_id"] = None
     write_record(context_path, context, repo_root)
     return ActiveTask(canonical, "session", context_key, invocation_root=facts.invocation_root,
                       repository_common_dir=facts.common_dir, task_workspace_root=workspace,

@@ -344,6 +344,18 @@ def cmd_create(args: argparse.Namespace) -> int:
     """Create a new task."""
     repo_root = get_repo_root()
 
+    is_v2 = getattr(args, "schema_version", "legacy") == "2.0"
+    from .runtime_contract import RuntimeContractError, read_runtime_contract
+    try:
+        read_runtime_contract(repo_root / DIR_WORKFLOW / "workflow.md")
+        if not is_v2:
+            print("Error: incompatible_task_schema: Delivery workflow requires create --schema-version 2.0", file=sys.stderr)
+            return 1
+    except RuntimeContractError as exc:
+        if is_v2 or exc.code not in ("missing_runtime_contract", "workflow_read_error"):
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
     # Title and description are checked first, before ensure_tasks_dir and any
     # other write, so a rejected create leaves the tree untouched. Both are
     # required non-empty by pre-archive validation; catching that here costs
@@ -580,6 +592,10 @@ def cmd_create(args: argparse.Namespace) -> int:
         "notes": "",
         "meta": meta,
     }
+    if is_v2:
+        for field_name in ("status", "completedAt", "commit", "pr_url"):
+            task_data.pop(field_name)
+        task_data.update(schema_version="2.0", accepted_scope=None, deliveries=[], completion_results=[], closure_results=[])
 
     # A directory without task.json is not a task: `list` hides it and every
     # lifecycle command refuses it. Fail here rather than printing "Created
@@ -611,7 +627,7 @@ def cmd_create(args: argparse.Namespace) -> int:
     # (Kilo / Antigravity / Devin) skip this — they load specs via the
     # trellis-before-dev skill instead of JSONL.
     created_jsonl = False
-    if _has_subagent_platform(repo_root):
+    if not is_v2 and _has_subagent_platform(repo_root):
         for jsonl_name in ("implement.jsonl", "check.jsonl"):
             jsonl_path = task_dir / jsonl_name
             if not jsonl_path.exists():
@@ -1265,6 +1281,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
         _report_read_failure(task_json_path, read_reason)
         print("The task was not archived.", file=sys.stderr)
         return 1
+    is_v2 = task_data.get("schema_version") == "2.0"
+    if is_v2:
+        generation = task_data["lifecycle_generation"]
+        completions = [r for r in task_data["completion_results"] if r["lifecycle_generation"] == generation and r["accepted_scope"] == task_data["accepted_scope"]]
+        closure = any(r["lifecycle_generation"] == generation and any(c["result_id"] == r["completion_result_id"] for c in completions) for r in task_data["closure_results"])
+        if not completions or not closure or any(d["phase"] not in ("delivered", "stopped") for d in task_data["deliveries"]):
+            print("Error: completion_and_closure_required: archive cannot manufacture Task completion", file=sys.stderr)
+            return 1
     try:
         identity = task_identity_from_data(task_data, task_json_path)
         require_unique_task_id(
@@ -1310,8 +1334,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if task_json_path.is_file():
         data = task_data
         if data is not None:
-            data["status"] = "completed"
-            data["completedAt"] = today
+            if not is_v2:
+                data["status"] = "completed"
+                data["completedAt"] = today
             if not write_json(task_json_path, data):
                 _report_write_failure(task_json_path)
                 print(

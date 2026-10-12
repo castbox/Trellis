@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -262,13 +263,22 @@ def read_record(path: Path, root: Path, facts: RepositoryFacts) -> SessionRecord
     data, reason = read_json_checked(path)
     if data is None:
         raise SessionBindingError(f"binding_{reason}: {path}")
-    if type(data.get("schema_version")) is not int or data["schema_version"] != 2:
+    if type(data.get("schema_version")) is not int or data["schema_version"] not in (2, 3):
         raise SessionBindingError(
             f"unsupported_binding_schema: {path}; run task.py start"
         )
     expected = {"schema_version", "task_id", "lifecycle_generation"}
+    if data["schema_version"] == 3:
+        expected.add("delivery_id")
     if set(data) != expected:
         raise SessionBindingError(f"invalid_binding_fields: {path}")
+    if data["schema_version"] == 3 and data["delivery_id"] is not None:
+        try:
+            delivery_id = data["delivery_id"]
+            if not isinstance(delivery_id, str) or str(uuid.UUID(delivery_id)) != delivery_id:
+                raise ValueError("non-canonical UUID")
+        except (ValueError, AttributeError) as exc:
+            raise SessionBindingError(f"invalid_delivery_id: {path}") from exc
     task_id = data.get("task_id")
     if not isinstance(task_id, str) or not TASK_ID_PATTERN.fullmatch(task_id):
         raise SessionBindingError(f"invalid_task_id: {path}")

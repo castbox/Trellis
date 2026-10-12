@@ -1,0 +1,266 @@
+# Task / Delivery public contract
+
+Task schema **2.0**, Delivery API **1.0**. The explicit SDK entry is
+`@mindfoldhq/trellis-core/task/v2`. This document owns the public lifecycle;
+the active `.trellis/workflow.md` owns semantic decisions and declares its
+unique operation owners. A workflow's private transaction is not a public phase.
+
+## Rollout boundary
+
+This is the opt-in D1 interface/runtime candidate. Legacy `/task`, legacy
+records and the default legacy workflow remain available during the reviewed
+migration window. A Task has one authority: legacy or schema 2, never both.
+Opt-in does not convert old records, recreate their gates, or migrate another
+workflow's private data. Unsupported API/workflow combinations fail before use.
+
+D2 will provide reviewed migration and default cutover. Retirement requires
+native migration evidence and a matching consumer that actually uses this API;
+a schema fixture or an open/closed Issue is not integration evidence. Core and
+CLI remain version locked. Package publication and release qualification are
+separate from this contract's source implementation.
+
+## Identity and artifacts
+
+- `TaskKey = {task_id, lifecycle_generation}` identifies the whole Task.
+- `DeliveryKey = {task_id, lifecycle_generation, delivery_id}` identifies a
+  slice. Allocate its opaque UUID before its first Planning. Rework, commits,
+  PR updates and a publisher's private cycle never change that identity.
+- The Task's `accepted_scope` identifies overall requirements and acceptance
+  by a locator and exact revision. Task root `prd.md` owns that whole scope.
+- Every Delivery retains `deliveries/<delivery_id>/` for its slice PRD,
+  design, implementation plan, context manifests and research. D2 must not
+  overwrite D1's only recoverable plan. `plan_ref` identifies accepted content.
+- `task.json` is one atomic aggregate: metadata, accepted scope, Deliveries,
+  completion results and closure results. There is no event ledger or second
+  writable phase authority. New records have no writable Task `status`,
+  `commit`, `pr_url` or `completedAt`.
+
+Historical Delivery generation remains its creation generation. Reopening a
+Task preserves identity/history, increments the Task generation and establishes
+current accepted scope. Current execution can select only a current-generation
+nonterminal Delivery. Historical results cannot act as new-generation passes.
+
+## Closed phases and owners
+
+| Operation | From → to | Semantic owner |
+| --- | --- | --- |
+| Create an explicitly selected slice | none → planning | Delivery creation |
+| Record actual accepted Planning | planning → implementing | Planning acceptance |
+| Hand exact candidate to formal Check | implementing → checking | Implementation |
+| Record actual Check pass | checking → reviewing | Formal Check |
+| Record independent full Review pass | reviewing → reviewing | Full Review |
+| Record actual slice/profile readiness | reviewing → publishing | Readiness |
+| Record publication fact | publishing → publishing | Publication |
+| Record applicable delivery fact | publishing → delivered | Delivery |
+| Return to earliest affected same/earlier owner | nonterminal → planning / implementing / checking / reviewing | Current semantic owner |
+| Stop a wholly withdrawn/superseded slice | nonterminal → stopped | Scope decision and current stage owner |
+
+`delivered` and `stopped` are terminal execution phases. Blocking is an owner
+response, not another stored phase. Commit is an independent fact. Check pass
+does not imply full Review, readiness, publication, delivery or Task completion.
+
+The single `[trellis-runtime-contract]` declaration in the active workflow
+states API/schema versions, supported profiles, and unique owners for Task
+scope, Delivery creation, Planning acceptance, implementation, formal Check,
+full Review, readiness, publication, delivery, Completion and source disposition.
+Missing/duplicate/unsupported declarations are concrete errors. No native
+fallback may compete with a custom workflow's owners. The one
+`[trellis-continuation]` block routes the AI; runtime does not choose scope,
+affected stages, approval, evidence sufficiency or whole-Task completion.
+
+## Candidate, gates and result recovery
+
+### Operation envelope
+
+Closed operation names are `accept_scope`, `create_delivery`, `begin_check`,
+`record_gate`, `rework`, `record_publication`, `record_delivery`, `stop`,
+`complete_task`, `close_task` and `reopen_task`. Every input has
+`api_version:"1.0"`, `operation`, exact `key`, `owner_role` and `owner_id`.
+Delivery operations also have `expected_phase`; creation supplies a new UUID.
+The SDK's exported `TaskOperation` union defines each operation's required
+payload, and the same JSON is accepted by the Python runtime. No operation
+performs GitHub publication, merge or source closure.
+
+For example, the native creation owner submits a chosen slice:
+
+```json
+{
+  "api_version": "1.0",
+  "operation": "create_delivery",
+  "key": {
+    "task_id": "example-task",
+    "lifecycle_generation": 0,
+    "delivery_id": "9f6b4800-ef7e-4bc9-b161-1c55ec052b77"
+  },
+  "owner_role": "creation",
+  "owner_id": "trellis-start",
+  "scope_ref": {
+    "authority": {"locator": "prd.md", "revision": "exact-content-revision"},
+    "anchors": ["AC1"]
+  },
+  "profile": "manual"
+}
+```
+
+The containing Task must already have that accepted scope. This creates
+Planning with empty gates; it does not approve Planning. Native owner IDs in
+this example are valid only under that workflow's actual declaration.
+
+In store-backed execution, a local authority revision must be
+`sha256:<actual 64-hex content digest>` or an exact immutable Git revision;
+the illustrative `exact-content-revision` above must be replaced accordingly.
+External URI authorities keep their producer-authored revisions. Evidence and
+obligations are producer inputs, not automatic sufficiency judgments.
+
+Gate payload `result` contains `result_id`, `owner_role`, `owner_id`,
+`outcome`, `scope_ref`, `plan_ref`, `candidate`, `predecessor_result_id`,
+`obligations` and `evidence`. Planning has outcome `accepted` and no
+candidate/predecessor; Check and full Review have `passed`; readiness has
+`ready`. The predecessor binds the actual preceding gate result. Candidate
+shape is `{kind, content_ref, paths, head_ref, base_ref}`, with explicit
+`git`/`git_free` kind and nullable commit/base refs. `AuthorityRef` is
+`{locator,revision}`; evidence and obligations are arrays of those refs.
+
+The pure operation output contains `record`, `key`, nullable `phase`, nullable
+`result_id` and `changed`. File-store execution verifies preimages and objective
+content facts before storing that validated result. Use the SDK exported types
+for profile-specific publication/delivery/Completion/Closure payloads; do not
+reinterpret arbitrary `meta` fields as those results.
+
+`getGateApplicability(record,key)` reports the four fixed gate slots as
+`missing`, `applicable` or `not_applicable`, with result identity/diagnostic.
+It compares recorded scope, plan, candidate and predecessor refs independently
+of phase. It does not prove external evidence freshness or actual current file
+bytes. Store-backed forward writes perform the objective local-byte checks;
+semantic/external applicability still belongs to the original producer.
+
+Content identity, commit identity, baseline and applicable scope/plan/obligation
+refs are independent. Producers bind only inputs relevant to their gate. A
+reader reports availability/applicability and defers judgment to the producer;
+it never restores somebody else's pass from a phase.
+
+Candidate hashing covers the explicitly selected content paths, bytes and
+modes. Lifecycle, session and private-result files are excluded so recording a
+result cannot invalidate itself. The owner chooses the complete intended
+change. A full Review covers the entire delivery candidate/range, including
+already committed work, rather than only a recent chunk. A clean committed
+candidate can receive fresh Check and full Review without another commit.
+
+Hash serialization is compact UTF-8 JSON in UTF-8 byte path order:
+`[relative_path, mode & 0o777, sha256(file_bytes)]`. An explicitly selected
+deleted path is `[relative_path,null,null]`. Runtimes reject lifecycle/session
+paths and checked symlink components; a deletion has no mutation side effect.
+Custom owners exclude their own private-result files from candidate paths.
+Existing owned aliases at `.trellis`, `.trellis/tasks` and a selected Task
+directory retain their canonical-root containment boundary. Nested/file or
+dangling symlinks do not become additional owned roots. Candidate business
+paths and per-Delivery artifact descendants remain checked at each boundary.
+
+Formal writes validate exact identity, declared owner, expected phase and
+preimage, predecessor results and objective profile facts. They use atomic
+replacement and reject stale preimages. They cannot set arbitrary phases.
+Same-result identical retries return the recorded result without rewriting;
+changed content under a retained result ID is `result_identity_conflict`.
+Producers use a new result ID for each real revised/formal gate invocation;
+an ID is immutable within its recoverable result. Only current gate slots are
+retained, so the runtime does not remember IDs of cleared/replaced gates. If a
+gate result is absent, invoke its original semantic owner and record a fresh
+result; do not rebind an old ID to changed inputs. Terminal delivery and
+Completion/Closure facts remain retained and immutable across generations.
+
+After actual delivery succeeds but public projection/output is lost, the
+original delivery owner can restore the same real fact with
+`historical_success`. This records the terminal fact even if original gates
+are missing or obsolete; it does not invent passes or repeat remote actions.
+Applicable ongoing gates still belong to their original semantic owners.
+
+## Native profiles
+
+| Profile | Objective outcome after semantic gates |
+| --- | --- |
+| `local_commit` | Exact reviewed local commit contains the accepted candidate. No PR required. |
+| `manual` | Accepted retained/exported artifact has immutable locator/content identity. Git is optional. |
+| `pull_request` | Exact reviewed PR actually merged, with repository/PR/head/merge facts. Ready-for-merge alone is insufficient. |
+
+All profiles require actual Planning, Check, independent full Review and
+readiness. Runtime verifies facts, not acceptance sufficiency. Native
+`trellis-check` has a `quality` profile with no lifecycle writes and a distinct
+formal `delivery_check` profile. A read-only `delivery_review` carrier supplies
+findings to the full Review owner; it does not self-fix or write another
+owner's result. `trellis-review-delivery`, `trellis-deliver` and
+`trellis-complete-task` supply the native semantic owners.
+
+Git/GitHub actions follow their actual user-authorized scope. Local/manual
+acceptance makes no claim of deployment or remote success. PR policy is
+repository specific; Guru trailers and private transaction steps are not
+global native requirements.
+
+## Session and continuation
+
+Session schema 3 preserves exact Task selection and adds nullable Delivery
+selection. Binding a Task does not accept Planning or begin implementation.
+Creating a Task does not implicitly create D1. Explicitly create/select the
+first or next slice before its Planning.
+
+For a registered linked worktree, the validated Task workspace owns its Task
+facts, planning artifacts and active workflow declaration/continuation. The
+invocation checkout supplies exact session identity and resolver facts; its
+unrelated workflow must not override the selected Task's semantic owners.
+Never use an unregistered path or display-only inventory as that authority.
+
+Current query distinguishes `current`, `terminal_delivery` awaiting selection
+release, `no_current_delivery`, `no_current_task`, and concrete binding errors.
+Do not choose the sole inventory Delivery, repair selection on read, or treat
+an error as no Task. A no-Delivery Task can legitimately await scope definition,
+next-slice Planning, evidence-only Completion or closeout. Task-free manual
+work remains Task-free. Execution-mode hints such as `*-inline` are not phases.
+
+Terminal writers release matching execution selections while retaining Task
+binding for Completion. If that secondary write is interrupted, the terminal
+selection remains identifiable; the same owner can release it without another
+Delivery or repeated side effect.
+
+## Whole-Task completion and closeout
+
+Completion reviews the entire current accepted scope, including unallocated
+work, applicable historical outcomes and outstanding evidence. Delivering all
+known slices alone is insufficient. Native exits are `completed`,
+`remaining_work`, `evidence_pending`, `additional_delivery_required`,
+`requirements_revision_required`, `implementation_revision_required` and
+`blocked`. Only the actual `completed` result is recorded as Task completion.
+
+Closure records actual source disposition tied to that exact completion
+result. Native default is `no_mutation`; an exact-source Issue is not
+automatically closed. Archive consumes current Completion and Closure and
+preserves content/history. It never manufactures completion. Cleanup is a
+separate optional owner/action; failure does not revoke completion. Missing
+child data is unknown, never completed; child outcomes are evidence for parent
+Completion, not an automatic parent pass.
+
+## Guru interface mapping and limits
+
+These mappings use the canonical Guru contracts at
+`a653c90b064e2435bc147f1bda0e1b7ab632f797`. Guru #531 owns adapters, private
+migration and installed validation; upstream never parses private checkpoints.
+
+| Guru producer | Public projection | Continuing consumer |
+| --- | --- | --- |
+| TaskArtifact/checkout TaskId + generation | Explicit TaskKey and stable DeliveryKey | Current workflow owner resolution |
+| Planning Approval | Planning result bound to slice/plan/scope | Same Delivery implementation |
+| Check / full Branch Review | Separate candidate-bound check/full_review results | Delivery Review |
+| Delivery Review `ready` with head and exact PR payload | Readiness bound to full Review and payload obligations | Original Publish input remains authoritative |
+| Publish `ready_for_merge` with repo/PR/head/body hash | Publication facts; not delivered | Original Merge transaction |
+| Merge `delivered` with task identity/head/merge/result ID | PR delivery fact, or historical-success recovery | Existing completion_seed plus public Delivery identity |
+| Completion `completed` | Current generation/scope completion result | Closure then archive |
+
+Guru `delivery_cycle_ref` changes with HEAD/payload; it cannot identify the
+stable pre-Planning Delivery. Publish's `push_content → bind_pr →
+converge_metadata → mark_ready → ready` remains private. Completion's evidence
+refresh and reactivation validation do not create another Delivery. Guru #292
+and #530 remain their own capabilities; no unmerged fix is assumed here.
+
+Cross-repository acceptance needs both candidates pinned to this same API,
+native single/multi-Delivery evidence, and Guru's actual installed D1/D2,
+rework, clean review, lost-output and closeout evidence. Public mapping fixtures
+prove interface compatibility only. Original business-worktree recovery and
+the full release/platform matrix remain their designated owners' evidence.

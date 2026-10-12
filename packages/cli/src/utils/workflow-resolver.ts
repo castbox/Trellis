@@ -16,7 +16,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { workflowMdTemplate } from "../templates/trellis/index.js";
+import {
+  workflowMdTemplate,
+  deliveryWorkflowMdTemplate,
+} from "../templates/trellis/index.js";
 import {
   TIMEOUTS,
   TEMPLATE_INDEX_URL,
@@ -38,6 +41,23 @@ import {
  * design.md "Durable-state contract").
  */
 export const NATIVE_WORKFLOW_ID = "native";
+export const DELIVERY_WORKFLOW_ID = "native-delivery-v1";
+
+export function isBundledWorkflow(id: string): boolean {
+  return id === NATIVE_WORKFLOW_ID || id === DELIVERY_WORKFLOW_ID;
+}
+
+function deliveryListingEntry(): WorkflowTemplateListing {
+  return {
+    id: DELIVERY_WORKFLOW_ID,
+    type: "workflow",
+    name: "Native Delivery Workflow (opt-in)",
+    description:
+      "Delivery API 1.0 / Task schema 2.0; explicit migration required for old tasks",
+    path: "bundled:trellis/workflow-delivery-v1.md",
+    source: "bundled",
+  };
+}
 
 /**
  * Resolved workflow template entry.
@@ -161,7 +181,10 @@ export async function listWorkflowTemplates(
   templates: WorkflowTemplateListing[];
   errorMessage?: string;
 }> {
-  const result: WorkflowTemplateListing[] = [nativeListingEntry()];
+  const result: WorkflowTemplateListing[] = [
+    nativeListingEntry(),
+    deliveryListingEntry(),
+  ];
 
   let registry: RegistrySource | undefined;
   let indexUrl = TEMPLATE_INDEX_URL;
@@ -177,7 +200,7 @@ export async function listWorkflowTemplates(
 
   for (const t of fetched.templates) {
     if (t.type !== "workflow") continue;
-    if (t.id === NATIVE_WORKFLOW_ID) continue;
+    if (isBundledWorkflow(t.id)) continue;
     result.push({
       id: t.id,
       type: "workflow",
@@ -204,6 +227,9 @@ export async function resolveWorkflowTemplate(
   id: string,
   options: WorkflowResolveOptions = {},
 ): Promise<ResolvedWorkflowTemplate> {
+  if (id === DELIVERY_WORKFLOW_ID) {
+    return { ...deliveryListingEntry(), content: deliveryWorkflowMdTemplate };
+  }
   if (id === NATIVE_WORKFLOW_ID) {
     return nativeResolvedEntry();
   }

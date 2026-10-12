@@ -1,5 +1,10 @@
 # Workflow-State Breadcrumb Contract
 
+The status-based mechanics below describe legacy workflow compatibility during
+Issue #31 D1. Opt-in schema-2 workflows use the explicit Delivery projection and
+their unique active-workflow owners; see [Delivery Lifecycle](./delivery-lifecycle.md).
+Execution hints do not become durable Delivery phases.
+
 ## Cross-Worktree Resolution
 
 Resolve the session before reading task-specific workflow state. Task metadata,

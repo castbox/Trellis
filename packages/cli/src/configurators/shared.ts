@@ -249,6 +249,12 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
     "Guides collaborative requirements discovery with or without a Trellis task. Asks high-value questions one at a time, researches technical choices, and returns reviewable planning content to the caller's chosen destination. Use when requirements are unclear, there are multiple valid approaches, or the user describes a new feature or complex task.",
   check:
     "Comprehensive quality verification: spec compliance, lint, type-check, tests, cross-layer data flow, code reuse, and consistency checks. Use when code is written and needs quality verification, before committing changes, or to catch context drift during long sessions.",
+  "review-delivery":
+    "Independent complete-range Delivery review and separate readiness, routed to the active workflow owner. Use for formal Delivery Review after applicable Check.",
+  deliver:
+    "Record actual local commit, manual artifact or merged PR delivery through the active workflow owner. Use for publication, delivery and original-producer recovery.",
+  "complete-task":
+    "Assess whole accepted Task scope, historical Delivery outcomes, remaining work and evidence. Use for actual Task Completion or evidence-only refresh before closeout.",
   "break-loop":
     "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs.",
   "update-spec":
@@ -634,6 +640,16 @@ Resolve both the task path and its workspace before reading context:
 3. **If neither source supplies an unambiguous task workspace**, ask the main agent or user for the absolute task path/workspace. Do NOT select a same-named local task or another session's task.
 
 For human-readable inspection, \`python3 ./.trellis/scripts/task.py current --source\` also shows \`Current task:\` and \`Task workspace:\`. Cross-worktree task paths are absolute. Use the JSON fields above when loading context programmatically.
+
+### Delivery context and profiles
+
+For a schema-2 Task, query \`python3 .trellis/scripts/delivery.py current --json\`
+from the verified workspace unless dispatch supplies an exact DeliveryKey and
+planning_root. Use the selected Delivery planning_root as \`<task-path>\` below;
+root Task PRD remains whole-scope authority. Missing/stale selection is an error,
+never root-artifact fallback. For \`Profile: delivery_review\`, remain read-only,
+review the complete intended range, report findings, and perform no self-fixes,
+lifecycle writes or implementation dispatch. The formal owner records outcomes.
 
 ### Step 2: Load task context from the resolved path
 

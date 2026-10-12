@@ -5,9 +5,36 @@ description: "Comprehensive quality verification: spec compliance, lint, type-ch
 
 # Code Quality Check
 
+## Active workflow ownership
+
+Before formal work, load the validated Task workspace workflow with:
+
+```bash
+python3 .trellis/scripts/get_context.py --mode runtime-contract
+python3 .trellis/scripts/get_context.py --mode continuation
+```
+
+A declared Delivery contract owns all formal routing. Stop on malformed or
+unsupported contracts. If the role owner differs from this Skill, hand off to
+that declared owner and stop; do not run a parallel native gate. Read
+`.trellis/delivery-contract.md` and the exact current Delivery query before
+recording results. `missing_runtime_contract` means the existing legacy workflow has no declaration;
+retain the legacy behavior below in that case. Task-free work creates no formal lifecycle result.
+
 Comprehensive quality verification for recently written code. Combines spec compliance, cross-layer safety, and pre-commit checks.
 
 ---
+
+## Profiles
+
+Default `quality` runs the checks below and never records or advances lifecycle.
+Explicit `delivery_check` follows the active workflow check owner and obligations,
+then records only the actual formal Check result bound to the exact candidate.
+Mechanical fixes require implementation to refresh its candidate and hand back
+to Check; a dirty self-fix cannot pass the old candidate. A pass enters reviewing,
+not readiness or delivery. `delivery_review` is an independent read-only carrier:
+review the complete intended range with current planning and Check, report
+findings only, do not self-fix, record gates or dispatch implementation.
 
 ## Step 1: Identify What Changed
 

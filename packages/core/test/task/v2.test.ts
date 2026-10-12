@@ -1,0 +1,255 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyTaskOperation, applyTaskOperationToStore, computeCandidateContentRef, emptyTaskRecordV2, getCurrentDelivery, getGateApplicability, loadTaskRecordV2, parseTaskRecordV2, serializeTaskRecordV2, TaskV2Error, writeTaskRecordV2, type AuthorityRef, type CandidateRef, type TaskOperation, type TaskRecordV2, type WorkflowContract } from "../../src/task/v2/index.js";
+
+interface FixtureStep { operation: TaskOperation; expect_error?: string; expected_phase?: string; expected_changed?: boolean }
+interface Fixture { workflow: WorkflowContract; initial: TaskRecordV2; steps: FixtureStep[]; schema_cases?: { name: string; input: unknown; expect_error: string }[]; hash_cases?: { name: string; paths: string[]; files: Record<string, string>; content_ref: string }[] }
+const fixtures = path.resolve(import.meta.dirname, "../fixtures/task-v2");
+const native = JSON.parse(fs.readFileSync(path.join(fixtures, "native-multi.json"), "utf8")) as Fixture;
+const key = { task_id: "fixture-task", lifecycle_generation: 0, delivery_id: "11111111-1111-4111-8111-111111111111" };
+const directories: string[] = [];
+afterEach(() => { vi.restoreAllMocks(); for (const dir of directories.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+function errorCode(callback: () => unknown, code: string): void {
+  try { callback(); throw new Error("operation unexpectedly succeeded"); } catch (error) { expect(error).toBeInstanceOf(TaskV2Error); expect((error as TaskV2Error).code).toBe(code); }
+}
+function runFixture(fixture: Fixture, until = fixture.steps.length): TaskRecordV2 {
+  for (const item of fixture.schema_cases ?? []) errorCode(() => parseTaskRecordV2(item.input), item.expect_error);
+  for (const item of fixture.hash_cases ?? []) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-v2-hash-")); directories.push(root);
+    for (const [name, contents] of Object.entries(item.files)) { fs.writeFileSync(path.join(root, name), contents); fs.chmodSync(path.join(root, name), 0o644); }
+    expect(computeCandidateContentRef(root, item.paths)).toBe(item.content_ref);
+  }
+  let record = fixture.initial;
+  for (const step of fixture.steps.slice(0, until)) {
+    if (step.expect_error) { errorCode(() => applyTaskOperation(record, step.operation, fixture.workflow), step.expect_error); continue; }
+    const result = applyTaskOperation(record, step.operation, fixture.workflow);
+    if (step.expected_phase) expect(result.phase).toBe(step.expected_phase);
+    if (step.expected_changed !== undefined) expect(result.changed).toBe(step.expected_changed);
+    record = result.record;
+  }
+  return record;
+}
+function op<T extends TaskOperation>(operation: T): T { return operation; }
+function makeStore(gitProject = false): { root: string; taskDir: string; authority: AuthorityRef; plan: AuthorityRef; candidate: CandidateRef } {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-v2-")); directories.push(root);
+  fs.writeFileSync(path.join(root, "requirements.md"), "R1: deliver an artifact\n"); fs.writeFileSync(path.join(root, "plan.md"), "Plan\n"); fs.writeFileSync(path.join(root, "artifact.txt"), "Accepted artifact\n"); fs.chmodSync(path.join(root, "artifact.txt"), 0o644);
+  if (gitProject) {
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "actual content"], { cwd: root });
+  }
+  const ref = (file: string): AuthorityRef => ({ locator: file, revision: `sha256:${createHash("sha256").update(fs.readFileSync(path.join(root, file))).digest("hex")}` });
+  const taskDir = ".trellis/tasks/fixture"; writeTaskRecordV2({ root, taskDir, record: emptyTaskRecordV2({ id: "fixture-task" }) });
+  const head = gitProject ? execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim() : null;
+  return { root, taskDir, authority: ref("requirements.md"), plan: ref("plan.md"), candidate: { kind: gitProject ? "git" : "git_free", content_ref: computeCandidateContentRef(root, ["artifact.txt"]), paths: ["artifact.txt"], head_ref: head, base_ref: null } };
+}
+function storeApply(store: ReturnType<typeof makeStore>, operation: TaskOperation): ReturnType<typeof applyTaskOperationToStore> {
+  return applyTaskOperationToStore({ root: store.root, taskDir: store.taskDir, workflow: native.workflow, expected_preimage: loadTaskRecordV2(store).preimage, operation });
+}
+function prepareStore(store: ReturnType<typeof makeStore>, profile: "manual" | "local_commit" = "manual"): void {
+  storeApply(store, op({ api_version: "1.0", operation: "accept_scope", key: { task_id: key.task_id, lifecycle_generation: 0 }, owner_role: "task_scope", owner_id: native.workflow.owners.task_scope, authority: store.authority }));
+  storeApply(store, op({ api_version: "1.0", operation: "create_delivery", key, owner_role: "creation", owner_id: native.workflow.owners.creation, scope_ref: { authority: store.authority, anchors: ["R1"] }, profile }));
+  const result = { result_id: "actual-plan", owner_role: "planning" as const, owner_id: native.workflow.owners.planning, outcome: "accepted" as const, scope_ref: { authority: store.authority, anchors: ["R1"] }, plan_ref: store.plan, candidate: null, predecessor_result_id: null, obligations: [], evidence: [store.plan] };
+  storeApply(store, op({ api_version: "1.0", operation: "record_gate", key, expected_phase: "planning", owner_role: "planning", owner_id: result.owner_id, result }));
+}
+
+describe("Task v2 closed lifecycle", () => {
+  for (const file of fs.readdirSync(fixtures).filter((name) => name.endsWith(".json"))) {
+    it(`shared TS/Python operation fixture: ${file}`, () => { runFixture(JSON.parse(fs.readFileSync(path.join(fixtures, file), "utf8")) as Fixture); });
+  }
+  it("keeps complete separate from delivered, supports no-new-delivery completion after reopen", () => {
+    const record = runFixture(native);
+    expect(record.lifecycle_generation).toBe(1);
+    expect(record.deliveries.map((d) => [d.id, d.phase, d.lifecycle_generation])).toEqual([[key.delivery_id, "delivered", 0], ["22222222-2222-4222-8222-222222222222", "stopped", 0]]);
+    expect(record.completion_results.map((r) => r.lifecycle_generation)).toEqual([0, 1]);
+    expect(record.closure_results[0]?.completion_result_id).toBe("completed-g0");
+  });
+  it("returns query absence and errors without choosing a lone Delivery", () => {
+    const record = runFixture(native, 2);
+    expect(getCurrentDelivery(null, null)).toEqual({ kind: "no_current_task" });
+    expect(getCurrentDelivery(record, { task_id: key.task_id, lifecycle_generation: 0 })).toEqual({ kind: "no_current_delivery", key: { task_id: key.task_id, lifecycle_generation: 0 } });
+    expect(getCurrentDelivery(record, key).kind).toBe("current");
+    expect(getCurrentDelivery(record, { ...key, lifecycle_generation: 1 }).kind).toBe("error");
+    expect(getCurrentDelivery(runFixture(native, 10), key).kind).toBe("terminal_delivery");
+  });
+  it("fails owners and cannot bypass reopened generation by replacing accepted scope", () => {
+    const record = runFixture(native, 2); const bad = { ...native.steps[2]?.operation, owner_id: "wrong-owner" };
+    errorCode(() => applyTaskOperation(record, bad, native.workflow), "owner_mismatch");
+    const completedIndex = native.steps.findIndex((s) => s.operation.operation === "complete_task" && !s.expect_error);
+    const completed = runFixture(native, completedIndex + 1);
+    const accept = native.steps[0]?.operation;
+    if (!accept || accept.operation !== "accept_scope") throw new Error("fixture missing scope operation");
+    errorCode(() => applyTaskOperation(completed, { ...accept, authority: { ...accept.authority, revision: "new-scope" } }, native.workflow), "reopen_required");
+  });
+  it("retains same undelivered identity through qualified rework, and stale results cannot advance", () => {
+    const record = runFixture(native, 8); const d = record.deliveries[0]; if (!d) throw new Error("missing Delivery");
+    const reworked = applyTaskOperation(record, { api_version: "1.0", operation: "rework", key, owner_role: "readiness", owner_id: native.workflow.owners.readiness, expected_phase: "reviewing", target_role: "implementation", reason: { locator: "https://example.test/finding", revision: "1" }, affected_results: ["check", "full_review", "readiness"] }, native.workflow).record;
+    expect(reworked.deliveries[0]?.id).toBe(d.id); expect(reworked.deliveries[0]?.results.planning).toEqual(d.results.planning);
+    errorCode(() => applyTaskOperation(reworked, native.steps[8]?.operation, native.workflow), "stale_phase");
+    errorCode(() => applyTaskOperation(record, { api_version: "1.0", operation: "rework", key, owner_role: "readiness", owner_id: native.workflow.owners.readiness, expected_phase: "reviewing", target_role: "planning", reason: { locator: "https://example.test/finding", revision: "1" }, affected_results: [], scope_ref: { ...d.scope_ref, authority: { locator: "wrong.md", revision: "different" } } }, native.workflow), "stale_scope");
+  });
+  it("historical recovery never invents current gates or allows wrong-key retries", () => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(fixtures, "guru-public-mapping.json"), "utf8")) as Fixture;
+    const initial = runFixture(fixture, 2);
+    const historical = fixture.steps.find((s) => s.operation.operation === "record_delivery")?.operation;
+    if (!historical || historical.operation !== "record_delivery") throw new Error("missing history request");
+    const recovered = applyTaskOperation(initial, historical, fixture.workflow).record;
+    expect(recovered.deliveries[0]?.phase).toBe("delivered"); expect(recovered.deliveries[0]?.results).toEqual({ planning: null, check: null, full_review: null, readiness: null });
+    errorCode(() => applyTaskOperation(recovered, { ...historical, key: { ...historical.key, lifecycle_generation: 1 } }, fixture.workflow), "delivery_identity_mismatch");
+  });
+  it("rejects unsupported current profiles including replay while permitting original historical outcome recovery", () => {
+    const planningIndex = native.steps.findIndex((step) => step.operation.operation === "record_gate" && step.operation.result.owner_role === "planning" && !step.expect_error);
+    const record = runFixture(native, planningIndex + 1);
+    const declaration: WorkflowContract = { ...native.workflow, profiles: ["pull_request"] };
+    const planning = native.steps[planningIndex]?.operation;
+    errorCode(() => applyTaskOperation(record, planning, declaration), "unsupported_delivery_profile");
+    const begin = native.steps.find((step) => step.operation.operation === "begin_check")?.operation;
+    errorCode(() => applyTaskOperation(record, begin, declaration), "unsupported_delivery_profile");
+    const delivered = native.steps.find((step) => step.operation.operation === "record_delivery")?.operation;
+    if (!delivered || delivered.operation !== "record_delivery") throw new Error("missing delivery fixture");
+    const recovered = applyTaskOperation(record, { ...delivered, historical_success: true }, declaration);
+    expect(recovered.phase).toBe("delivered");
+    expect(recovered.record.deliveries[0]?.results.check).toBeNull();
+    errorCode(() => applyTaskOperation(recovered.record, delivered, declaration), "unsupported_delivery_profile");
+  });
+  it("rejects unknown fields, path escape, future results and fake terminal records", () => {
+    const record = runFixture(native, 2);
+    errorCode(() => parseTaskRecordV2({ ...record, status: "completed" }), "invalid_record");
+    errorCode(() => parseTaskRecordV2({ ...record, meta: { phase: "delivered" } }), "invalid_record");
+    errorCode(() => parseTaskRecordV2({ ...record, accepted_scope: { locator: "../outside", revision: "1" } }), "invalid_locator");
+    const d = record.deliveries[0]; if (!d) throw new Error("missing Delivery");
+    errorCode(() => parseTaskRecordV2({ ...record, deliveries: [{ ...d, phase: "delivered" }] }), "invalid_record");
+    errorCode(() => parseTaskRecordV2({ ...record, deliveries: [{ ...d, lifecycle_generation: 1 }] }), "invalid_record");
+  });
+  it("reads applicability independently of phase without mutating results or choosing an owner", () => {
+    const record = runFixture(native, 8); const serialized = JSON.stringify(record);
+    expect(getGateApplicability(record, key).full_review.kind).toBe("applicable");
+    expect(getGateApplicability(record, key).readiness.kind).toBe("missing");
+    const accept = native.steps[0]?.operation; if (!accept || accept.operation !== "accept_scope") throw new Error("missing scope");
+    const changed = applyTaskOperation(record, { ...accept, authority: { ...accept.authority, revision: "new-authority" } }, native.workflow).record;
+    expect(changed.deliveries[0]?.phase).toBe("reviewing");
+    expect(getGateApplicability(changed, key).full_review).toEqual({ kind: "not_applicable", result_id: "d1-review", code: "stale_scope" });
+    expect(JSON.stringify(record)).toBe(serialized);
+    expect(getGateApplicability(runFixture(native), key).planning.code).toBe("stale_lifecycle_generation");
+  });
+});
+
+describe("Task v2 objective atomic store", () => {
+  it.each([".trellis", ".trellis/tasks", ".trellis/tasks/fixture"])("preserves the owned %s root alias while rejecting record and nested aliases", (locator) => {
+    const store = makeStore();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-owned-root-")); directories.push(outside);
+    const original = path.join(store.root, locator); const external = path.join(outside, "owned");
+    fs.renameSync(original, external); fs.symlinkSync(external, original, "dir");
+    prepareStore(store);
+    const localPlan = `${store.taskDir}/plan.md`;
+    fs.writeFileSync(path.join(store.root, localPlan), "aliased Task planning\n");
+    const localAuthority = { locator: localPlan, revision: `sha256:${createHash("sha256").update("aliased Task planning\n").digest("hex")}` };
+    expect(computeCandidateContentRef(store.root, [localPlan])).toMatch(/^sha256:[a-f0-9]{64}$/);
+    storeApply(store, op({ api_version: "1.0", operation: "accept_scope", key: { task_id: key.task_id, lifecycle_generation: 0 }, owner_role: "task_scope", owner_id: native.workflow.owners.task_scope, authority: localAuthority }));
+    const loaded = loadTaskRecordV2(store);
+    writeTaskRecordV2({ ...store, record: { ...loaded.record, title: "alias metadata" }, expected_preimage: loaded.preimage });
+    expect(loadTaskRecordV2(store).record.title).toBe("alias metadata");
+    fs.symlinkSync(path.join(store.root, "artifact.txt"), path.join(store.root, "candidate-alias.txt"));
+    errorCode(() => computeCandidateContentRef(store.root, ["candidate-alias.txt"]), "invalid_locator");
+    const file = path.join(original, locator.endsWith("fixture") ? "task.json" : `${locator.endsWith("tasks") ? "" : "tasks/"}fixture/task.json`);
+    const retained = path.join(outside, "retained.json"); fs.renameSync(file, retained); fs.symlinkSync(retained, file);
+    errorCode(() => loadTaskRecordV2(store), "invalid_locator");
+  });
+  it.each(["requirements.md", "plan.md"])("rejects changed %s before Check and delivery without lifecycle writes", (locator) => {
+    const store = makeStore(); prepareStore(store);
+    const begin = op({ api_version: "1.0", operation: "begin_check", key, owner_role: "implementation", owner_id: native.workflow.owners.implementation, expected_phase: "implementing", candidate: store.candidate });
+    const original = fs.readFileSync(path.join(store.root, locator), "utf8");
+    const beforeCheck = loadTaskRecordV2(store).preimage;
+    fs.writeFileSync(path.join(store.root, locator), "changed authority\n");
+    errorCode(() => storeApply(store, begin), "authority_mismatch");
+    expect(loadTaskRecordV2(store).preimage).toBe(beforeCheck);
+    fs.writeFileSync(path.join(store.root, locator), original);
+    storeApply(store, begin);
+    let predecessor = "actual-plan";
+    for (const role of ["check", "full_review", "readiness"] as const) {
+      const result = { result_id: `actual-${role}`, owner_role: role, owner_id: native.workflow.owners[role], outcome: role === "readiness" ? "ready" as const : "passed" as const, scope_ref: { authority: store.authority, anchors: ["R1"] }, plan_ref: store.plan, candidate: store.candidate, predecessor_result_id: predecessor, obligations: [], evidence: [store.plan] };
+      storeApply(store, op({ api_version: "1.0", operation: "record_gate", key, expected_phase: role === "check" ? "checking" : "reviewing", owner_role: role, owner_id: result.owner_id, result }));
+      predecessor = result.result_id;
+    }
+    const beforeDelivery = loadTaskRecordV2(store).preimage;
+    fs.writeFileSync(path.join(store.root, locator), "changed after readiness\n");
+    const result = { result_id: "actual-manual", owner_id: native.workflow.owners.delivery, evidence: [store.authority], candidate: store.candidate, profile: "manual" as const, artifact: { locator: "artifact.txt", revision: `sha256:${createHash("sha256").update(fs.readFileSync(path.join(store.root, "artifact.txt"))).digest("hex")}` } };
+    const delivery = op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "publishing", owner_role: "delivery", owner_id: result.owner_id, result });
+    errorCode(() => storeApply(store, delivery), "authority_mismatch");
+    expect(loadTaskRecordV2(store).preimage).toBe(beforeDelivery);
+    expect(storeApply(store, { ...delivery, historical_success: true }).phase).toBe("delivered");
+  });
+  it("writes scoped candidate results without self-invalidating hashes and preserves mode on retry", () => {
+    const store = makeStore(); prepareStore(store);
+    const before = computeCandidateContentRef(store.root, ["artifact.txt"]);
+    const operation = op({ api_version: "1.0", operation: "begin_check", key, owner_role: "implementation", owner_id: native.workflow.owners.implementation, expected_phase: "implementing", candidate: store.candidate });
+    const file = path.join(store.root, store.taskDir, "task.json"); fs.chmodSync(file, 0o640); storeApply(store, operation);
+    expect(computeCandidateContentRef(store.root, ["artifact.txt"])).toBe(before); expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+    expect(fs.readdirSync(path.dirname(file)).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+    errorCode(() => computeCandidateContentRef(store.root, [`${store.taskDir}/task.json`]), "invalid_candidate");
+  });
+  it("rejects stale preimages, changed content and mismatched local authority without writes", () => {
+    const store = makeStore(); prepareStore(store); const loaded = loadTaskRecordV2(store);
+    const operation = op({ api_version: "1.0", operation: "begin_check", key, owner_role: "implementation", owner_id: native.workflow.owners.implementation, expected_phase: "implementing", candidate: store.candidate });
+    errorCode(() => applyTaskOperationToStore({ ...store, workflow: native.workflow, operation, expected_preimage: "stale" }), "stale_preimage");
+    fs.writeFileSync(path.join(store.root, "artifact.txt"), "edited"); errorCode(() => storeApply(store, operation), "candidate_mismatch");
+    expect(loadTaskRecordV2(store).preimage).toBe(loaded.preimage);
+    const accept = op({ api_version: "1.0", operation: "accept_scope", key: { task_id: key.task_id, lifecycle_generation: 0 }, owner_role: "task_scope", owner_id: native.workflow.owners.task_scope, authority: { ...store.authority, revision: "sha256:" + "0".repeat(64) } });
+    errorCode(() => storeApply(store, accept), "authority_mismatch"); expect(loadTaskRecordV2(store).preimage).toBe(loaded.preimage);
+  });
+  it("full-record write cannot forge phases or remove identities; corrupt originals survive", () => {
+    const store = makeStore(); prepareStore(store); const loaded = loadTaskRecordV2(store);
+    errorCode(() => writeTaskRecordV2({ ...store, record: { ...loaded.record, deliveries: [] }, expected_preimage: loaded.preimage }), "immutable_identity");
+    errorCode(() => writeTaskRecordV2({ ...store, record: { ...loaded.record, lifecycle_generation: 1 }, expected_preimage: loaded.preimage }), "closed_operation_required");
+    const file = path.join(store.root, store.taskDir, "task.json"); fs.writeFileSync(file, "corrupt bytes");
+    expect(() => writeTaskRecordV2({ ...store, record: loaded.record, expected_preimage: "corrupt bytes" })).toThrow(); expect(fs.readFileSync(file, "utf8")).toBe("corrupt bytes");
+  });
+  it("rejects contained symlink children and exact/casefold archived identity collisions", () => {
+    const store = makeStore(); const outside = fs.mkdtempSync(path.join(os.tmpdir(), "outside-v2-")); directories.push(outside); fs.writeFileSync(path.join(outside, "secret"), "data"); fs.symlinkSync(path.join(outside, "secret"), path.join(store.root, "link.txt"));
+    errorCode(() => computeCandidateContentRef(store.root, ["link.txt"]), "invalid_locator");
+    const archive = path.join(store.root, ".trellis/tasks/archive/2026-10/reserved"); fs.mkdirSync(archive, { recursive: true }); fs.writeFileSync(path.join(archive, "task.json"), JSON.stringify({ id: "Old_Reserved", status: "old-invalid" }));
+    errorCode(() => writeTaskRecordV2({ root: store.root, taskDir: ".trellis/tasks/new", record: emptyTaskRecordV2({ id: "old_reserved" }) }), "task_id_collision");
+    expect(fs.existsSync(path.join(store.root, ".trellis/tasks/new"))).toBe(false);
+  });
+  it("recovers actual local commit even after current content changed, without manufacturing gates", () => {
+    const store = makeStore(true); prepareStore(store, "local_commit"); const candidate = store.candidate;
+    fs.writeFileSync(path.join(store.root, "artifact.txt"), "new pending work");
+    const head = candidate.head_ref; if (head === null) throw new Error("missing commit");
+    const request = op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "implementing", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "real-local-outcome", owner_id: native.workflow.owners.delivery, evidence: [store.authority], candidate, profile: "local_commit", commit: head } });
+    const recover = (): ReturnType<typeof applyTaskOperationToStore> => applyTaskOperationToStore({ ...store, workflow: { ...native.workflow, profiles: ["manual"] }, operation: request, expected_preimage: loadTaskRecordV2(store).preimage });
+    const result = recover(); expect(result.phase).toBe("delivered"); expect(result.record.deliveries[0]?.results.check).toBeNull();
+    const before = loadTaskRecordV2(store).preimage; expect(recover().changed).toBe(false); expect(loadTaskRecordV2(store).preimage).toBe(before);
+  });
+  it("hashes real deleted paths and reconstructs their actual commit-tree outcome", () => {
+    const store = makeStore(true);
+    execFileSync("git", ["rm", "artifact.txt"], { cwd: store.root });
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "remove artifact"], { cwd: store.root });
+    const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: store.root, encoding: "utf8" }).trim();
+    store.candidate = { ...store.candidate, content_ref: computeCandidateContentRef(store.root, ["artifact.txt"]), head_ref: commit };
+    prepareStore(store, "local_commit");
+    const result = storeApply(store, op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "implementing", historical_success: true, owner_role: "delivery", owner_id: native.workflow.owners.delivery, result: { result_id: "actual-deletion", owner_id: native.workflow.owners.delivery, evidence: [store.authority], profile: "local_commit", candidate: store.candidate, commit } }));
+    expect(result.phase).toBe("delivered");
+    fs.writeFileSync(path.join(store.root, "artifact.txt"), "new different file"); expect(computeCandidateContentRef(store.root, ["artifact.txt"])).not.toBe(store.candidate.content_ref);
+  });
+  it("a failed atomic replacement leaves raw bytes and mode intact", () => {
+    const store = makeStore(); const loaded = loadTaskRecordV2(store); const file = path.join(store.root, store.taskDir, "task.json"); const mode = fs.statSync(file).mode;
+    vi.spyOn(fs, "renameSync").mockImplementation(() => { throw new Error("simulated disk failure"); });
+    expect(() => writeTaskRecordV2({ ...store, record: { ...loaded.record, title: "metadata change" }, expected_preimage: loaded.preimage })).toThrow("simulated disk failure");
+    expect(fs.readFileSync(file, "utf8")).toBe(loaded.preimage); expect(fs.statSync(file).mode).toBe(mode);
+    expect(fs.readdirSync(path.dirname(file))).toEqual(["task.json"]);
+  });
+  it("requires objective PR verifier and detects verifier-time concurrent changes", () => {
+    const store = makeStore();
+    const fixture = JSON.parse(fs.readFileSync(path.join(fixtures, "guru-public-mapping.json"), "utf8")) as Fixture;
+    const initial = runFixture(fixture, 2); const file = path.join(store.root, store.taskDir, "task.json"); fs.writeFileSync(file, serializeTaskRecordV2(initial));
+    const historical = fixture.steps.find((s) => s.operation.operation === "record_delivery")?.operation;
+    const preimage = loadTaskRecordV2(store).preimage;
+    errorCode(() => applyTaskOperationToStore({ ...store, workflow: fixture.workflow, operation: historical, expected_preimage: preimage }), "fact_verification_required");
+    errorCode(() => applyTaskOperationToStore({ ...store, workflow: fixture.workflow, operation: historical, expected_preimage: preimage, verifyFact: () => { fs.writeFileSync(file, preimage + " "); return true; } }), "stale_preimage");
+    expect(fs.readFileSync(file, "utf8")).toBe(preimage + " ");
+  });
+});

@@ -74,14 +74,14 @@ AGENTS_ALL = (AGENT_IMPLEMENT, AGENT_CHECK, AGENT_RESEARCH)
 
 def find_repo_root(start_path: str) -> str | None:
     """
-    Find git repo root from start_path upwards
+    Find the nearest Trellis workspace or Git repo root from start_path upwards.
 
     Returns:
         Repo root path, or None if not found
     """
     current = Path(start_path).resolve()
     while current != current.parent:
-        if (current / ".git").exists():
+        if (current / ".trellis").is_dir() or (current / ".git").exists():
             return str(current)
         current = current.parent
     return None
@@ -915,6 +915,15 @@ Active task: {task_dir}
 {context}"""
 
 
+def _is_legacy_delivery_query(query: dict, task_path: Path) -> bool:
+    """Only an explicitly legacy record may use root Task artifacts."""
+    if query.get("code") != "unsupported_task_schema":
+        return False
+    from common.io import read_json_checked  # type: ignore[import-not-found]
+    record, _reason = read_json_checked(task_path / "task.json")
+    return record is not None and "schema_version" not in record
+
+
 def _handle_codex_subagent_start(input_data: dict) -> None:
     """Emit Codex developer context for a recognised native Trellis subagent.
 
@@ -960,6 +969,20 @@ def _handle_codex_subagent_start(input_data: dict) -> None:
         active.task_path if active.task_workspace_root == active.invocation_root
         else str(active.resolved_task_path)
     )
+
+    from common.delivery_session import get_current_delivery, planning_directory  # type: ignore[import-not-found]
+    query = get_current_delivery(
+        active.invocation_root, {"session_id": parent_session_id}, "codex",
+        allow_environment_context=False,
+    )
+    if query["kind"] in ("current", "terminal_delivery"):
+        task_dir = str(planning_directory(active.resolved_task_path, active.task_workspace_root, query["key"]["delivery_id"]))
+    elif query["kind"] == "error" and not _is_legacy_delivery_query(query, active.resolved_task_path):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": f"Trellis Delivery context error: {query['code']}: {query['message']}"}}))
+        return
+    elif query["kind"] == "no_current_delivery":
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "delivery_selection_required: no implementation/check context without an explicitly selected Delivery"}}))
+        return
 
     if subagent_type in AGENTS_REQUIRE_TASK:
         task_dir_full = Path(repo_root) / task_dir
@@ -1158,6 +1181,18 @@ def main():
         else str(active.resolved_task_path) if active.resolved_task_path else None
     )
     repo_root = str(active.task_workspace_root or repo_root)
+
+    if active.resolved_task_path:
+        from common.delivery_session import get_current_delivery, planning_directory  # type: ignore[import-not-found]
+        query = get_current_delivery(active.invocation_root, input_data)
+        if query["kind"] in ("current", "terminal_delivery"):
+            task_dir = str(planning_directory(active.resolved_task_path, active.task_workspace_root, query["key"]["delivery_id"]))
+        elif query["kind"] == "error" and not _is_legacy_delivery_query(query, active.resolved_task_path):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": f"Trellis Delivery context error: {query['code']}: {query['message']}"}}))
+            return
+        elif query["kind"] == "no_current_delivery":
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "delivery_selection_required: no implementation/check context without an explicitly selected Delivery"}}))
+            return
 
     # implement/check need task directory
     if subagent_type in AGENTS_REQUIRE_TASK:

@@ -459,7 +459,7 @@ export class TrellisContext {
     const current = join(store, `${contextKey}.json`)
     if (bindingExists(root, current)) {
       const data = readBinding(root, current)
-      return { data, root, facts }
+      return { data, root, facts, contextKey }
     }
     if (facts.common) {
       const offset = relative(facts.gitRoot, root)
@@ -479,7 +479,16 @@ export class TrellisContext {
     return null
   }
 
-  _validateBinding({ data, root, facts }) {
+  _validateBinding({ data, root, facts, contextKey }) {
+    if (data.schema_version === 3) {
+      if (!contextKey) throw new Error("context_required")
+      const response = JSON.parse(execFileSync(PYTHON_CMD, [join(root, ".trellis", "scripts", "task.py"), "current", "--json"], {
+        cwd: root, encoding: "utf8", timeout: 10000,
+        env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey, PYTHONDONTWRITEBYTECODE: "1" },
+      }))
+      if (response.error || response.stale || !response.current_task) throw new Error(response.error || "invalid_task_binding")
+      return { taskPath: response.current_task.dir, taskWorkspaceRoot: response.task_workspace_root, resolvedTaskPath: response.resolved_task_path }
+    }
     if (data.schema_version !== 2) throw new Error("unsupported_schema")
     const keys = Object.keys(data).sort()
     if (JSON.stringify(keys) !== JSON.stringify(["lifecycle_generation", "schema_version", "task_id"])) {
@@ -562,6 +571,22 @@ export class TrellisContext {
     }
   }
 
+  getCurrentDelivery(platformInput = null) {
+    const contextKey = this.getContextKey(platformInput)
+    if (!contextKey) return { kind: "no_current_task" }
+    try {
+      return JSON.parse(execFileSync(PYTHON_CMD, [join(this.directory, ".trellis", "scripts", "delivery.py"), "current", "--json"], {
+        cwd: this.directory, encoding: "utf8", timeout: 10000,
+        env: { ...process.env, TRELLIS_CONTEXT_ID: contextKey, PYTHONDONTWRITEBYTECODE: "1" },
+      }))
+    } catch (error) {
+      if (error.stdout) {
+        try { return JSON.parse(error.stdout.toString()) } catch { /* retain read failure below */ }
+      }
+      return { kind: "error", code: "delivery_query_failed", message: error.message }
+    }
+  }
+
   /** Exact identity only. A known key miss or error never borrows a session. */
   getActiveTask(platformInput = null) {
     const contextKey = this.getContextKey(platformInput)
@@ -611,7 +636,7 @@ export class TrellisContext {
     const fallbackKey = files[0].replace(/\.json$/, "")
     const file = join(sessionsDir, files[0])
     const data = readBinding(root, file)
-    const active = this._validateBinding({ data, root, facts })
+    const active = this._validateBinding({ data, root, facts, contextKey: fallbackKey })
     return {
       ...active,
       source: `session-fallback:${fallbackKey}`,
@@ -694,6 +719,19 @@ export class TrellisContext {
     } catch {
       return null
     }
+  }
+
+  /** Delivery context is a contained child of an already validated Task. */
+  resolveContextDir(taskRef) {
+    const direct = this.resolveTaskDir(taskRef)
+    if (direct) return direct
+    const match = String(taskRef).replace(/\\/g, "/").match(/^(.*)\/deliveries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/)
+    if (!match) return null
+    const task = this.resolveTaskDir(match[1])
+    if (!task) return null
+    const directory = join(task, "deliveries", match[2])
+    if (!this.isActivePath(directory) || !existsSync(directory) || realpathSync(directory) !== directory || !statSync(directory).isDirectory()) return null
+    return directory
   }
 
   // ============================================================

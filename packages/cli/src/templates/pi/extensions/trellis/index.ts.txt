@@ -1086,6 +1086,7 @@ function contextKey(input?: unknown, ctx?: PiExtensionContext): string | null {
 }
 
 interface ActiveTask {
+  planningDir?: string | null;
   taskDir: string | null;
   taskRoot: string;
   status: string;
@@ -1117,8 +1118,11 @@ function readActiveTask(root: string, key: string | null): ActiveTask {
     if (data.error || data.stale) return invalid(JSON.stringify(data.error ?? "Stale task binding"));
     if (data.current_task === null && data.source === "none" && result.status === 1) return empty;
     if (result.status !== 0 || !isObj(data.current_task)) return invalid("Task resolver failed");
-    const status = data.current_task.status;
-    if (typeof status !== "string" || !status.trim()) return invalid("Invalid task status: expected a nonempty string");
+    const query = data.current_task.schema_version === "2.0" ? data.current_task.current_delivery : null;
+    if (query !== null && (!isObj(query) || typeof query.kind !== "string" || query.kind === "error")) return invalid(`Delivery query error: ${JSON.stringify(query)}`);
+    const delivery = isObj(query) && (query.kind === "current" || query.kind === "terminal_delivery") && isObj(query.delivery) ? query.delivery : null;
+    const status = isObj(query) ? (delivery?.phase ?? query.kind) : data.current_task.status;
+    if (typeof status !== "string" || !status.trim()) return invalid(query ? "Invalid public phase query" : "Invalid task status: expected a nonempty string");
     const taskRoot = str(data.task_workspace_root);
     const taskDir = str(data.resolved_task_path);
     if (!taskRoot || !taskDir || !isAbsolute(taskRoot) || !isAbsolute(taskDir) || !activePath(taskRoot, taskDir)) {
@@ -1126,6 +1130,7 @@ function readActiveTask(root: string, key: string | null): ActiveTask {
     }
     return {
       taskDir, taskRoot,
+      planningDir: query ? (delivery && typeof delivery.planning_root === "string" ? join(taskDir, delivery.planning_root) : null) : taskDir,
       status,
       id: str(data.current_task.id) ?? basename(taskDir),
       error: null,
@@ -1216,7 +1221,7 @@ function buildStartupContext(
 function buildContext(root: string, agent: string, key: string | null): string {
   const active = readActiveTask(root, key);
   if (active.error) return `Trellis task binding invalid: ${active.error}`;
-  const dir = active.taskDir;
+  const dir = active.planningDir === undefined ? active.taskDir : active.planningDir;
   if (!dir)
     return "No active Trellis task found. Read .trellis/ before proceeding.";
   root = active.taskRoot;

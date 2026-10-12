@@ -101,14 +101,15 @@ Marketplace entries use `type: "workflow"` and point to one markdown file:
 Required built-ins:
 
 - `native`
+- `native-delivery-v1` (D1 opt-in Task schema 2.0 / Delivery API 1.0)
 - `tdd`
 - `channel-driven-subagent-dispatch`
 
 Ownership contract:
 
-- `native` is Trellis-managed. After writing it, refresh the
+- `native` and bundled `native-delivery-v1` are Trellis-managed. After writing either, refresh the
   `.trellis/workflow.md` hash with `updateHashes`.
-- Every non-native workflow is user-managed local content. After writing it,
+- Every external/custom workflow is user-managed local content. After writing it,
   remove `.trellis/workflow.md` from `.trellis/.template-hashes.json` with
   `removeHash`.
 - Do not add `workflow.variant` or any other long-lived config field to make
@@ -117,9 +118,15 @@ Ownership contract:
 
 Runtime parser contract:
 
-- Every workflow template must keep `## Phase Index`, `## Phase 1: Plan`,
+- Legacy workflow templates keep `## Phase Index`, `## Phase 1: Plan`,
   `#### X.Y` step headings, platform marker syntax, and all required
   `[workflow-state:*]` blocks.
+- Delivery workflows keep `## Phase Index`, one structurally valid
+  `[trellis-runtime-contract]` declaration, one continuation and public phase
+  breadcrumb blocks. Semantic owners live in that Markdown; they do not need
+  legacy Task phase/step headings. `get_context.py --mode runtime-contract`
+  reads the validated Task workspace's declared API/schema/owners. No hook
+  duplicates a Delivery route matrix.
 - Every active workflow, whether bundled or supplied by an external author,
   must contain exactly one non-empty
   `[trellis-continuation]...[/trellis-continuation]` block. The current AI
@@ -142,6 +149,11 @@ Native source-of-truth contract:
 - `.trellis/workflow.md` is the dogfood native workflow. Its continuation body
   must match the bundled native continuation body; unrelated dogfood workflow
   guidance remains independently managed.
+- `packages/cli/src/templates/trellis/workflow-delivery-v1.md` owns the bundled
+  opt-in native Delivery workflow. D1 does not activate it in this repository
+  or migrate its existing legacy Tasks automatically. Opt-in install/switch
+  preflights exact installed runtime capabilities and active schema combinations;
+  same package version alone does not prove Delivery API availability.
 - Marketplace and custom workflow repositories own migration of their workflow
   content to the structural protocol. This root repository must not advance a
   marketplace gitlink merely to make those external workflows valid.
@@ -153,13 +165,15 @@ Native source-of-truth contract:
 | `trellis workflow --template <id>` and current workflow is modified | Exit 1 with guidance to use `--force` or `--create-new`; do not prompt, even on a TTY |
 | Interactive `trellis workflow` picker and current workflow is modified | Prompt for overwrite, create-new, or skip |
 | `--create-new` | Write a generated `workflow.md.new` file beside `.trellis/workflow.md`; do not change active workflow or hash file |
-| `--force` | Overwrite active workflow and apply the native/non-native hash contract |
+| `--force` | Overwrite active workflow and apply the bundled/external hash contract |
 | Missing workflow id | Throw `WorkflowResolveError` / command error; CLI exits non-zero |
 | Marketplace index fetch fails | List can still show bundled native with warning; resolve fails with workflow-specific error |
 | Workflow entry path is missing, not `.md`, absolute, or contains `..` | Fail with workflow-specific error |
 | `init --workflow missing-id` | Reject; do not print and return success |
 | `init --workflow tdd` | Write marketplace content and remove `.trellis/workflow.md` hash |
-| `trellis update` after switching to non-native | Treat workflow as modified/user-managed; never silently restore native |
+| `trellis update` after switching to external/custom | Treat workflow as modified/user-managed; never silently restore native |
+| `native-delivery-v1` on an installation without executable API 1.0 | Diagnose before writes; require reviewed runtime reapply/upgrade |
+| Workflow activation with incompatible active Task schemas | Diagnose before writes; D1 does not migrate records implicitly |
 
 ### 5. Good/Base/Bad Cases
 

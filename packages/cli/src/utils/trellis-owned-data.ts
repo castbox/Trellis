@@ -12,6 +12,7 @@ const OWNED_CHILDREN = new Set([
   ".template-hashes.json",
   ".gitignore",
   "workflow.md",
+  "delivery-contract.md",
   "config.yaml",
 ]);
 

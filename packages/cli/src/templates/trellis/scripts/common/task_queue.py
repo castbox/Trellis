@@ -16,7 +16,7 @@ from .paths import (
     get_repo_root,
     get_tasks_dir,
 )
-from .tasks import iter_active_tasks
+from .tasks import iter_active_tasks, task_lifecycle_summary
 
 
 # =============================================================================
@@ -25,7 +25,7 @@ from .tasks import iter_active_tasks
 
 def _task_to_dict(t) -> dict:
     """Convert TaskInfo to the dict format callers expect."""
-    return {
+    result = {
         "priority": t.priority,
         "id": t.raw.get("id", ""),
         "title": t.title,
@@ -34,6 +34,10 @@ def _task_to_dict(t) -> dict:
         "children": list(t.children),
         "parent": t.parent,
     }
+    if t.raw.get("schema_version") == "2.0":
+        result.pop("status")
+        result.update(task_lifecycle_summary(t.raw))
+    return result
 
 
 # =============================================================================
