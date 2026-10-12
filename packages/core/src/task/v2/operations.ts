@@ -174,7 +174,16 @@ export function applyTaskOperation(input: unknown, request: unknown, declaration
     case "record_publication":
       requireOwner(op, workflow, "publication"); if (d.profile !== "pull_request") fail("unsupported_delivery_profile", d.profile);
       if (!historical) { if (d.phase !== "publishing") fail("illegal_transition", d.phase); applicable(record, d, "readiness"); if (!same(op.result.candidate, d.candidate)) fail("candidate_mismatch", "publication candidate"); }
-      if (d.publication_result) fail("publication_already_recorded", d.id); d.publication_result = op.result; break;
+      if (d.publication_result) {
+        if (d.phase === "delivered") fail("publication_already_recorded", d.id);
+        const previous = d.publication_result;
+        if (previous.repo_ref !== op.result.repo_ref || previous.pr_number !== op.result.pr_number || previous.owner_id !== op.result.owner_id) fail("publication_identity_mismatch", "publication refresh must retain PR and producer identity");
+      }
+      if (d.delivery_result?.profile === "pull_request") {
+        const delivered = d.delivery_result;
+        if (delivered.repo_ref !== op.result.repo_ref || delivered.pr_number !== op.result.pr_number || delivered.reviewed_head !== op.result.reviewed_head || delivered.target_ref !== op.result.target_ref || !same(delivered.candidate, op.result.candidate)) fail("publication_identity_mismatch", "historical publication must match terminal delivery");
+      }
+      d.publication_result = op.result; break;
     case "record_delivery":
       requireOwner(op, workflow, "delivery"); if (op.result.profile !== d.profile) fail("unsupported_delivery_profile", op.result.profile);
       if (!historical) {

@@ -174,6 +174,39 @@ original delivery owner can restore the same real fact with
 are missing or obsolete; it does not invent passes or repeat remote actions.
 Applicable ongoing gates still belong to their original semantic owners.
 
+## Publication refresh after rework
+
+`recordPublicationFact` / `record-publication` updates the current publication
+slot of an undelivered PR Delivery. Rework retains the prior actual publication;
+it does not erase a remote success. A revised publication uses a new result ID,
+the same `repo_ref`, `pr_number` and original `owner_id`. The verified target may
+change when fresh readiness covers the actual new target obligations. Normal
+refresh requires `publishing`, applicable readiness and the current candidate.
+
+If actual P2 publication succeeded but projection/output was lost, the original
+publication owner may restore verified live P2 with `historical_success`, even
+with missing or obsolete gates. The store verifies live PR head, body and target;
+it refuses stale P1 facts after P2. Recovery records facts only and neither
+creates gate passes nor repeats publication. The pure transition API trusts the
+original producer assertion; callers performing I/O use the store verifier.
+
+| Condition | Result |
+| --- | --- |
+| Identical retained publication ID and content | Idempotent no-write retry. |
+| Changed content under retained ID | `result_identity_conflict`. |
+| Refresh changes repo, PR or original producer | `publication_identity_mismatch`. |
+| Undelivered normal P1 → rework → fresh gates → verified P2 | Replace current slot with P2 and a new ID. |
+| Historical P2 success with lost gates/output | Restore verified P2; do not manufacture passes. |
+| Different publication after `delivered` | `publication_already_recorded`; retained terminal facts are immutable. |
+| Empty publication after historical PR delivery | Recover only matching repo/PR/head/target/candidate; mismatch is `publication_identity_mismatch`. |
+
+The current slot has no retired-ID ledger. The original producer owns replaced
+historical results. Tests cover same-PR target changes, normal and historical
+refresh, stale live fact rejection, retained-ID conflicts and terminal recovery
+in the shared TS/Python corpus and real-store verifier simulations. A recovery
+that clears P1 before P2 is verified is wrong; retain P1 until the verified P2
+projection succeeds atomically.
+
 ## Native profiles
 
 | Profile | Objective outcome after semantic gates |

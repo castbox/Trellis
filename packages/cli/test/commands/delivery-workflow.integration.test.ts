@@ -110,6 +110,48 @@ describe("D1 opted native Delivery installation", () => {
     expect(record).not.toHaveProperty("schema_version");
   });
 
+  it.each([
+    { schema: "legacy", agent: "trellis-implement" },
+    { schema: "legacy", agent: "trellis-check" },
+    { schema: "v2", agent: "trellis-implement" },
+    { schema: "v2", agent: "trellis-check" },
+  ])("keeps identity-less sole-session context fallback restricted to legacy ($schema/$agent)", async ({ schema, agent }) => {
+    const v2 = schema === "v2";
+    await init({ yes: true, claude: true, ...(v2 ? { workflow: "native-delivery-v1" } : {}) });
+    const task = path.join(cwd, ".trellis/tasks/00-bootstrap-guidelines");
+    const python = process.platform === "win32" ? "python" : "python3";
+    const cleanEnv = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([name]) =>
+        !/^(TRELLIS_|CODEX_|CLAUDE_|CURSOR_|COPILOT_|GEMINI_|QODER_|KIRO_|CODEBUDDY_|FACTORY_|TRAE_|ZCODE_|GIT_|PI_SESSION|OMP_SESSION)/.test(name))),
+      PYTHONDONTWRITEBYTECODE: "1",
+    };
+    const bindingEnv = { ...cleanEnv, TRELLIS_CONTEXT_ID: "sole-fixture" };
+    if (v2) {
+      const deliveryId = seedDeliveryContext(cwd, "00-bootstrap-guidelines", "00-bootstrap-guidelines");
+      execFileSync(python, [path.join(cwd, ".trellis/scripts/delivery.py"), "select", "--task", task, "--delivery", deliveryId], { cwd, env: bindingEnv });
+    } else {
+      fs.writeFileSync(path.join(task, "prd.md"), "LEGACY ROOT CONTEXT SENTINEL");
+      execFileSync(python, [path.join(cwd, ".trellis/scripts/task.py"), "start", task], { cwd, env: bindingEnv });
+      fs.writeFileSync(path.join(task, "implement.jsonl"), "");
+      fs.writeFileSync(path.join(task, "check.jsonl"), "");
+    }
+    const before = snapshot(cwd);
+    const output = execFileSync(python, [path.join(cwd, ".claude/hooks/inject-subagent-context.py")], {
+      cwd, env: cleanEnv, encoding: "utf8",
+      input: JSON.stringify({ cwd, tool_name: "Task", tool_input: { subagent_type: agent, prompt: "Continue selected slice work" } }),
+    });
+    if (v2) {
+      expect(output).toContain("context_required");
+      expect(output).toContain("no_current_task");
+      expect(output).not.toContain("ROOT TASK ARTIFACT");
+      expect(output).not.toContain("SELECTED DELIVERY PRD");
+    } else {
+      expect(output).toContain("LEGACY ROOT CONTEXT SENTINEL");
+      expect(output).not.toContain("context_required");
+    }
+    expect(snapshot(cwd)).toEqual(before);
+  });
+
   it("#2 creates an explicit bootstrap Delivery before Planning and keeps it across reapply", async () => {
     await init({ yes: true, codex: true, workflow: "native-delivery-v1" });
     const task = path.join(cwd, ".trellis/tasks/00-bootstrap-guidelines");
@@ -232,11 +274,27 @@ describe("D1 opted native Delivery installation", () => {
 
   it("#7 exposes formal native owners through every declared platform collector", () => {
     for (const id of PLATFORM_IDS) {
-      const contents = [...(collectPlatformTemplates(id)?.values() ?? [])].join("\n");
+      const templates = collectPlatformTemplates(id) ?? new Map<string, string>();
+      const contents = [...templates.values()].join("\n");
       expect(contents, id).toContain("# Review Delivery");
       expect(contents, id).toContain("# Deliver Selected Slice");
       expect(contents, id).toContain("# Complete Whole Task");
       expect(contents, id).toContain("active workflow");
+      const checkCarriers = [...templates].filter(([name]) => /trellis-check\.(md|toml|json)$/.test(name));
+      const implementCarriers = [...templates].filter(([name]) => /trellis-implement\.(md|toml|json)$/.test(name));
+      for (const [name, content] of checkCarriers) {
+        expect(content, `${id}:${name}`).toContain("delivery_review");
+        expect(content, `${id}:${name}`).toContain("read-only");
+        expect(content, `${id}:${name}`).toContain("Never use root");
+      }
+      for (const [name, content] of implementCarriers) {
+        expect(content, `${id}:${name}`).toContain("DeliveryKey/planning_root");
+        expect(content, `${id}:${name}`).toContain("Never infer selection");
+      }
+      if (id === "droid") {
+        expect(checkCarriers.map(([name]) => name)).toContain(".factory/droids/trellis-check.md");
+        expect(implementCarriers.map(([name]) => name)).toContain(".factory/droids/trellis-implement.md");
+      }
     }
   });
 });

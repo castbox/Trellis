@@ -176,10 +176,12 @@ semantic sources for generated platform entry files. Every projection must:
 - stop on resolver or `invalid_continuation_contract` diagnostics without
   native, legacy-route, or inventory-based fallback.
 
-The extractor reads the invocation repository's current
-`.trellis/workflow.md`, even when the bound task and task facts live in a linked
-worktree. Platform projections must not cache continuation text, so a workflow
-switch changes both entries immediately.
+For an exact binding, the extractor reads the validated Task workspace's
+`.trellis/workflow.md`, including linked worktrees. The invocation checkout
+supplies session identity and resolver facts. Without a binding, it owns the
+initial entry; an invalid binding stops instead of selecting its workflow.
+Platform projections must not cache continuation text, so a workflow switch
+in the authoritative workspace changes both entries immediately.
 
 **Wrong**:
 

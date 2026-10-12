@@ -915,13 +915,15 @@ Active task: {task_dir}
 {context}"""
 
 
-def _is_legacy_delivery_query(query: dict, task_path: Path) -> bool:
+def _is_legacy_task_record(task_path: Path) -> bool:
     """Only an explicitly legacy record may use root Task artifacts."""
-    if query.get("code") != "unsupported_task_schema":
-        return False
     from common.io import read_json_checked  # type: ignore[import-not-found]
     record, _reason = read_json_checked(task_path / "task.json")
     return record is not None and "schema_version" not in record
+
+
+def _is_legacy_delivery_query(query: dict, task_path: Path) -> bool:
+    return query.get("code") == "unsupported_task_schema" and _is_legacy_task_record(task_path)
 
 
 def _handle_codex_subagent_start(input_data: dict) -> None:
@@ -1192,6 +1194,9 @@ def main():
             return
         elif query["kind"] == "no_current_delivery":
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "delivery_selection_required: no implementation/check context without an explicitly selected Delivery"}}))
+            return
+        elif not _is_legacy_task_record(active.resolved_task_path):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": f"context_required: exact session identity is required for Delivery context ({query['kind']}); no Task-root planning context was loaded"}}))
             return
 
     # implement/check need task directory

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -77,6 +77,7 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     fs.chmodSync(path.join(root, "artifact.txt"), 0o644);
   });
   afterEach(() => {
+    vi.unstubAllEnvs();
     for (const directory of [root, ...extra.splice(0)]) fs.rmSync(directory, { recursive: true, force: true });
   });
   function ref(file: string): AuthorityRef { return { locator: file, revision: digest(fs.readFileSync(path.join(root, file))) }; }
@@ -177,6 +178,67 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     apply(operation("record_delivery", "delivery", { expected_phase: "implementing", historical_success: true, result: { result_id: "historical-local", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "local_commit", commit: beforeHead } }, d2));
     expect(record().deliveries[1]?.results.check).toBeNull();
     expect(record().deliveries[1]?.phase).toBe("delivered");
+  });
+
+  it("refreshes same-PR publication after real candidate rework and recovers lost projection with missing gates", () => {
+    git(root, "init", "-q"); git(root, "add", "artifact.txt", "requirements.md", "plan.md");
+    git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "initial candidate");
+    prepare(d1, "pull_request"); const original = ready(true);
+    const bin = path.join(root, "fixture-bin"); fs.mkdirSync(bin);
+    const actualFile = path.join(bin, "actual-pr.json"); const callsFile = path.join(bin, "gh-calls.jsonl");
+    fs.writeFileSync(path.join(bin, "gh"), `#!${python.startsWith("/") ? python : "/usr/bin/env python3"}
+import json,sys
+from pathlib import Path
+assert sys.argv[1:3] == ['pr','view'], 'only read-only PR verification is allowed'
+base=Path(__file__).parent
+with (base/'gh-calls.jsonl').open('a') as log: log.write(json.dumps(sys.argv[1:])+'\\n')
+print((base/'actual-pr.json').read_text())
+`); fs.chmodSync(path.join(bin, "gh"), 0o755);
+    vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH ?? ""}`);
+    let actual = { number: 123, headRefOid: original.head_ref, baseRefName: "main", state: "OPEN", mergeCommit: null as { oid: string } | null, url: "https://example.test/pr/123", body: "Original accepted payload" };
+    const saveActual = (): void => fs.writeFileSync(actualFile, JSON.stringify(actual)); saveActual();
+    const publication = { result_id: "pr-original", owner_id: native.workflow.owners.publication, evidence: [ref("plan.md")], profile: "pull_request", candidate: original, repo_ref: "castbox/Trellis", pr_number: 123, reviewed_head: original.head_ref, target_ref: "main", publication_ref: { locator: actual.url, revision: digest(actual.body) } };
+    const publish = (result: typeof publication, historical = false) => operation("record_publication", "publication", { expected_phase: "publishing", ...(historical ? { historical_success: true } : {}), result }, d1);
+    apply(publish(publication));
+    apply(operation("rework", "publication", { expected_phase: "publishing", target_role: "implementation", reason: ref("plan.md"), affected_results: ["check", "full_review", "readiness"] }, d1));
+    expect(record().deliveries[0]?.publication_result).toEqual(publication);
+    fs.writeFileSync(path.join(root, "artifact.txt"), "Revised actual artifact\n");
+    git(root, "add", "artifact.txt"); git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "revised candidate");
+    const revisedCandidate = candidate(true);
+    apply(operation("begin_check", "implementation", { expected_phase: "implementing", candidate: revisedCandidate }, d1));
+    let previous = `${d1}-planning`;
+    for (const role of ["check", "full_review", "readiness"] as const) {
+      const resultId = `revised-${role}`;
+      apply(operation("record_gate", role, { expected_phase: role === "check" ? "checking" : "reviewing", result: { result_id: resultId, owner_role: role, owner_id: native.workflow.owners[role], outcome: role === "readiness" ? "ready" : "passed", scope_ref: { authority: ref("requirements.md"), anchors: ["R1"] }, plan_ref: ref("plan.md"), candidate: revisedCandidate, predecessor_result_id: previous, obligations: [], evidence: [ref("plan.md")] } }, d1)); previous = resultId;
+    }
+    const revised = { ...publication, result_id: "pr-revised", candidate: revisedCandidate, reviewed_head: revisedCandidate.head_ref, target_ref: "release", publication_ref: { locator: actual.url, revision: digest("Revised accepted payload") } };
+    const before = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(publish(revised))]).stderr).toContain("candidate_mismatch");
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
+    actual = { ...actual, headRefOid: revisedCandidate.head_ref, baseRefName: "release", body: "Revised accepted payload" }; saveActual();
+    apply(publish(revised));
+    const readiness = record().deliveries[0]?.results.readiness; if (!readiness) throw new Error("missing readiness");
+    apply(operation("rework", "publication", { expected_phase: "publishing", target_role: "readiness", reason: ref("plan.md"), affected_results: ["readiness"] }, d1));
+    actual.body = "Actual successful update with lost projection"; saveActual();
+    const recovered = { ...revised, result_id: "pr-recovered", publication_ref: { locator: actual.url, revision: digest(actual.body) } };
+    expect(apply(publish(recovered, true)).phase).toBe("reviewing");
+    expect(record().deliveries[0]?.results.readiness).toBeNull();
+    const recoveredBytes = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    for (const stale of [publication, revised]) {
+      expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(publish(stale, true))]).stderr).toContain("candidate_mismatch");
+      expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(recoveredBytes);
+    }
+    const calls = fs.readFileSync(callsFile, "utf8");
+    expect(apply(publish(recovered, true)).changed).toBe(false);
+    expect(fs.readFileSync(callsFile, "utf8")).toBe(calls);
+    const conflict = { ...recovered, publication_ref: { ...recovered.publication_ref, revision: digest("wrong") } };
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(publish(conflict, true))]).stderr).toContain("result_identity_conflict");
+    apply(operation("record_gate", "readiness", { expected_phase: "reviewing", result: { ...readiness, result_id: "recovered-readiness", obligations: [recovered.publication_ref] } }, d1));
+    actual.state = "MERGED"; actual.mergeCommit = { oid: "f".repeat(40) }; saveActual();
+    const delivered = { result_id: "pr-delivered", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], profile: "pull_request", candidate: revisedCandidate, repo_ref: recovered.repo_ref, pr_number: recovered.pr_number, reviewed_head: revisedCandidate.head_ref, target_ref: recovered.target_ref, merge_commit: actual.mergeCommit.oid };
+    expect(apply(operation("record_delivery", "delivery", { expected_phase: "publishing", result: delivered }, d1)).phase).toBe("delivered");
+    expect(record().deliveries[0]?.publication_result).toEqual(recovered);
+    expect(git(root, "rev-parse", "HEAD")).toBe(revisedCandidate.head_ref);
   });
 
   it("fails stale bytes, changed candidate, unsupported workflow and direct lifecycle overwrite without mutation", () => {

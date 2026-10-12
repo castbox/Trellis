@@ -77,3 +77,23 @@ Guru installed/private migration evidence, external marketplace workflow
 changes and the release matrix are separate owner boundaries. Report tests,
 controlled installation evidence, remote integration and release evidence
 independently. Missing joint evidence never becomes a PASS.
+
+## Rework publication and carrier regressions
+
+The public contract's "Publication refresh after rework" section owns the
+`recordPublicationFact` / `record-publication` signature, identity constraints,
+normal/historical error matrix and examples. Keep prior PR publication during
+rework; replace the undelivered current slot only with a new producer ID for the
+same PR/owner and verified actual facts. Targets can change with fresh applicable
+obligations. Delivered facts remain immutable. Shared `publication-rework.json`
+and real-store regressions must cover P2 success with lost gates/output and
+reject stale P1 without remote mutation. No retired publication ledger is added.
+
+Schema-2 subagent context requires exact session identity. If strict Delivery
+resolution returns `no_current_task` after legacy Task fallback found a v2
+record, stop instead of reading root PRD/manifests. Legacy sole-session fallback
+remains compatible. Regressions assert no root sentinel or selected-Delivery
+sentinel leaks on the missing-identity path, and explicit identity loads the
+selected slice. Actual Droid carriers under `droid/droids/` must have the same
+exact-selection and read-only `delivery_review` guards as other agent carriers;
+registry tests inspect the collector's real files, not only skill availability.

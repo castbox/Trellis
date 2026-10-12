@@ -203,3 +203,86 @@ pre-existing prunable entries. No cleanup ran.
 The user subsequently approved the exact 195-path local commit plan on
 2026-10-12. Git history records that work commit; this approval does not extend
 to remote candidate delivery, D2 cutover or whole-Task closeout.
+
+## First committed candidate review and corrected source increment
+
+The user-approved 195-path local work commit completed as
+`1f479eaf65c1ce661d7aa69d1b68affc6eeb2c92`, with full hook checks passing.
+A subsequent independent full-range review found four defects. Accordingly,
+the earlier candidate is superseded for onward delivery, despite its passing
+happy-path installation samples. See `source-review-rework.md` for actual
+findings, corrections and the independent review of the complete amended range.
+
+Corrections cover same-Delivery publication refresh and actual-success recovery,
+strict missing-session hook handling, the actual Droid carriers and Task-workspace
+workflow authority in three normative specs. Two shared TS/Python publication
+fixtures and real-store read-only verifier regressions exercise revised PR head,
+payload and target, stale fact rejection, terminal recovery and immutability.
+Publication recovery uses fixture PR postconditions; no actual remote PR was
+created, updated or merged by this validation.
+
+| Final amended-source check | Result | Log |
+| --- | --- | --- |
+| Core full suite | 442 PASS / 1 existing SQLite capability SKIP | `/tmp/trellis-31-rework-core-final-test.log` |
+| CLI full suite, actual maxWorkers=4 | 1928 PASS, 86 files | `/tmp/trellis-31-rework-cli-final-test.log` |
+| Both package lint | PASS | `/tmp/trellis-31-rework-lint.log` |
+| Core/CLI typecheck | PASS | `/tmp/trellis-31-rework-{core,cli}-typecheck.log` |
+| Both package build | PASS | `/tmp/trellis-31-rework-build.log` |
+| Python lint | 0 errors / 48 existing warnings | `/tmp/trellis-31-rework-pyright.log` |
+| Actual Python 3.9 compile | 73 shipped/dogfood/hook files PASS | Parent direct compile probe |
+| Runtime/contract/configured hooks parity | 33 runtime twins, public contract and 3 hooks identical | Parent byte comparison |
+
+The preliminary CLI full run read the pre-correction legacy test setup and
+failed two newly added legacy cases; retained at
+`/tmp/trellis-31-rework-cli-test.log`. The owner fixed fixture setup ordering;
+the final complete run above passed. No failing preliminary run is treated as
+passing evidence. The final full run explicitly passes worker concurrency to
+Vitest through `pnpm exec`, without increasing test timeouts.
+
+Final source Review covers the complete baseline-to-HEAD range plus the source
+increment; it is not yet an exact second-commit Review. Additional local commit,
+push/PR, merge and release remain unperformed. Whole Issue scope still includes
+D2, conditional on actual matching Guru consumer readiness. This legacy Task
+remains in_progress and unmigrated, with no Completion/Closure/archive/cleanup.
+
+## Corrected installed candidate and fresh sample outcomes
+
+The amended source was packed and installed at
+`/var/folders/rd/kbzpxp956nb3p_h04vnfg3l80000gn/T/trellis-31-rework-candidate-1gr4zp9t`.
+`candidate.json` records source HEAD plus exact reviewed uncommitted package
+increment, including hashes of both new fixtures. Both packages remain
+`0.7.0-castbox.3`; no published version bump occurred.
+
+| Package | Corrected tarball SHA256 |
+| --- | --- |
+| Core | `d9fe25c74e4157a0f2d1bf91f8a02a93de8761edb82affe5ff9002923f3d3905` |
+| CLI | `b6f29f7f8be8c63513bb75fe36d726abe116306f55dcfb599b5a2c203a1ac609` |
+
+Independent installed sample Review returned three PASS / no findings; the
+actual new identities, complete ranges and provenance are retained in
+`installed-review-rework.md`. The carrier checked all 700 installed CLI and
+258 Core files against tarballs, plus each sample's 33 runtime files, workflow,
+contract and capability (API 1.0 / schema 2.0). The parent independently accepted
+readiness for the actual exact-byte manual/local profile scope. Each slice
+completed four gates, actual delivery and no-write identical-result retry.
+Each sample Task separately completed whole accepted scope and no-mutation
+Closure. The first local slice's exact reviewed HEAD was restored before its
+formal writes. These mutations occurred solely in controlled sample repositories.
+
+The two new publication fixtures also ran against the actual installed Core
+export and installed Python 3.9 runtime: each language passed 30 + 11 steps.
+This validates packaged transitions; real remote PR publication remains unrun.
+Logs: `/tmp/trellis-31-rework-installed-publication.log`,
+`/tmp/trellis-31-rework-samples-prepare.log` and
+`/tmp/trellis-31-rework-samples-finish.log`.
+
+Final workspace inventory retains HEAD `1f479eaf` on the same issue branch,
+zero staged paths, the original legacy in_progress Task/workflow, unchanged
+gitlinks and existing worktree refs. No cleanup occurred. Fresh Guru #531 read
+still shows OPEN, zero comments and update time `2026-10-12T08:36:04Z`; no
+matching actual consumer readiness has arrived to authorize D2 cutover.
+
+D1 amended code, full checks, independent complete source Review and new
+installed sample acceptance are ready for the separately authorized second
+local repair commit. The first approved commit did not authorize this second
+commit or push/PR. No whole-Issue Completion or release qualification is claimed.

@@ -262,9 +262,10 @@ handling, and fail-closed stops. `task.json.status` remains only a broad
 lifecycle fact; it cannot by itself prove implementation, check, commit,
 review, publication, or finish completion.
 
-`get_context.py --mode continuation` reads the invocation repository's current
-`.trellis/workflow.md`, validates exactly one non-empty block, and returns its
-body verbatim. It does not select a task or workflow step and does not generate
+For an exact binding, `get_context.py --mode continuation` reads the validated
+Task workspace's current `.trellis/workflow.md`, validates exactly one
+non-empty block, and returns its body verbatim. With no binding the invocation
+workspace supplies the initial entry; invalid bindings stop without fallback. It does not select a task or workflow step and does not generate
 semantic pass, finding, typed-exit, readiness, completion, or authorization
 conclusions. The active-task resolver remains the sole authority for task,
 workspace, and repository identity.

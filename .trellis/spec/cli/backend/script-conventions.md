@@ -145,8 +145,11 @@ structural failures to the external prefix
 `invalid_continuation_contract: <subtype>: <workflow-path>` with a non-zero
 exit. The mode is read-only and must not inspect task status, artifacts, Git
 history, project inventory, or conversation text to select a semantic route.
-It must remain in the invocation repository instead of changing to the bound
-task workspace.
+For an exact binding, read phase, continuation and runtime-contract blocks
+from the validated Task workspace. The invocation repository supplies session
+identity and resolver facts; with no binding it owns only the initial entry.
+Invalid bindings stop before workflow extraction; never choose an invocation
+workflow as recovery fallback.
 
 Mismatch detection is limited to Trellis marker-like lines. Unrelated Markdown
 inside the body, including standalone platform blocks such as
@@ -154,7 +157,8 @@ inside the body, including standalone platform blocks such as
 structure.
 
 Regression coverage must exercise every subtype, exact successful bytes,
-read-only behavior, and linked-worktree invocation-root ownership. The existing
+read-only behavior, and linked-worktree Task-workspace authority, including
+conflicting invocation workflows and invalid bindings. The existing
 whole-tree parity test keeps the dogfood and shipped Python copies identical.
 
 ### Library Modules (`common/*.py`)

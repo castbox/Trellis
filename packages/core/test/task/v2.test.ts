@@ -50,7 +50,7 @@ function makeStore(gitProject = false): { root: string; taskDir: string; authori
 function storeApply(store: ReturnType<typeof makeStore>, operation: TaskOperation): ReturnType<typeof applyTaskOperationToStore> {
   return applyTaskOperationToStore({ root: store.root, taskDir: store.taskDir, workflow: native.workflow, expected_preimage: loadTaskRecordV2(store).preimage, operation });
 }
-function prepareStore(store: ReturnType<typeof makeStore>, profile: "manual" | "local_commit" = "manual"): void {
+function prepareStore(store: ReturnType<typeof makeStore>, profile: "manual" | "local_commit" | "pull_request" = "manual"): void {
   storeApply(store, op({ api_version: "1.0", operation: "accept_scope", key: { task_id: key.task_id, lifecycle_generation: 0 }, owner_role: "task_scope", owner_id: native.workflow.owners.task_scope, authority: store.authority }));
   storeApply(store, op({ api_version: "1.0", operation: "create_delivery", key, owner_role: "creation", owner_id: native.workflow.owners.creation, scope_ref: { authority: store.authority, anchors: ["R1"] }, profile }));
   const result = { result_id: "actual-plan", owner_role: "planning" as const, owner_id: native.workflow.owners.planning, outcome: "accepted" as const, scope_ref: { authority: store.authority, anchors: ["R1"] }, plan_ref: store.plan, candidate: null, predecessor_result_id: null, obligations: [], evidence: [store.plan] };
@@ -101,6 +101,37 @@ describe("Task v2 closed lifecycle", () => {
     expect(recovered.deliveries[0]?.phase).toBe("delivered"); expect(recovered.deliveries[0]?.results).toEqual({ planning: null, check: null, full_review: null, readiness: null });
     errorCode(() => applyTaskOperation(recovered, { ...historical, key: { ...historical.key, lifecycle_generation: 1 } }, fixture.workflow), "delivery_identity_mismatch");
   });
+  it("refreshes the same PR after rework and retains only the latest publication projection", () => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(fixtures, "publication-rework.json"), "utf8")) as Fixture;
+    const record = runFixture(fixture);
+    const delivery = record.deliveries[0];
+    expect(delivery?.id).toBe(key.delivery_id);
+    expect(delivery?.publication_result?.result_id).toBe("publication-revised-head");
+    expect(delivery?.delivery_result?.result_id).toBe("merged-revised");
+    expect(delivery?.publication_result?.candidate).toEqual(delivery?.delivery_result?.candidate);
+    expect(delivery?.publication_result?.target_ref).toBe("release");
+    const published = runFixture(fixture, 8);
+    const original = fixture.steps[7]?.operation;
+    if (!original || original.operation !== "record_publication") throw new Error("missing publication");
+    const owner = "replacement-publication-owner";
+    errorCode(() => applyTaskOperation(published, { ...original, owner_id: owner, result: { ...original.result, result_id: "replacement-owner-result", owner_id: owner } }, { ...fixture.workflow, owners: { ...fixture.workflow.owners, publication: owner } }), "publication_identity_mismatch");
+  });
+  it("restores a missing historical publication only against the exact terminal PR fact", () => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(fixtures, "guru-public-mapping.json"), "utf8")) as Fixture;
+    const initial = runFixture(fixture, 2);
+    const historical = fixture.steps[9]?.operation;
+    const publication = fixture.steps[7]?.operation;
+    if (!historical || historical.operation !== "record_delivery" || !publication || publication.operation !== "record_publication") throw new Error("missing history");
+    const delivered = applyTaskOperation(initial, historical, fixture.workflow).record;
+    const recover = { ...publication, historical_success: true };
+    for (const result of [{ ...publication.result, repo_ref: "castbox/Other" }, { ...publication.result, pr_number: 456 }, { ...publication.result, target_ref: "release" }, { ...publication.result, reviewed_head: "f".repeat(40), candidate: { ...publication.result.candidate, head_ref: "f".repeat(40) } }]) {
+      errorCode(() => applyTaskOperation(delivered, { ...recover, result }, fixture.workflow), "publication_identity_mismatch");
+    }
+    const restored = applyTaskOperation(delivered, recover, fixture.workflow);
+    expect(restored.record.deliveries[0]?.delivery_result).toEqual(delivered.deliveries[0]?.delivery_result);
+    expect(restored.record.deliveries[0]?.results).toEqual(delivered.deliveries[0]?.results);
+    expect(applyTaskOperation(restored.record, recover, fixture.workflow).changed).toBe(false);
+  });
   it("rejects unsupported current profiles including replay while permitting original historical outcome recovery", () => {
     const planningIndex = native.steps.findIndex((step) => step.operation.operation === "record_gate" && step.operation.result.owner_role === "planning" && !step.expect_error);
     const record = runFixture(native, planningIndex + 1);
@@ -139,6 +170,56 @@ describe("Task v2 closed lifecycle", () => {
 });
 
 describe("Task v2 objective atomic store", () => {
+  it("verifies revised PR postconditions before replacing the publication and normally delivering the same slice", () => {
+    const store = makeStore(true); prepareStore(store, "pull_request");
+    const apply = (operation: TaskOperation, verifyFact?: Parameters<typeof applyTaskOperationToStore>[0]["verifyFact"]) => applyTaskOperationToStore({ ...store, operation, workflow: native.workflow, expected_preimage: loadTaskRecordV2(store).preimage, verifyFact });
+    const gates = (suffix: string): void => {
+      apply(op({ api_version: "1.0", operation: "begin_check", key, expected_phase: "implementing", owner_role: "implementation", owner_id: native.workflow.owners.implementation, candidate: store.candidate }));
+      let previous = "actual-plan";
+      for (const role of ["check", "full_review", "readiness"] as const) {
+        const result = { result_id: `${suffix}-${role}`, owner_role: role, owner_id: native.workflow.owners[role], outcome: role === "readiness" ? "ready" as const : "passed" as const, scope_ref: { authority: store.authority, anchors: ["R1"] }, plan_ref: store.plan, candidate: store.candidate, predecessor_result_id: previous, obligations: [], evidence: [store.plan] };
+        apply(op({ api_version: "1.0", operation: "record_gate", key, expected_phase: role === "check" ? "checking" : "reviewing", owner_role: role, owner_id: result.owner_id, result })); previous = result.result_id;
+      }
+    };
+    gates("original");
+    const result = { result_id: "actual-publication", owner_id: native.workflow.owners.publication, evidence: [store.plan], profile: "pull_request" as const, candidate: store.candidate, repo_ref: "castbox/Trellis", pr_number: 123, reviewed_head: store.candidate.head_ref as string, target_ref: "main", publication_ref: { locator: "https://example.test/pr/123", revision: "payload-1" } };
+    const published = op({ api_version: "1.0", operation: "record_publication", key, expected_phase: "publishing", owner_role: "publication", owner_id: result.owner_id, result });
+    let actual = { repo: result.repo_ref, pr: result.pr_number, head: result.reviewed_head, target: result.target_ref, payload: result.publication_ref, merged: false };
+    const verify = vi.fn((fact: Parameters<NonNullable<Parameters<typeof applyTaskOperationToStore>[0]["verifyFact"]>>[0]) => fact.profile === "pull_request" && fact.repo_ref === actual.repo && fact.pr_number === actual.pr && fact.reviewed_head === actual.head && fact.target_ref === actual.target && ("publication_ref" in fact ? JSON.stringify(fact.publication_ref) === JSON.stringify(actual.payload) : actual.merged));
+    apply(published, verify);
+    apply(op({ api_version: "1.0", operation: "rework", key, expected_phase: "publishing", owner_role: "publication", owner_id: result.owner_id, target_role: "implementation", reason: store.plan, affected_results: ["check", "full_review", "readiness"] }));
+    expect(loadTaskRecordV2(store).record.deliveries[0]?.publication_result).toEqual(result);
+    fs.writeFileSync(path.join(store.root, "artifact.txt"), "Revised actual artifact\n");
+    execFileSync("git", ["add", "artifact.txt"], { cwd: store.root }); execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "revise actual candidate"], { cwd: store.root });
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: store.root, encoding: "utf8" }).trim();
+    store.candidate = { ...store.candidate, head_ref: head, content_ref: computeCandidateContentRef(store.root, ["artifact.txt"]) }; gates("revised");
+    const revised = { ...published, result: { ...result, result_id: "actual-publication-revised", candidate: store.candidate, reviewed_head: head, target_ref: "release", publication_ref: { ...result.publication_ref, revision: "payload-2" } } };
+    const retained = loadTaskRecordV2(store).preimage;
+    errorCode(() => apply(revised), "fact_verification_required");
+    errorCode(() => apply(revised, verify), "fact_verification_required");
+    expect(loadTaskRecordV2(store).preimage).toBe(retained);
+    actual = { ...actual, head, target: "release", payload: revised.result.publication_ref };
+    expect(apply(revised, verify).changed).toBe(true);
+    const beforeRetry = loadTaskRecordV2(store).preimage; const calls = verify.mock.calls.length;
+    expect(apply({ ...revised, historical_success: true }, verify).changed).toBe(false);
+    expect(verify.mock.calls).toHaveLength(calls); expect(loadTaskRecordV2(store).preimage).toBe(beforeRetry);
+    const readiness = loadTaskRecordV2(store).record.deliveries[0]?.results.readiness;
+    if (!readiness) throw new Error("missing revised readiness");
+    apply(op({ api_version: "1.0", operation: "rework", key, expected_phase: "publishing", owner_role: "publication", owner_id: result.owner_id, target_role: "readiness", reason: store.plan, affected_results: ["readiness"] }));
+    actual.payload = { ...actual.payload, revision: "actual-lost-payload-3" };
+    const recovered = { ...revised, historical_success: true, result: { ...revised.result, result_id: "recovered-publication-3", publication_ref: actual.payload } };
+    expect(apply(recovered, verify).phase).toBe("reviewing");
+    expect(loadTaskRecordV2(store).record.deliveries[0]?.results.readiness).toBeNull();
+    const recoveryBytes = loadTaskRecordV2(store).preimage;
+    errorCode(() => apply({ ...revised, historical_success: true }, verify), "fact_verification_required");
+    errorCode(() => apply({ ...published, historical_success: true }, verify), "fact_verification_required");
+    expect(loadTaskRecordV2(store).preimage).toBe(recoveryBytes);
+    expect(apply(recovered, verify).changed).toBe(false);
+    apply(op({ api_version: "1.0", operation: "record_gate", key, expected_phase: "reviewing", owner_role: "readiness", owner_id: readiness.owner_id, result: { ...readiness, result_id: "recovered-publication-readiness", obligations: [actual.payload] } }));
+    actual.merged = true;
+    const delivered = { result_id: "actual-merged", owner_id: native.workflow.owners.delivery, evidence: [store.plan], profile: "pull_request" as const, candidate: store.candidate, repo_ref: actual.repo, pr_number: actual.pr, reviewed_head: head, merge_commit: "f".repeat(40), target_ref: actual.target };
+    expect(apply(op({ api_version: "1.0", operation: "record_delivery", key, expected_phase: "publishing", owner_role: "delivery", owner_id: delivered.owner_id, result: delivered }), verify).phase).toBe("delivered");
+  });
   it.each([".trellis", ".trellis/tasks", ".trellis/tasks/fixture"])("preserves the owned %s root alias while rejecting record and nested aliases", (locator) => {
     const store = makeStore();
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-owned-root-")); directories.push(outside);

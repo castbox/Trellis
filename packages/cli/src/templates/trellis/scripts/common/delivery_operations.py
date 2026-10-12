@@ -273,7 +273,15 @@ def apply_operation(input_record: object, request: object, declaration: object) 
             if op["result"]["candidate"] != d["candidate"]:
                 fail("candidate_mismatch", "publication candidate")
         if d["publication_result"]:
-            fail("publication_already_recorded", d["id"])
+            if d["phase"] == "delivered":
+                fail("publication_already_recorded", d["id"])
+            previous = d["publication_result"]
+            if any(previous[field] != op["result"][field] for field in ("repo_ref", "pr_number", "owner_id")):
+                fail("publication_identity_mismatch", "publication refresh must retain PR and producer identity")
+        if d["delivery_result"] and d["delivery_result"]["profile"] == "pull_request":
+            delivered = d["delivery_result"]
+            if any(delivered[field] != op["result"][field] for field in ("repo_ref", "pr_number", "reviewed_head", "target_ref", "candidate")):
+                fail("publication_identity_mismatch", "historical publication must match terminal delivery")
         d["publication_result"] = op["result"]
     elif operation == "record_delivery":
         _require_owner(op, workflow, "delivery")
