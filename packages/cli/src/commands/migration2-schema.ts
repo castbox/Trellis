@@ -132,6 +132,17 @@ export const migrationPlan2Schema = z
           "Only missing-record history-only roots may have a null source",
         ),
     ),
+    branch_bindings: z
+      .array(
+        z
+          .object({
+            task_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
+            lifecycle_generation: z.number().int().nonnegative().safe(),
+            source: rawSnapshotSchema,
+          })
+          .strict(),
+      )
+      .optional(),
     sessions: z.array(
       z
         .object({

@@ -47,6 +47,7 @@ const raw = (bytes: string | Buffer, mode = 0o640): RawSnapshot => ({
 });
 const ref = ".trellis/tasks/10-12-migration";
 let root: string, planPath: string, previousCwd: string, plan: MigrationPlan2;
+let inheritedSibling: string | undefined;
 const file = (name: string): string => path.join(root, name);
 function write(name: string, bytes: string | Buffer, mode = 0o640): void {
   fs.mkdirSync(path.dirname(file(name)), { recursive: true });
@@ -153,6 +154,189 @@ function seedWorkspace(id: string, workspace: string): void {
   });
   root = original;
 }
+/** Commit predecessors first: worktree add must inherit real occupied Tasks. */
+function inheritedCopies(): {
+  sibling: string;
+  binding: string;
+  branch: string;
+} {
+  const secondRef = ".trellis/tasks/10-12-second";
+  const second = structuredClone(required(plan.tasks[0]));
+  second.task_ref = secondRef;
+  const source = JSON.parse(
+    Buffer.from(required(second.source).content_base64, "base64").toString(),
+  ) as Record<string, unknown>;
+  source.id = "second-task";
+  second.source = raw(JSON.stringify(source));
+  second.record = {
+    ...(second.record as Record<string, unknown>),
+    id: "second-task",
+  };
+  second.legacy_facts = required(second.legacy_facts).map((fact) => ({
+    ...fact,
+    reason: {
+      ...fact.reason,
+      locator: `${secondRef}/migration/source-task.json`,
+      revision: `sha256:${second.source?.sha256}`,
+    },
+  }));
+  plan.tasks.push(second);
+  write(
+    `${secondRef}/task.json`,
+    Buffer.from(second.source.content_base64, "base64"),
+  );
+  for (const taskRef of [ref, secondRef]) {
+    for (const name of [
+      "prd.md",
+      "design.md",
+      "implement.md",
+      "implement.jsonl",
+      "check.jsonl",
+    ]) {
+      const relative = `${taskRef}/${name}`;
+      const bytes = `${taskRef} main ${name}\n`;
+      write(relative, bytes, 0o600);
+      plan.files = plan.files.filter((entry) => entry.target.path !== relative);
+      plan.files.push({
+        target: { kind: "project", workspace: "main", path: relative },
+        owner: "preserve",
+        action: "preserve",
+        source: raw(bytes, 0o600),
+      });
+    }
+  }
+  execFileSync("git", ["init", root]);
+  execFileSync("git", ["-C", root, "add", ".trellis"]);
+  execFileSync("git", [
+    "-C",
+    root,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.invalid",
+    "commit",
+    "-m",
+    "tracked inherited predecessors",
+  ]);
+  const branch = execFileSync("git", ["-C", root, "branch", "--show-current"], {
+    encoding: "utf8",
+  }).trim();
+  const sibling = `${root}-inherited`;
+  execFileSync("git", [
+    "-C",
+    root,
+    "worktree",
+    "add",
+    "-b",
+    "inherited-sibling",
+    sibling,
+  ]);
+  inheritedSibling = sibling;
+  plan.workspaces.push({
+    id: "sibling",
+    root: sibling,
+    project_relative: null,
+  });
+  plan.installations.push({
+    ...structuredClone(required(plan.installations[0])),
+    workspace: "sibling",
+  });
+  plan.workflows.push({
+    ...structuredClone(required(plan.workflows[0])),
+    workspace: "sibling",
+  });
+  plan.templates.push({
+    ...structuredClone(required(plan.templates[0])),
+    workspace: "sibling",
+  });
+  const siblingTasks = structuredClone(plan.tasks).map((task) => ({
+    ...task,
+    workspace: "sibling",
+  }));
+  for (const task of siblingTasks)
+    required(task.source).mode =
+      fs.statSync(path.join(sibling, task.task_ref, "task.json")).mode & 0o777;
+  const siblingInstallation = required(
+    plan.installations.find((entry) => entry.workspace === "sibling"),
+  );
+  siblingInstallation.version_source.mode =
+    fs.statSync(path.join(sibling, ".trellis/.version")).mode & 0o777;
+  required(siblingInstallation.receipt_source).mode =
+    fs.statSync(path.join(sibling, ".trellis/.template-hashes.json")).mode &
+    0o777;
+  plan.tasks.push(...siblingTasks);
+  // Preserve branch-local planning differences and a mutable record variant.
+  const siblingFiles = structuredClone(plan.files).map((entry) => ({
+    ...entry,
+    target: { ...entry.target, workspace: "sibling" },
+  }));
+  for (const entry of siblingFiles) {
+    if (entry.source)
+      entry.source.mode =
+        fs.statSync(path.join(sibling, entry.target.path)).mode & 0o777;
+    if (entry.owner !== "preserve") continue;
+    const bytes = `${entry.target.path} sibling branch\n`;
+    const full = path.join(sibling, entry.target.path);
+    fs.writeFileSync(full, bytes);
+    fs.chmodSync(full, 0o640);
+    entry.source = raw(bytes, 0o640);
+  }
+  plan.files.push(...siblingFiles);
+  for (const task of plan.tasks) {
+    if ((task.workspace === "main") === (task.task_ref === ref)) continue;
+    task.disposition = "defer";
+    delete task.record;
+    delete task.legacy_facts;
+  }
+  const peer = required(
+    plan.tasks.find(
+      (task) => task.workspace === "sibling" && task.task_ref === ref,
+    ),
+  );
+  const variant = JSON.parse(
+    Buffer.from(required(peer.source).content_base64, "base64").toString(),
+  ) as Record<string, unknown>;
+  variant.title = "Independently reviewed branch variant";
+  peer.source = raw(JSON.stringify(variant), 0o600);
+  fs.writeFileSync(
+    path.join(sibling, ref, "task.json"),
+    Buffer.from(peer.source.content_base64, "base64"),
+  );
+  fs.chmodSync(path.join(sibling, ref, "task.json"), 0o600);
+  plan.branch_bindings = [];
+  for (const [id, branchName] of [
+    ["main-task", branch],
+    ["second-task", "inherited-sibling"],
+  ]) {
+    const bytes = JSON.stringify({
+      schema_version: "1.0",
+      task_id: id,
+      lifecycle_generation: 0,
+      binding_revision: 0,
+      branch_name: branchName,
+    });
+    const binding = `.git/trellis/task-branches/${id}/0.json`;
+    write(binding, bytes, 0o600);
+    plan.branch_bindings.push({
+      task_id: id,
+      lifecycle_generation: 0,
+      source: raw(bytes, 0o600),
+    });
+    const old = { schema_version: 2, task_id: id, lifecycle_generation: 0 };
+    const filename = `codex_${id}.json`;
+    write(`.git/trellis/sessions/${filename}`, JSON.stringify(old), 0o600);
+    plan.sessions.push({
+      target: { kind: "common_session", filename },
+      source: raw(JSON.stringify(old), 0o600),
+      record: { ...old, schema_version: 3, delivery_id: null },
+    });
+  }
+  return {
+    sibling,
+    binding: file(".git/trellis/task-branches/main-task/0.json"),
+    branch,
+  };
+}
 async function execute(
   dryRun = false,
 ): Promise<Awaited<ReturnType<typeof migrate>>> {
@@ -168,6 +352,7 @@ beforeEach(async () => {
   vi.mocked(childProcess.execFileSync).mockReset();
   vi.mocked(childProcess.execFileSync).mockImplementation(actual.execFileSync);
   previousCwd = process.cwd();
+  inheritedSibling = undefined;
   root = fs.realpathSync(
     fs.mkdtempSync(path.join(os.tmpdir(), "trellis-migrate2-")),
   );
@@ -191,6 +376,15 @@ afterEach(() => {
   process.chdir(previousCwd);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  if (inheritedSibling)
+    execFileSync("git", [
+      "-C",
+      root,
+      "worktree",
+      "remove",
+      "--force",
+      inheritedSibling,
+    ]);
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(planPath, { force: true });
 });
@@ -1869,5 +2063,711 @@ describe("migration plan 2.0 controlled old-copy cutover", () => {
       expect((await execute(true)).conflicts).toEqual([]);
       expect(snapshot()).toEqual(before);
     });
+  });
+});
+
+function replaceSource(
+  task: MigrationPlan2["tasks"][number],
+  edit: (record: Record<string, unknown>) => void,
+): void {
+  const record = JSON.parse(
+    Buffer.from(required(task.source).content_base64, "base64").toString(),
+  ) as Record<string, unknown>;
+  edit(record);
+  task.source = raw(JSON.stringify(record), required(task.source).mode);
+  const workspace = required(
+    plan.workspaces.find((entry) => entry.id === task.workspace),
+  );
+  fs.writeFileSync(
+    path.join(workspace.root, task.task_ref, "task.json"),
+    Buffer.from(task.source.content_base64, "base64"),
+  );
+  fs.chmodSync(
+    path.join(workspace.root, task.task_ref, "task.json"),
+    task.source.mode,
+  );
+}
+
+describe("binding-reviewed inherited registered Task copies", () => {
+  it.each([false, true])(
+    "migrates opposite bound authorities, preserves branch variants, resumes and rolls back (reverse=%s)",
+    async (reverse) => {
+      const { sibling, binding } = inheritedCopies();
+      if (reverse) plan.tasks.reverse();
+      const before = snapshot(),
+        peerBefore = snapshot(sibling);
+      const backups = new Map<string, { bytes: Buffer; mode: number }>();
+      for (const full of [...before.keys(), ...peerBefore.keys()])
+        backups.set(full, {
+          bytes: fs.readFileSync(full),
+          mode: fs.statSync(full).mode & 0o777,
+        });
+      const preview = await execute(true);
+      expect(preview.conflicts).toEqual([]);
+      expect(
+        preview.actions.find((action) => action.path === binding),
+      ).toMatchObject({
+        action: "preserve",
+        before_mode: 0o600,
+        after_mode: 0o600,
+      });
+      expect(snapshot()).toEqual(before);
+      expect(snapshot(sibling)).toEqual(peerBefore);
+      await execute();
+      for (const task of plan.tasks) {
+        const workspace = required(
+          plan.workspaces.find((entry) => entry.id === task.workspace),
+        );
+        const full = path.join(workspace.root, task.task_ref, "task.json");
+        if (task.disposition === "defer") {
+          expect(fs.readFileSync(full)).toEqual(
+            Buffer.from(required(task.source).content_base64, "base64"),
+          );
+          expect(fs.statSync(full).mode & 0o777).toBe(
+            required(task.source).mode,
+          );
+          expect(
+            fs.existsSync(
+              path.join(workspace.root, task.task_ref, "migration"),
+            ),
+          ).toBe(false);
+          expect(
+            fs.existsSync(
+              path.join(workspace.root, task.task_ref, "deliveries"),
+            ),
+          ).toBe(false);
+        } else
+          expect(JSON.parse(fs.readFileSync(full, "utf8")).schema_version).toBe(
+            "2.0",
+          );
+      }
+      for (const entry of plan.files.filter(
+        (entry) => entry.owner === "preserve",
+      )) {
+        const workspace = required(
+          plan.workspaces.find((row) => row.id === entry.target.workspace),
+        );
+        const full = path.join(workspace.root, entry.target.path);
+        expect(fs.readFileSync(full)).toEqual(
+          Buffer.from(required(entry.source).content_base64, "base64"),
+        );
+        expect(fs.statSync(full).mode & 0o777).toBe(
+          required(entry.source).mode,
+        );
+      }
+      const applied = snapshot(),
+        peerApplied = snapshot(sibling);
+      const writer = vi.spyOn(atomic, "writeFileAtomic");
+      await execute();
+      expect(writer).not.toHaveBeenCalled();
+      writer.mockRestore();
+      expect(snapshot()).toEqual(applied);
+      expect(snapshot(sibling)).toEqual(peerApplied);
+      const python = process.platform === "win32" ? "python" : "python3";
+      const beforeDirect = snapshot(),
+        peerBeforeDirect = snapshot(sibling);
+      expect(() =>
+        execFileSync(
+          python,
+          [
+            "-B",
+            file(".trellis/scripts/delivery.py"),
+            "select",
+            "--task",
+            path.join(sibling, ref),
+            "--delivery",
+            "00000000-0000-0000-0000-000000000001",
+          ],
+          {
+            cwd: root,
+            env: {
+              ...process.env,
+              CODEX_THREAD_ID: "main-task",
+              PYTHONDONTWRITEBYTECODE: "1",
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        ),
+      ).toThrow();
+      expect(snapshot()).toEqual(beforeDirect);
+      expect(snapshot(sibling)).toEqual(peerBeforeDirect);
+      for (const workspace of [root, sibling]) {
+        for (const [id, expectedRoot, taskRef] of [
+          ["main-task", root, ref],
+          ["second-task", sibling, ".trellis/tasks/10-12-second"],
+        ]) {
+          const env = {
+            ...process.env,
+            CODEX_THREAD_ID: id,
+            PYTHONDONTWRITEBYTECODE: "1",
+          };
+          const current = execFileSync(
+            python,
+            [
+              "-B",
+              path.join(workspace, ".trellis/scripts/task.py"),
+              "current",
+              "--source",
+            ],
+            { cwd: workspace, env, encoding: "utf8" },
+          );
+          expect(current).toContain(taskRef);
+          expect(current).toContain(`Task workspace: ${expectedRoot}`);
+          const context = JSON.parse(
+            execFileSync(
+              python,
+              [
+                "-B",
+                path.join(workspace, ".trellis/scripts/get_context.py"),
+                "--json",
+              ],
+              { cwd: workspace, env, encoding: "utf8" },
+            ),
+          ) as { currentTask: { taskWorkspaceRoot: string } };
+          expect(context.currentTask.taskWorkspaceRoot).toBe(expectedRoot);
+          const continuation = execFileSync(
+            python,
+            [
+              "-B",
+              path.join(workspace, ".trellis/scripts/get_context.py"),
+              "--mode",
+              "continuation",
+            ],
+            { cwd: workspace, env, encoding: "utf8" },
+          );
+          expect(continuation).toContain("Read the exact session Task");
+        }
+      }
+      for (const action of [...preview.actions].reverse()) {
+        if (action.action === "preserve") continue;
+        const backup = backups.get(action.path);
+        if (backup) {
+          fs.writeFileSync(action.path, backup.bytes);
+          fs.chmodSync(action.path, backup.mode);
+        } else fs.rmSync(action.path, { force: true });
+      }
+      expect(snapshot()).toEqual(before);
+      expect(snapshot(sibling)).toEqual(peerBefore);
+    },
+  );
+
+  it("recovers a partial cutover using original identity groups and rejects third states", async () => {
+    const { sibling } = inheritedCopies();
+    const actual = atomic.writeFileAtomic;
+    let writes = 0;
+    const writer = vi
+      .spyOn(atomic, "writeFileAtomic")
+      .mockImplementation((...args) => {
+        if (++writes === 4)
+          throw new Error("controlled ordinary write failure");
+        return actual(...args);
+      });
+    await expect(execute()).rejects.toThrow(
+      "controlled ordinary write failure",
+    );
+    writer.mockRestore();
+    const before = snapshot(),
+      peerBefore = snapshot(sibling);
+    expect((await execute(true)).conflicts).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(snapshot(sibling)).toEqual(peerBefore);
+    await execute();
+    const deferred = path.join(sibling, ref, "task.json");
+    fs.chmodSync(deferred, 0o644);
+    const third = snapshot(),
+      peerThird = snapshot(sibling);
+    await expect(execute()).rejects.toThrow("third_state");
+    expect(snapshot()).toEqual(third);
+    expect(snapshot(sibling)).toEqual(peerThird);
+  });
+
+  it.each([
+    "missing-binding",
+    "duplicate-binding",
+    "unknown-binding",
+    "binding-extra-field",
+    "wrong-peer",
+    "absent-branch",
+    "detached",
+    "case",
+    "generation",
+    "source",
+    "two-authorities",
+    "all-defer",
+    "same-workspace",
+    "workspace-alias",
+    "task-alias",
+    "omitted-task",
+    "omitted-artifact",
+    "peer-artifact",
+    "archive",
+    "visible-history",
+  ])("rejects %s without any writes", async (kind) => {
+    const { sibling, binding } = inheritedCopies();
+    const peer = required(
+      plan.tasks.find(
+        (task) => task.workspace === "sibling" && task.task_ref === ref,
+      ),
+    );
+    const authority = required(
+      plan.tasks.find(
+        (task) => task.workspace === "main" && task.task_ref === ref,
+      ),
+    );
+    if (kind === "missing-binding") plan.branch_bindings = [];
+    if (kind === "duplicate-binding")
+      plan.branch_bindings?.push(
+        structuredClone(required(plan.branch_bindings?.[0])),
+      );
+    if (kind === "unknown-binding")
+      required(plan.branch_bindings?.[0]).task_id = "unknown-task";
+    if (["binding-extra-field", "wrong-peer", "absent-branch"].includes(kind)) {
+      const row = required(plan.branch_bindings?.[0]);
+      const value = JSON.parse(
+        Buffer.from(row.source.content_base64, "base64").toString(),
+      ) as Record<string, unknown>;
+      if (kind === "binding-extra-field") value.extra = true;
+      else
+        value.branch_name =
+          kind === "wrong-peer" ? "inherited-sibling" : "not-checked-out";
+      row.source = raw(JSON.stringify(value), 0o600);
+      fs.writeFileSync(binding, JSON.stringify(value));
+    }
+    if (kind === "detached")
+      execFileSync("git", ["-C", root, "checkout", "--detach"]);
+    if (kind === "case")
+      replaceSource(peer, (record) => {
+        record.id = "MAIN-task";
+      });
+    if (kind === "generation")
+      replaceSource(peer, (record) => {
+        record.lifecycle_generation = 1;
+      });
+    if (kind === "source")
+      replaceSource(peer, (record) => {
+        record.source = {
+          kind: "issue",
+          repo_ref: "test/repo",
+          number: 1,
+          disposition: "exact_source",
+        };
+      });
+    if (kind === "two-authorities") {
+      peer.disposition = "convert_active";
+      peer.record = structuredClone(authority.record);
+      peer.legacy_facts = structuredClone(authority.legacy_facts);
+    }
+    if (kind === "all-defer") {
+      authority.disposition = "defer";
+      delete authority.record;
+      delete authority.legacy_facts;
+    }
+    if (kind === "same-workspace") {
+      const oldWorkspace = peer.workspace,
+        oldRef = peer.task_ref;
+      peer.workspace = "main";
+      peer.task_ref = ".trellis/tasks/other";
+      fs.renameSync(path.join(sibling, oldRef), file(peer.task_ref));
+      // Keep inventory valid so this case reaches the identity-group guard.
+      for (const entry of plan.files)
+        if (
+          entry.target.workspace === oldWorkspace &&
+          entry.target.path.startsWith(`${oldRef}/`)
+        ) {
+          entry.target.workspace = peer.workspace;
+          entry.target.path = `${peer.task_ref}/${entry.target.path.slice(oldRef.length + 1)}`;
+        }
+    }
+    if (kind === "workspace-alias")
+      plan.workspaces.push({ id: "alias", root, project_relative: null });
+    if (kind === "task-alias") {
+      const link = file(".trellis/tasks/alias");
+      fs.symlinkSync(path.join(sibling, ref), link, "dir");
+      plan.tasks.push({
+        ...structuredClone(peer),
+        workspace: "main",
+        task_ref: ".trellis/tasks/alias",
+      });
+    }
+    if (kind === "omitted-task")
+      plan.tasks = plan.tasks.filter((task) => task !== peer);
+    if (kind === "omitted-artifact")
+      plan.files = plan.files.filter(
+        (entry) =>
+          !(
+            entry.target.workspace === "sibling" &&
+            entry.target.path === `${ref}/design.md`
+          ),
+      );
+    if (kind === "peer-artifact")
+      plan.files.push({
+        target: {
+          kind: "project",
+          workspace: "sibling",
+          path: `${ref}/migration/invented.json`,
+        },
+        owner: "artifact",
+        action: "write",
+        source: null,
+        target_content_base64: b64("{}"),
+        target_mode: 0o600,
+      });
+    if (kind === "archive") {
+      const taskRef = ".trellis/tasks/archive/2026-10/duplicate";
+      fs.mkdirSync(file(taskRef), { recursive: true });
+      fs.writeFileSync(
+        file(`${taskRef}/task.json`),
+        Buffer.from(required(peer.source).content_base64, "base64"),
+      );
+      plan.tasks.push({
+        ...structuredClone(peer),
+        workspace: "main",
+        task_ref: taskRef,
+        disposition: "history_only",
+      });
+    }
+    if (kind === "visible-history") {
+      const taskRef = ".trellis/tasks/archive/2026-10/main-task";
+      fs.mkdirSync(file(taskRef), { recursive: true });
+      plan.tasks.push({
+        workspace: "main",
+        task_ref: taskRef,
+        disposition: "history_only",
+        source: null,
+      });
+    }
+    const before = snapshot(),
+      peerBefore = snapshot(sibling);
+    await expect(execute()).rejects.toThrow(
+      kind === "same-workspace" ? "Task identity collision" : undefined,
+    );
+    expect(snapshot()).toEqual(before);
+    expect(snapshot(sibling)).toEqual(peerBefore);
+  });
+
+  it.each(["bytes", "mode", "deleted", "symlink"])(
+    "rejects binding %s drift on preview/execution",
+    async (kind) => {
+      const { sibling, binding } = inheritedCopies();
+      if (kind === "bytes") fs.appendFileSync(binding, " ");
+      if (kind === "mode") fs.chmodSync(binding, 0o640);
+      if (kind === "deleted") fs.unlinkSync(binding);
+      if (kind === "symlink") {
+        fs.unlinkSync(binding);
+        fs.symlinkSync(planPath, binding);
+      }
+      const before = snapshot(),
+        peerBefore = snapshot(sibling);
+      if (kind === "symlink")
+        await expect(execute(true)).rejects.toThrow("Symlink");
+      else
+        expect((await execute(true)).conflicts.join()).toContain("third_state");
+      await expect(execute()).rejects.toThrow();
+      expect(snapshot()).toEqual(before);
+      expect(snapshot(sibling)).toEqual(peerBefore);
+    },
+  );
+
+  it.each([
+    "checkout",
+    "topology",
+    "foreign-common",
+    "marker",
+    "binding-bytes",
+    "binding-mode",
+    "binding-path",
+  ])(
+    "rechecks %s drift after initial preflight and before writing",
+    async (kind) => {
+      const { sibling, binding } = inheritedCopies();
+      const actual = (
+        await vi.importActual<typeof import("node:child_process")>(
+          "node:child_process",
+        )
+      ).execFileSync;
+      let inventoryReads = 0,
+        changed = false;
+      vi.mocked(childProcess.execFileSync).mockImplementation(
+        (
+          ...args: Parameters<typeof childProcess.execFileSync>
+        ): ReturnType<typeof childProcess.execFileSync> => {
+          const argv = args[1];
+          if (
+            args[0] === "git" &&
+            Array.isArray(argv) &&
+            argv.includes("worktree") &&
+            argv.includes("list")
+          ) {
+            inventoryReads++;
+            if (inventoryReads === 2) changed = true;
+          }
+          if (changed && args[0] === "git" && Array.isArray(argv)) {
+            if (
+              kind === "checkout" &&
+              argv.includes("--show-current") &&
+              argv[1] === root
+            )
+              return Buffer.from("\n");
+            if (
+              kind === "topology" &&
+              argv.includes("worktree") &&
+              argv.includes("list")
+            ) {
+              const result = actual(...args);
+              return Buffer.from(
+                Buffer.from(result)
+                  .toString()
+                  .split("\0\0")
+                  .filter((entry) => !entry.startsWith(`worktree ${sibling}\0`))
+                  .join("\0\0"),
+              );
+            }
+            if (
+              kind === "foreign-common" &&
+              argv[1] === sibling &&
+              argv.includes("--git-common-dir")
+            )
+              return Buffer.from(`${os.tmpdir()}\n`);
+          }
+          if (
+            changed &&
+            [
+              "marker",
+              "binding-bytes",
+              "binding-mode",
+              "binding-path",
+            ].includes(kind)
+          ) {
+            if (kind === "marker")
+              write(".trellis/guru-team/extension.json", "{}");
+            if (kind === "binding-bytes") fs.appendFileSync(binding, " ");
+            if (kind === "binding-mode") fs.chmodSync(binding, 0o640);
+            if (kind === "binding-path") {
+              fs.unlinkSync(binding);
+              fs.symlinkSync(planPath, binding);
+            }
+            changed = false;
+          }
+          return actual(...args);
+        },
+      );
+      const writer = vi.spyOn(atomic, "writeFileAtomic");
+      await expect(execute()).rejects.toThrow();
+      expect(writer).not.toHaveBeenCalled();
+      expect(fs.existsSync(file(`${ref}/migration`))).toBe(false);
+      expect(fs.existsSync(path.join(sibling, ".trellis/scripts"))).toBe(false);
+    },
+  );
+
+  it.each(["invocation", "sibling", "git-free"])(
+    "keeps the public missing-binding marker boundary (%s)",
+    async (kind) => {
+      if (kind === "git-free") {
+        write(".trellis/guru-team/extension.json", "{}");
+        expect((await execute(true)).conflicts).toEqual([]);
+        await execute();
+        return;
+      }
+      const { sibling } = inheritedCopies();
+      // Unique IDs: remove inherited peers while preserving complete real inventory.
+      for (const task of plan.tasks.filter(
+        (task) => task.disposition === "defer",
+      )) {
+        const workspace = required(
+          plan.workspaces.find((row) => row.id === task.workspace),
+        );
+        fs.rmSync(path.join(workspace.root, task.task_ref), {
+          recursive: true,
+        });
+        plan.files = plan.files.filter(
+          (entry) =>
+            !(
+              entry.target.workspace === task.workspace &&
+              entry.target.path.startsWith(`${task.task_ref}/`)
+            ),
+        );
+      }
+      plan.tasks = plan.tasks.filter((task) => task.disposition !== "defer");
+      fs.rmSync(file(".git/trellis/task-branches"), { recursive: true });
+      plan.branch_bindings = [];
+      expect((await execute(true)).conflicts).toEqual([]);
+      const markerRoot = kind === "invocation" ? root : sibling;
+      fs.mkdirSync(path.join(markerRoot, ".trellis/guru-team"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(markerRoot, ".trellis/guru-team/extension.json"),
+        "{}",
+      );
+      const before = snapshot(),
+        peerBefore = snapshot(sibling);
+      await expect(execute()).rejects.toThrow("binding_required");
+      expect(snapshot()).toEqual(before);
+      expect(snapshot(sibling)).toEqual(peerBefore);
+    },
+  );
+});
+
+describe("inherited copy compatibility boundaries", () => {
+  it.each(["current", "legacy"])(
+    "supports reviewed %s authority sources with preserved peers",
+    async (kind) => {
+      const { sibling } = inheritedCopies();
+      if (kind === "current") {
+        const task = required(
+          plan.tasks.find(
+            (entry) => entry.workspace === "main" && entry.task_ref === ref,
+          ),
+        );
+        task.source = raw(
+          JSON.stringify(task.record),
+          required(task.source).mode,
+        );
+        write(
+          `${ref}/task.json`,
+          Buffer.from(task.source.content_base64, "base64"),
+          task.source.mode,
+        );
+        task.disposition = "current";
+        delete task.record;
+        delete task.legacy_facts;
+      } else {
+        plan.source.task_schema = "legacy";
+        for (const task of plan.tasks) {
+          replaceSource(task, (record) => {
+            delete record.source;
+            delete record.lifecycle_generation;
+            record.creator = "original";
+            record.assignee = "owner";
+          });
+          if (task.legacy_facts)
+            for (const fact of task.legacy_facts)
+              fact.reason.revision = `sha256:${required(task.source).sha256}`;
+        }
+      }
+      const before = snapshot(),
+        peerBefore = snapshot(sibling);
+      expect((await execute(true)).conflicts).toEqual([]);
+      expect(snapshot()).toEqual(before);
+      expect(snapshot(sibling)).toEqual(peerBefore);
+      await execute();
+      await execute();
+    },
+  );
+
+  it("requires reviewed live bindings for unique IDs, and freezes no-binding absence", async () => {
+    execFileSync("git", ["init", root]);
+    const branch = execFileSync(
+      "git",
+      ["-C", root, "branch", "--show-current"],
+      { encoding: "utf8" },
+    ).trim();
+    const bytes = JSON.stringify({
+      schema_version: "1.0",
+      task_id: "main-task",
+      lifecycle_generation: 0,
+      binding_revision: 0,
+      branch_name: branch,
+    });
+    write(".git/trellis/task-branches/main-task/0.json", bytes, 0o600);
+    const before = snapshot();
+    await expect(execute()).rejects.toThrow("Missing reviewed branch binding");
+    expect(snapshot()).toEqual(before);
+    plan.branch_bindings = [
+      {
+        task_id: "main-task",
+        lifecycle_generation: 0,
+        source: raw(bytes, 0o600),
+      },
+    ];
+    expect((await execute(true)).conflicts).toEqual([]);
+    fs.rmSync(file(".git/trellis/task-branches"), { recursive: true });
+    plan.branch_bindings = [];
+    const actual = (
+      await vi.importActual<typeof import("node:child_process")>(
+        "node:child_process",
+      )
+    ).execFileSync;
+    let inventories = 0;
+    vi.mocked(childProcess.execFileSync).mockImplementation(
+      (
+        ...args: Parameters<typeof childProcess.execFileSync>
+      ): ReturnType<typeof childProcess.execFileSync> => {
+        if (
+          Array.isArray(args[1]) &&
+          args[1].includes("--porcelain") &&
+          ++inventories === 2
+        )
+          write(".git/trellis/task-branches/main-task/0.json", bytes, 0o600);
+        return actual(...args);
+      },
+    );
+    const writer = vi.spyOn(atomic, "writeFileAtomic");
+    await expect(execute()).rejects.toThrow(
+      "Branch binding appeared during preflight",
+    );
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it("preserves absent peer artifacts without allowing invented Delivery writes", async () => {
+    const { sibling } = inheritedCopies();
+    plan.files.push({
+      target: {
+        kind: "project",
+        workspace: "sibling",
+        path: `${ref}/never-existed.txt`,
+      },
+      owner: "preserve",
+      action: "preserve",
+      source: null,
+    });
+    await execute();
+    expect(fs.existsSync(path.join(sibling, ref, "never-existed.txt"))).toBe(
+      false,
+    );
+    fs.writeFileSync(
+      path.join(sibling, ref, "never-existed.txt"),
+      "third state",
+    );
+    const before = snapshot(),
+      peerBefore = snapshot(sibling);
+    await expect(execute()).rejects.toThrow("third_state");
+    expect(snapshot()).toEqual(before);
+    expect(snapshot(sibling)).toEqual(peerBefore);
+  });
+
+  it.each([
+    "generation",
+    "revision",
+    "identity",
+    "empty-branch",
+    "extra-row",
+    "git-free",
+  ])("rejects malformed %s binding input before writes", async (kind) => {
+    let binding: string | undefined;
+    if (kind !== "git-free") binding = inheritedCopies().binding;
+    const row =
+      kind === "git-free"
+        ? { task_id: "main-task", lifecycle_generation: 0, source: raw("{}") }
+        : required(plan.branch_bindings?.[0]);
+    if (kind === "git-free") plan.branch_bindings = [row];
+    else {
+      const value = JSON.parse(
+        Buffer.from(row.source.content_base64, "base64").toString(),
+      ) as Record<string, unknown>;
+      if (kind === "generation") value.lifecycle_generation = null;
+      if (kind === "revision") value.binding_revision = true;
+      if (kind === "identity") value.task_id = "MAIN-task";
+      if (kind === "empty-branch") value.branch_name = "";
+      if (kind === "extra-row") Object.assign(row, { path: "elsewhere.json" });
+      row.source = raw(JSON.stringify(value), 0o600);
+      fs.writeFileSync(required(binding), JSON.stringify(value));
+    }
+    const before = snapshot(),
+      peerBefore = inheritedSibling ? snapshot(inheritedSibling) : undefined;
+    await expect(execute()).rejects.toThrow();
+    expect(snapshot()).toEqual(before);
+    if (inheritedSibling)
+      expect(snapshot(inheritedSibling)).toEqual(peerBefore);
   });
 });

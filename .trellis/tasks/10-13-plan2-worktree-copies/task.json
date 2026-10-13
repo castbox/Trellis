@@ -1,0 +1,26 @@
+{
+  "id": "plan2-worktree-copies",
+  "name": "plan2-worktree-copies",
+  "lifecycle_generation": 0,
+  "source": {
+    "kind": "no_issue"
+  },
+  "title": "Plan2 registered worktree copies",
+  "description": "Support normal inherited Task copies across registered worktrees with one binding-validated current execution location, preserving complete inventory, raw source bytes/modes and branch planning without reopening completed Issue31.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "cli",
+  "priority": "P2",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
