@@ -7,5 +7,5 @@
 {"file": ".trellis/spec/cli/unit-test/conventions.md", "reason": "Meaningful integration assertions and environment isolation"}
 {"file": ".trellis/spec/cli/backend/installed-version.md", "reason": "Exact-version candidate and same-version boundary"}
 {"file": ".trellis/spec/cli/backend/trellis-core-sdk.md", "reason": "Public predecessor validator/projection exports; no Core expansion"}
-{"file": ".trellis/tasks/10-13-plan2-mixed-source/research/source-analysis.md", "reason": "Frozen source facts and real-data read-only limits"}
-{"file": ".trellis/tasks/10-13-plan2-mixed-source/research/planning-contract-review.md", "reason": "Independent feasibility, identity and recovery constraints"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-plan2-mixed-source/research/source-analysis.md", "reason": "Frozen source facts and real-data read-only limits"}
+{"file": ".trellis/tasks/archive/2026-10/10-13-plan2-mixed-source/research/planning-contract-review.md", "reason": "Independent feasibility, identity and recovery constraints"}
