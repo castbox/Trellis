@@ -120,7 +120,8 @@ reader/writer still accepts only current records.
 ## Plan 2.0: Task / Delivery migration
 
 The source/target package version, Task schema and Delivery API are separate
-identities. Source Task schema is `legacy` or `1.0` with no Delivery API; the
+identities. Source Task schema is `legacy`, `1.0` or explicitly per-record
+`mixed`, with no Delivery API; the
 target is the candidate package, Task schema `2.0`, API `1.0`. Unlike plan 1,
 same-package-version schema cutover is legal. No version switch infers approval.
 
@@ -215,6 +216,117 @@ Verify controlled old copies with actual installed Python contract/continuation,
 registered sibling worktrees and common sessions, raw modes, stale zero-write,
 ordinary-failure replay and exact rollback. Plan-1 regressions remain required.
 These upstream tests do not supply Guru's private migration or joint acceptance.
+
+## Scenario: explicit mixed predecessor records
+
+### 1. Scope / Trigger
+
+A complete Plan2 inventory can contain both strict schema-1 and positively
+known legacy records. The caller may convert selected Tasks and defer the
+others while preserving their raw data. No incomplete inventory, source-version
+spoofing or private preprocessing is needed. This upstream contract has
+independent synthetic acceptance; downstream business cutover remains with
+its owner.
+
+### 2. Signatures
+
+The command, Plan schema `2.0`, Task schema `2.0`, Delivery API `1.0` and
+RawSnapshot shape are unchanged:
+
+```ts
+source.task_schema: "legacy" | "1.0" | "mixed";
+tasks[index].source_task_schema?: "legacy" | "1.0";
+```
+
+These declarations are fields inside the complete reviewed plan, not standalone
+CLI flags. Source package version remains the actual installation version;
+Plan2 permits existing same-package-version schema cutover.
+
+### 3. Contracts
+
+| Global source | Task disposition | Row selector |
+| --- | --- | --- |
+| `legacy` / `1.0` | Any | Forbidden; the global declaration is the sole predecessor source. |
+| `mixed` | `convert_active`, `convert_archive`, `defer` | Required, exactly `legacy` or `1.0`. |
+| `mixed` | `current`, `history_only` | Forbidden; existing current/history contracts apply. |
+
+Mixed describes explicit row review, not a requirement to include both formats.
+It may contain only one predecessor type or only valid current/history rows.
+`current` still requires strict schema2 and preserves raw bytes without a target
+record. History-only preserves its existing location, missing-record and history
+constraints; record-bearing active roots cannot use it.
+
+Convert and defer share the declared-source validation rule over the **original
+raw snapshot**: `1.0` uses public `taskRecordSchema.parse`, `legacy` uses positive
+`isKnownLegacyTaskRecord`. A mismatch rejects; never try another parser or
+classify from live partial targets. Conversion then uses unchanged
+`validateTaskV2Projection` and all existing fact/authority gates. Legacy default
+generation and immutable source/business/tree preservation remain unchanged.
+Retired personnel/status survive as exact original migration history, not
+schema2 lifecycle authority. Historical outcomes cannot manufacture current gates.
+
+Defer prepares raw preserve, with equal pre/post bytes and mode; it does not
+serialize, default fields, create migration/Delivery artifacts or call writers.
+Every Task descendant still needs an explicit file decision. Complete inventory,
+path safety, identity/provenance collision rules and unique binding authority
+remain unchanged. A same-ID legacy/schema1 pair cannot bypass those checks
+merely because the plan is mixed.
+
+Partial replay keeps the same frozen plan, selector and original snapshot even
+when live Task files already contain schema2 targets. Existing source-or-target
+comparison, third-state rejection and final topology/binding rechecks apply.
+Preserve paths and exact completed targets receive no writes. Caller rollback
+restores only the backed-up preview set, including raw bytes/modes/prior absence,
+and removes only added paths/empty directories.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing/bad mixed selector, homogeneous override or selector on current/history | Closed schema error at the Task row before repository processing/writes. |
+| Declared type does not match original source, malformed/unknown predecessor | Existing strict source validation error, no parser fallback and no writes. |
+| Current projection, nonempty active history-only or illegal location | Existing disposition rejection before writes. |
+| Omitted workspace/Task/artifact/session, invalid binding/collision/unsafe path | Existing inventory/authority/safety rejection before writes. |
+| Original/target/binding raw bytes or modes are a third state | Existing conflict/rejection; execution/retry writes nothing. |
+| Exact partial/completed state with unchanged frozen plan | Resume from originals; preserve/completed targets are not rewritten. |
+
+### 5. Good/Base/Bad Cases
+
+Good: one mixed inventory declares a schema1 conversion and legacy/schema1
+deferred peers, preserving every peer and descendant. Base: old homogeneous
+plans omit the selector and keep their original behavior. Bad: omit the legacy
+neighbors, annotate current rows as predecessors, or regenerate source snapshots
+from partially converted live Tasks.
+
+Older closed-schema executors reject `mixed` and the row field. Carry exact
+source, new CLI tar SHA, matching Core tar SHA and plan/template hashes with an
+offline candidate; equal package version alone does not prove extended-contract
+support. Do not publish a same-version npm replacement. Verify installed
+regular-file bytes/modes and use the actual public bin for fresh proof.
+
+### 6. Tests Required
+
+Use synthetic 28-schema1/3-legacy full inventory, both conversion directions,
+mixed archives/current/history/single-kind cases and declaration negatives.
+Assert raw hashes/modes/UTF-8/whitespace/planning descendants and zero preserve
+writer calls. Extend real registered inherited-copy fixtures with distinct
+source-format identities, order permutations and cross-format same-ID rejection.
+After an actual atomic failure with a Task already at schema2, replay the same
+plan, reject third states, prove completed no-write and exact rollback.
+Retain old Plan1/Plan2 regressions and root quality/minimum-Python checks.
+
+Fresh packed public-entry evidence includes CLI/Core provenance, full plan and
+recursive directory/symlink/file/mode snapshots, installed Python readers from
+both roots, scoped failure/recovery and rollback. Real sample classification,
+full preview, isolated execution and business recovery are distinct evidence;
+missing real owner inputs do not block upstream synthetic acceptance.
+
+### 7. Wrong vs Correct
+
+Wrong: add `mixed` to the enum but keep global-only source dispatch, allowing
+converters to skip validators or sending every defer row to legacy validation.
+Correct: enforce the declaration table during parsing and use one declared
+predecessor validation path for both convert and defer over frozen originals.
 
 ## Scenario: inherited active copies in registered worktrees
 

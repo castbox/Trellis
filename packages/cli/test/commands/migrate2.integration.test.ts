@@ -2468,18 +2468,25 @@ describe("binding-reviewed inherited registered Task copies", () => {
     },
   );
 
-  it.each([
-    "checkout",
-    "topology",
-    "foreign-common",
-    "marker",
-    "binding-bytes",
-    "binding-mode",
-    "binding-path",
-  ])(
-    "rechecks %s drift after initial preflight and before writing",
-    async (kind) => {
-      const { sibling, binding } = inheritedCopies();
+  it.each(
+    [
+      "checkout",
+      "topology",
+      "foreign-common",
+      "marker",
+      "binding-bytes",
+      "binding-mode",
+      "binding-path",
+    ].flatMap((kind) => [
+      { kind, mixed: false },
+      { kind, mixed: true },
+    ]),
+  )(
+    "rechecks $kind drift after initial preflight and before writing (mixed=$mixed)",
+    async ({ kind, mixed }) => {
+      const { sibling, binding } = mixed
+        ? mixedInheritedCopies()
+        : inheritedCopies();
       const actual = (
         await vi.importActual<typeof import("node:child_process")>(
           "node:child_process",
@@ -2770,4 +2777,930 @@ describe("inherited copy compatibility boundaries", () => {
     if (inheritedSibling)
       expect(snapshot(inheritedSibling)).toEqual(peerBefore);
   });
+});
+
+// Mixed-source tests use only generated records; no business sample is copied.
+type PlanTask = MigrationPlan2["tasks"][number];
+function mixedSource(task: PlanTask, schema: "legacy" | "1.0"): void {
+  task.source_task_schema = schema;
+  if (schema === "legacy") {
+    replaceSource(task, (record) => {
+      delete record.source;
+      delete record.lifecycle_generation;
+      record.creator = "retired-creator";
+      record.assignee = "retired-assignee";
+    });
+    const source = required(task.source);
+    const bytes = ` \n${JSON.stringify(JSON.parse(Buffer.from(source.content_base64, "base64").toString()), null, 4)}\n\n`;
+    task.source = raw(bytes, source.mode);
+    const workspace = required(
+      plan.workspaces.find((w) => w.id === task.workspace),
+    );
+    const full = path.join(workspace.root, task.task_ref, "task.json");
+    fs.writeFileSync(full, bytes);
+    fs.chmodSync(full, source.mode);
+  }
+  for (const fact of task.legacy_facts ?? [])
+    fact.reason.revision = `sha256:${required(task.source).sha256}`;
+}
+function mixedInheritedCopies(): ReturnType<typeof inheritedCopies> {
+  const result = inheritedCopies();
+  plan.source.task_schema = "mixed";
+  for (const task of plan.tasks)
+    mixedSource(task, task.task_ref === ref ? "1.0" : "legacy");
+  return result;
+}
+function relocateTask(task: PlanTask, nextRef: string): void {
+  const workspace = required(
+    plan.workspaces.find((w) => w.id === task.workspace),
+  );
+  const oldRef = task.task_ref;
+  fs.mkdirSync(path.dirname(path.join(workspace.root, nextRef)), {
+    recursive: true,
+  });
+  fs.renameSync(
+    path.join(workspace.root, oldRef),
+    path.join(workspace.root, nextRef),
+  );
+  task.task_ref = nextRef;
+  for (const entry of plan.files)
+    if (
+      entry.target.workspace === task.workspace &&
+      entry.target.path.startsWith(`${oldRef}/`)
+    )
+      entry.target.path = `${nextRef}/${entry.target.path.slice(oldRef.length + 1)}`;
+  for (const fact of task.legacy_facts ?? [])
+    fact.reason.locator = `${nextRef}/migration/source-task.json`;
+}
+/** Includes absent/new directories and symlinks, unlike the older file-only snapshot. */
+function fullTree(directory = root): Map<string, string> {
+  const result = new Map<string, string>();
+  function scan(full: string): void {
+    const stat = fs.lstatSync(full);
+    const mode = stat.mode & 0o777;
+    if (stat.isSymbolicLink())
+      result.set(full, `link:${mode}:${fs.readlinkSync(full)}`);
+    else if (stat.isDirectory()) {
+      result.set(full, `dir:${mode}`);
+      for (const name of fs.readdirSync(full).sort())
+        scan(path.join(full, name));
+    } else
+      result.set(
+        full,
+        `file:${mode}:${rawMigrationDigest(fs.readFileSync(full))}`,
+      );
+  }
+  scan(directory);
+  return result;
+}
+async function rejectMixed(message: string | RegExp): Promise<void> {
+  const before = fullTree(),
+    peer = inheritedSibling ? fullTree(inheritedSibling) : undefined;
+  const writer = vi.spyOn(atomic, "writeFileAtomic");
+  await expect(execute()).rejects.toThrow(message);
+  expect(writer).not.toHaveBeenCalled();
+  writer.mockRestore();
+  expect(fullTree()).toEqual(before);
+  if (inheritedSibling) expect(fullTree(inheritedSibling)).toEqual(peer);
+}
+
+describe("explicit mixed Plan2 predecessor declarations", () => {
+  it("AC1 previews a complete 28/3 inventory and converts only selected schema1 with lossless peers", async () => {
+    plan.source.task_schema = "mixed";
+    mixedSource(required(plan.tasks[0]), "1.0");
+    for (let index = 1; index < 31; index++) {
+      const taskRef = `.trellis/tasks/10-13-neighbor-${index}`;
+      const record = emptyTaskRecord({
+        id: `neighbor-${index}`,
+        title: "保留 α",
+        meta: { whitespace: "  " },
+      });
+      const source = ` \n${JSON.stringify(record, null, 4)}\n\n`;
+      const mode = index % 2 ? 0o600 : 0o644;
+      write(`${taskRef}/task.json`, source, mode);
+      const task: PlanTask = {
+        workspace: "main",
+        task_ref: taskRef,
+        disposition: "defer",
+        source: raw(source, mode),
+      };
+      plan.tasks.push(task);
+      mixedSource(task, index >= 28 ? "legacy" : "1.0");
+      for (const name of [
+        "prd.md",
+        "design.md",
+        "implement.md",
+        "implement.jsonl",
+        "check.jsonl",
+        "research/nested/evidence.bin",
+      ]) {
+        const bytes = name.endsWith(".bin")
+          ? Buffer.from([0, 255, 42])
+          : Buffer.from(` ${index} 分支 ${name}\n\n`);
+        write(`${taskRef}/${name}`, bytes, mode);
+        plan.files.push({
+          target: {
+            kind: "project",
+            workspace: "main",
+            path: `${taskRef}/${name}`,
+          },
+          owner: "preserve",
+          action: "preserve",
+          source: raw(bytes, mode),
+        });
+      }
+    }
+    expect(
+      plan.tasks.filter((task) => task.source_task_schema === "1.0"),
+    ).toHaveLength(28);
+    expect(
+      plan.tasks.filter((task) => task.source_task_schema === "legacy"),
+    ).toHaveLength(3);
+    const before = fullTree();
+    expect((await execute(true)).conflicts).toEqual([]);
+    expect(fullTree()).toEqual(before);
+    const writer = vi.spyOn(atomic, "writeFileAtomic");
+    await execute();
+    for (const task of plan.tasks) {
+      const source = required(task.source),
+        full = file(`${task.task_ref}/task.json`);
+      if (task.disposition === "defer") {
+        expect(fs.readFileSync(full)).toEqual(
+          Buffer.from(source.content_base64, "base64"),
+        );
+        expect(fs.statSync(full).mode & 0o777).toBe(source.mode);
+        expect(fs.existsSync(file(`${task.task_ref}/migration`))).toBe(false);
+        expect(fs.existsSync(file(`${task.task_ref}/deliveries`))).toBe(false);
+        expect(
+          writer.mock.calls.some(([name]) =>
+            name.startsWith(file(`${task.task_ref}/`)),
+          ),
+        ).toBe(false);
+      } else {
+        expect(JSON.parse(fs.readFileSync(full, "utf8"))).toEqual(task.record);
+        expect(
+          fs.readFileSync(file(`${task.task_ref}/migration/source-task.json`)),
+        ).toEqual(Buffer.from(source.content_base64, "base64"));
+      }
+    }
+    for (const entry of plan.files.filter(
+      (entry) => entry.owner === "preserve",
+    )) {
+      expect(fs.readFileSync(file(entry.target.path))).toEqual(
+        Buffer.from(required(entry.source).content_base64, "base64"),
+      );
+      expect(fs.statSync(file(entry.target.path)).mode & 0o777).toBe(
+        required(entry.source).mode,
+      );
+      expect(
+        writer.mock.calls.some(([name]) => name === file(entry.target.path)),
+      ).toBe(false);
+    }
+    writer.mockClear();
+    const applied = fullTree();
+    await execute();
+    expect(writer).not.toHaveBeenCalled();
+    expect(fullTree()).toEqual(applied);
+  });
+});
+
+function mixedDisposition(
+  task: PlanTask,
+  disposition: PlanTask["disposition"],
+): void {
+  task.disposition = disposition;
+  if (disposition === "convert_archive" || disposition === "history_only")
+    relocateTask(task, ".trellis/tasks/archive/2026-10/mixed-archive");
+  if (disposition === "current") {
+    task.source = raw(
+      JSON.stringify(task.record, null, 4) + "\n\n",
+      required(task.source).mode,
+    );
+    write(
+      `${task.task_ref}/task.json`,
+      Buffer.from(task.source.content_base64, "base64"),
+      task.source.mode,
+    );
+  }
+  if (["defer", "current", "history_only"].includes(disposition)) {
+    delete task.record;
+    delete task.legacy_facts;
+  }
+  if (["current", "history_only"].includes(disposition))
+    delete task.source_task_schema;
+}
+
+describe("mixed source closed input and compatibility matrix", () => {
+  it.each(["convert_active", "convert_archive", "defer"] as const)(
+    "AC2 requires an explicit valid selector on %s, rejecting malformed values before writes",
+    async (disposition) => {
+      plan.source.task_schema = "mixed";
+      const task = required(plan.tasks[0]);
+      mixedSource(task, "1.0");
+      mixedDisposition(task, disposition);
+      for (const selector of [undefined, null, "mixed", "2.0", "", 1, {}, []]) {
+        const row = task as unknown as Record<string, unknown>;
+        if (selector === undefined) delete row.source_task_schema;
+        else row.source_task_schema = selector;
+        await rejectMixed(/source_task_schema/);
+      }
+      task.source_task_schema = "1.0";
+      expect((await execute(true)).conflicts).toEqual([]);
+    },
+  );
+
+  it.each(["legacy", "1.0"] as const)(
+    "AC2 forbids homogeneous %s row overrides for every disposition",
+    async (mode) => {
+      for (const disposition of [
+        "convert_active",
+        "convert_archive",
+        "defer",
+        "current",
+        "history_only",
+      ] as const) {
+        // Every case starts from a fresh copy of the original otherwise valid plan.
+        const original = structuredClone(plan),
+          before = fullTree();
+        const task = required(plan.tasks[0]);
+        plan.source.task_schema = mode;
+        mixedSource(task, mode);
+        mixedDisposition(task, disposition);
+        task.source_task_schema = mode;
+        await rejectMixed(/forbidden/);
+        // Restore only this fixture's mutation before exercising the next row.
+        const workspace = path.join(root, task.task_ref);
+        if (task.task_ref !== ref) fs.renameSync(workspace, file(ref));
+        const first = required(original.tasks[0]);
+        write(
+          `${ref}/task.json`,
+          Buffer.from(required(first.source).content_base64, "base64"),
+          required(first.source).mode,
+        );
+        if (fs.existsSync(file(".trellis/tasks/archive")))
+          fs.rmSync(file(".trellis/tasks/archive"), { recursive: true });
+        plan = original;
+        expect(fullTree()).toEqual(before);
+      }
+    },
+  );
+
+  it.each(["current", "history_only"] as const)(
+    "AC2 forbids mixed selector on otherwise-valid %s rows",
+    async (disposition) => {
+      const task = required(plan.tasks[0]);
+      plan.source.task_schema = "mixed";
+      mixedDisposition(task, disposition);
+      task.source_task_schema = "1.0";
+      await rejectMixed(/forbidden/);
+      delete task.source_task_schema;
+      expect((await execute(true)).conflicts).toEqual([]);
+    },
+  );
+
+  it.each(["convert_active", "convert_archive", "defer"] as const)(
+    "AC2 validates declared source on %s without parser fallback in either mismatch direction",
+    async (disposition) => {
+      const task = required(plan.tasks[0]);
+      plan.source.task_schema = "mixed";
+      mixedDisposition(task, disposition);
+      task.source_task_schema = "legacy";
+      await rejectMixed(/declared legacy schema/);
+      mixedSource(task, "legacy");
+      task.source_task_schema = "1.0";
+      await rejectMixed(/source_task_schema=1.0/);
+    },
+  );
+
+  it.each(["1.0", "legacy"] as const)(
+    "AC2 rejects unknown and malformed %s sources without writes",
+    async (schema) => {
+      plan.source.task_schema = "mixed";
+      const task = required(plan.tasks[0]);
+      mixedSource(task, schema);
+      replaceSource(task, (record) => {
+        record.unknown_field = "unsupported";
+      });
+      await rejectMixed(
+        schema === "1.0" ? /not a supported field/ : /declared legacy schema/,
+      );
+      task.source = raw('{"id":"main-task",', required(task.source).mode);
+      write(
+        `${ref}/task.json`,
+        Buffer.from(task.source.content_base64, "base64"),
+        task.source.mode,
+      );
+      await rejectMixed(/JSON/);
+    },
+  );
+
+  it.each(
+    (["1.0", "legacy"] as const).flatMap((schema) => [
+      { schema, archive: false },
+      { schema, archive: true },
+    ]),
+  )(
+    "AC3 permits single-kind mixed $schema conversion and exact source history (archive=$archive)",
+    async ({ schema, archive }) => {
+      plan.source.task_schema = "mixed";
+      const task = required(plan.tasks[0]);
+      mixedSource(task, schema);
+      if (archive) mixedDisposition(task, "convert_archive");
+      if (schema === "1.0") {
+        replaceSource(task, (record) => {
+          record.lifecycle_generation = 7;
+          record.source = {
+            kind: "issue",
+            repo_ref: "synthetic/repository",
+            number: 23,
+            disposition: "reference_only",
+          };
+          record.children = ["synthetic-child"];
+          record.parent = "synthetic-parent";
+          record.meta = { business: "保留", tree: { arbitrary: [1, true] } };
+        });
+        task.record = {
+          ...(task.record as Record<string, unknown>),
+          lifecycle_generation: 7,
+          source: {
+            kind: "issue",
+            repo_ref: "synthetic/repository",
+            number: 23,
+            disposition: "reference_only",
+          },
+          children: ["synthetic-child"],
+          parent: "synthetic-parent",
+          meta: { business: "保留", tree: { arbitrary: [1, true] } },
+        };
+        for (const fact of task.legacy_facts ?? [])
+          fact.reason.revision = `sha256:${required(task.source).sha256}`;
+      }
+      const before = fullTree();
+      expect((await execute(true)).conflicts).toEqual([]);
+      expect(fullTree()).toEqual(before);
+      await execute();
+      expect(
+        JSON.parse(fs.readFileSync(file(`${task.task_ref}/task.json`), "utf8")),
+      ).toEqual(task.record);
+      const original = required(task.source),
+        backup = file(`${task.task_ref}/migration/source-task.json`);
+      expect(fs.readFileSync(backup)).toEqual(
+        Buffer.from(original.content_base64, "base64"),
+      );
+      expect(fs.statSync(backup).mode & 0o777).toBe(original.mode);
+      if (schema === "legacy") {
+        const retired = JSON.parse(fs.readFileSync(backup, "utf8"));
+        expect(retired).toMatchObject({
+          creator: "retired-creator",
+          assignee: "retired-assignee",
+          status: "completed",
+        });
+      }
+    },
+  );
+
+  it.each(["current", "history_only", "both"] as const)(
+    "AC3 permits mixed inventories containing only %s without predecessor selectors",
+    async (kind) => {
+      plan.source.task_schema = "mixed";
+      const task = required(plan.tasks[0]);
+      mixedDisposition(
+        task,
+        kind === "history_only" ? "history_only" : "current",
+      );
+      if (kind === "both") {
+        for (const [taskRef, bytes] of [
+          [
+            ".trellis/tasks/archive/2026-10/malformed",
+            '{"id":"historical","unknown":true}',
+          ],
+          [".trellis/tasks/archive/2026-10/missing", null],
+        ] as const) {
+          fs.mkdirSync(file(taskRef), { recursive: true });
+          if (bytes !== null) write(`${taskRef}/task.json`, bytes, 0o600);
+          plan.tasks.push({
+            workspace: "main",
+            task_ref: taskRef,
+            disposition: "history_only",
+            source: bytes === null ? null : raw(bytes, 0o600),
+          });
+        }
+      }
+      const before = fullTree();
+      expect((await execute(true)).conflicts).toEqual([]);
+      expect(fullTree()).toEqual(before);
+      const writer = vi.spyOn(atomic, "writeFileAtomic");
+      await execute();
+      for (const row of plan.tasks)
+        expect(
+          writer.mock.calls.some(([name]) =>
+            name.startsWith(file(`${row.task_ref}/`)),
+          ),
+        ).toBe(false);
+    },
+  );
+
+  it.each([
+    "current-record",
+    "active-history",
+    "wrong-location",
+    "unknown-row",
+  ])("AC3 retains %s rejection in mixed mode", async (kind) => {
+    plan.source.task_schema = "mixed";
+    const task = required(plan.tasks[0]);
+    if (kind === "current-record") {
+      const record = task.record;
+      mixedDisposition(task, "current");
+      task.record = record;
+      await rejectMixed(/preserve raw bytes/);
+    } else if (kind === "active-history") {
+      task.disposition = "history_only";
+      delete task.record;
+      delete task.legacy_facts;
+      await rejectMixed(/location mismatch/);
+    } else if (kind === "wrong-location") {
+      mixedSource(task, "1.0");
+      task.disposition = "convert_archive";
+      await rejectMixed(/location mismatch/);
+    } else {
+      mixedSource(task, "1.0");
+      (task as unknown as Record<string, unknown>).extra_selector = "legacy";
+      await rejectMixed(/Unrecognized key/);
+    }
+  });
+});
+
+function previewBackups(
+  before: Map<string, string>,
+): Map<string, { bytes: Buffer; mode: number }> {
+  const backups = new Map<string, { bytes: Buffer; mode: number }>();
+  for (const [full, state] of before)
+    if (state.startsWith("file:"))
+      backups.set(full, {
+        bytes: fs.readFileSync(full),
+        mode: fs.statSync(full).mode & 0o777,
+      });
+  return backups;
+}
+function rollbackMixed(
+  actions: Awaited<ReturnType<typeof migrate>>["actions"],
+  before: Map<string, string>,
+  backups: ReturnType<typeof previewBackups>,
+  sibling: string,
+): void {
+  for (const action of [...actions].reverse()) {
+    if (action.action === "preserve") continue;
+    const backup = backups.get(action.path);
+    if (backup) {
+      fs.writeFileSync(action.path, backup.bytes);
+      fs.chmodSync(action.path, backup.mode);
+    } else fs.rmSync(action.path, { force: true });
+  }
+  // The caller removes only new empty directories, never a recursive broad restore.
+  const after = new Map([...fullTree(), ...fullTree(sibling)]);
+  for (const [full, state] of [...after].sort(
+    ([a], [b]) => b.length - a.length,
+  ))
+    if (
+      !before.has(full) &&
+      state.startsWith("dir:") &&
+      fs.readdirSync(full).length === 0
+    )
+      fs.rmdirSync(full);
+  expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(before);
+}
+
+describe("mixed inherited-copy authority and original-source recovery", () => {
+  it.each([false, true])(
+    "AC5/AC6 converts opposite declared sources with unique bindings, preserves originals and exact rollback (reverse=%s)",
+    async (reverse) => {
+      const { sibling } = mixedInheritedCopies();
+      if (reverse) plan.tasks.reverse();
+      const before = new Map([...fullTree(), ...fullTree(sibling)]),
+        backups = previewBackups(before);
+      const preview = await execute(true);
+      expect(preview.conflicts).toEqual([]);
+      expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(before);
+      const writer = vi.spyOn(atomic, "writeFileAtomic");
+      await execute();
+      for (const task of plan.tasks) {
+        const workspace = required(
+          plan.workspaces.find((w) => w.id === task.workspace),
+        );
+        const full = path.join(workspace.root, task.task_ref, "task.json"),
+          source = required(task.source);
+        if (task.disposition === "defer") {
+          expect(fs.readFileSync(full)).toEqual(
+            Buffer.from(source.content_base64, "base64"),
+          );
+          expect(fs.statSync(full).mode & 0o777).toBe(source.mode);
+          expect(
+            fs.existsSync(
+              path.join(workspace.root, task.task_ref, "migration"),
+            ),
+          ).toBe(false);
+          expect(
+            fs.existsSync(
+              path.join(workspace.root, task.task_ref, "deliveries"),
+            ),
+          ).toBe(false);
+          expect(
+            writer.mock.calls.some(([name]) =>
+              name.startsWith(
+                path.join(workspace.root, task.task_ref) + path.sep,
+              ),
+            ),
+          ).toBe(false);
+        } else {
+          expect(JSON.parse(fs.readFileSync(full, "utf8"))).toEqual(
+            task.record,
+          );
+          const backup = path.join(
+            workspace.root,
+            task.task_ref,
+            "migration/source-task.json",
+          );
+          expect(fs.readFileSync(backup)).toEqual(
+            Buffer.from(source.content_base64, "base64"),
+          );
+          expect(fs.statSync(backup).mode & 0o777).toBe(source.mode);
+        }
+      }
+      for (const entry of plan.files.filter(
+        (entry) => entry.action === "preserve",
+      )) {
+        const workspace = required(
+          plan.workspaces.find((w) => w.id === entry.target.workspace),
+        );
+        const full = path.join(workspace.root, entry.target.path);
+        expect(fs.readFileSync(full)).toEqual(
+          Buffer.from(required(entry.source).content_base64, "base64"),
+        );
+        expect(fs.statSync(full).mode & 0o777).toBe(
+          required(entry.source).mode,
+        );
+        expect(writer.mock.calls.some(([name]) => name === full)).toBe(false);
+      }
+      writer.mockClear();
+      const migrated = new Map([...fullTree(), ...fullTree(sibling)]);
+      await execute();
+      expect(writer).not.toHaveBeenCalled();
+      expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(migrated);
+      rollbackMixed(preview.actions, before, backups, sibling);
+    },
+  );
+
+  // Reader behavior is independent of plan order; cover each invocation root once.
+  it.each(["main", "sibling"] as const)(
+    "AC5 resolves exact Python readers and rejects deferred predecessors from %s",
+    async (invocation) => {
+      const { sibling } = mixedInheritedCopies();
+      await execute();
+      const migrated = new Map([...fullTree(), ...fullTree(sibling)]);
+      const python = process.platform === "win32" ? "python" : "python3";
+      const workspace = invocation === "main" ? root : sibling;
+      for (const [id, expectedRoot, taskRef] of [
+        ["main-task", root, ref],
+        ["second-task", sibling, ".trellis/tasks/10-12-second"],
+      ]) {
+        const options = {
+          cwd: workspace,
+          env: {
+            ...process.env,
+            CODEX_THREAD_ID: id,
+            PYTHONDONTWRITEBYTECODE: "1",
+          },
+          encoding: "utf8" as const,
+          stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
+        };
+        const scripts = path.join(workspace, ".trellis/scripts");
+        expect(
+          execFileSync(
+            python,
+            ["-B", path.join(scripts, "task.py"), "current", "--source"],
+            options,
+          ),
+        ).toContain(`Task workspace: ${expectedRoot}`);
+        const context = JSON.parse(
+          execFileSync(
+            python,
+            ["-B", path.join(scripts, "get_context.py"), "--json"],
+            options,
+          ),
+        ) as { currentTask: { taskWorkspaceRoot: string } };
+        expect(context.currentTask.taskWorkspaceRoot).toBe(expectedRoot);
+        expect(
+          execFileSync(
+            python,
+            [
+              "-B",
+              path.join(scripts, "get_context.py"),
+              "--mode",
+              "continuation",
+            ],
+            options,
+          ),
+        ).toContain("Read the exact session Task");
+        const contract = JSON.parse(
+          execFileSync(
+            python,
+            ["-B", path.join(scripts, "delivery.py"), "contract", "--json"],
+            options,
+          ),
+        );
+        expect(contract).toMatchObject({
+          task_schema: "2.0",
+          delivery_api: "1.0",
+        });
+        const runtime = JSON.parse(
+          execFileSync(
+            python,
+            [
+              "-B",
+              path.join(scripts, "get_context.py"),
+              "--mode",
+              "runtime-contract",
+            ],
+            options,
+          ),
+        );
+        expect(runtime).toMatchObject({
+          task_schema: "2.0",
+          delivery_api: "1.0",
+        });
+        const selection = JSON.parse(
+          execFileSync(
+            python,
+            ["-B", path.join(scripts, "delivery.py"), "current", "--json"],
+            options,
+          ),
+        );
+        expect(selection).toEqual({
+          kind: "no_current_delivery",
+          key: { task_id: id, lifecycle_generation: 0 },
+        });
+        const rejected = childProcess.spawnSync(
+          python,
+          [
+            "-B",
+            path.join(scripts, "delivery.py"),
+            "select",
+            "--task",
+            path.join(expectedRoot === root ? sibling : root, taskRef),
+            "--delivery",
+            "00000000-0000-0000-0000-000000000001",
+          ],
+          options,
+        );
+        expect(rejected.status).toBe(1);
+        // A missing Delivery is not proof that the deferred predecessor was rejected.
+        expect(rejected.stderr).toContain(
+          taskRef === ref
+            ? "unsupported_task_schema"
+            : "task_metadata_unsupported-fields",
+        );
+      }
+      expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(migrated);
+    },
+  );
+
+  it("AC6 fails the actual atomic rename after a Task reaches schema2, then previews/resumes original declarations and rolls back", async () => {
+    const { sibling } = mixedInheritedCopies();
+    const before = new Map([...fullTree(), ...fullTree(sibling)]),
+      backups = previewBackups(before);
+    const preview = await execute(true);
+    const actual = fs.renameSync;
+    let failed = false;
+    const fault = vi.spyOn(fs, "renameSync").mockImplementation((...args) => {
+      if (
+        !failed &&
+        String(args[1]) === file(`${ref}/migration/source-task.json`)
+      ) {
+        expect(
+          JSON.parse(fs.readFileSync(file(`${ref}/task.json`), "utf8"))
+            .schema_version,
+        ).toBe("2.0");
+        failed = true;
+        throw new Error(
+          "mixed actual atomic rename failure after Task conversion",
+        );
+      }
+      return actual(...args);
+    });
+    await expect(execute()).rejects.toThrow(
+      "mixed actual atomic rename failure after Task conversion",
+    );
+    fault.mockRestore();
+    expect(failed).toBe(true);
+    expect(
+      JSON.parse(fs.readFileSync(file(`${ref}/task.json`), "utf8"))
+        .schema_version,
+    ).toBe("2.0");
+    expect(
+      JSON.parse(
+        Buffer.from(
+          required(plan.tasks[0]?.source).content_base64,
+          "base64",
+        ).toString(),
+      ),
+    ).not.toHaveProperty("schema_version");
+    expect(fullTree().size).toBeGreaterThan(
+      before.size - fullTree(sibling).size,
+    );
+    expect([...fullTree().keys()].some((name) => name.endsWith(".tmp"))).toBe(
+      false,
+    );
+    const partial = new Map([...fullTree(), ...fullTree(sibling)]);
+    expect((await execute(true)).conflicts).toEqual([]);
+    expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(partial);
+    await execute();
+    const applied = new Map([...fullTree(), ...fullTree(sibling)]),
+      writer = vi.spyOn(atomic, "writeFileAtomic");
+    await execute();
+    expect(writer).not.toHaveBeenCalled();
+    writer.mockRestore();
+    expect(new Map([...fullTree(), ...fullTree(sibling)])).toEqual(applied);
+    rollbackMixed(preview.actions, before, backups, sibling);
+  });
+
+  it.each([
+    "source-bytes",
+    "source-mode",
+    "target-bytes",
+    "target-mode",
+    "binding-bytes",
+    "binding-mode",
+  ])(
+    "AC6 rejects %s third states after mixed conversion before additional writes",
+    async (kind) => {
+      const { sibling, binding } = mixedInheritedCopies();
+      await execute();
+      const full = kind.startsWith("binding")
+        ? binding
+        : kind.startsWith("target")
+          ? file(`${ref}/task.json`)
+          : path.join(sibling, ref, "task.json");
+      if (kind.endsWith("bytes")) fs.appendFileSync(full, " ");
+      else
+        fs.chmodSync(
+          full,
+          (fs.statSync(full).mode & 0o777) === 0o600 ? 0o640 : 0o600,
+        );
+      await rejectMixed(/third_state|changed/);
+    },
+  );
+
+  it.each([
+    ["cross-category-id", /Task identity collision/],
+    ["generation", /Task identity collision/],
+    ["provenance", /Task identity collision/],
+    ["case", /Task identity collision/],
+    ["two-authorities", /Ambiguous Task identity|Task identity collision/],
+    ["all-defer", /Task identity collision/],
+    ["missing-binding", /Missing reviewed branch binding/],
+    ["wrong-binding", /Branch binding selects a different Task authority/],
+    ["malformed-binding", /invalid_task_branch_binding/],
+    ["workspace-alias", /workspace|Workspace/],
+    ["task-alias", /symlink|canonical|directory|boundary/],
+    ["omitted-task", /inventory/],
+    ["omitted-artifact", /artifact disposition/],
+    ["peer-artifact", /Unowned Task artifact/],
+    ["wrong-location", /location mismatch/],
+    ["marker", /binding_required/],
+  ] as const)(
+    "AC5 rejects mixed %s with exact zero-write evidence",
+    async (kind, message) => {
+      const { sibling, binding } = mixedInheritedCopies();
+      const authority = required(
+        plan.tasks.find((t) => t.workspace === "main" && t.task_ref === ref),
+      );
+      const peer = required(
+        plan.tasks.find((t) => t.workspace === "sibling" && t.task_ref === ref),
+      );
+      if (kind === "cross-category-id") mixedSource(peer, "legacy");
+      if (kind === "generation")
+        replaceSource(peer, (record) => {
+          record.lifecycle_generation = 2;
+        });
+      if (kind === "provenance")
+        replaceSource(peer, (record) => {
+          record.source = {
+            kind: "issue",
+            repo_ref: "synthetic/repo",
+            number: 1,
+            disposition: "reference_only",
+          };
+        });
+      if (kind === "case")
+        replaceSource(peer, (record) => {
+          record.id = "MAIN-task";
+        });
+      if (kind === "two-authorities") {
+        peer.disposition = "convert_active";
+        peer.record = structuredClone(authority.record);
+        (peer.record as Record<string, unknown>).title =
+          "Independently reviewed branch variant";
+        peer.legacy_facts = structuredClone(authority.legacy_facts);
+      }
+      if (kind === "all-defer") {
+        authority.disposition = "defer";
+        delete authority.record;
+        delete authority.legacy_facts;
+      }
+      if (kind === "missing-binding") plan.branch_bindings = [];
+      if (kind === "wrong-binding" || kind === "malformed-binding") {
+        const entry = required(plan.branch_bindings?.[0]);
+        const value = JSON.parse(
+          Buffer.from(entry.source.content_base64, "base64").toString(),
+        ) as Record<string, unknown>;
+        if (kind === "wrong-binding") value.branch_name = "inherited-sibling";
+        else value.binding_revision = true;
+        entry.source = raw(JSON.stringify(value), 0o600);
+        fs.writeFileSync(
+          binding,
+          Buffer.from(entry.source.content_base64, "base64"),
+        );
+      }
+      if (kind === "workspace-alias")
+        plan.workspaces.push({ id: "alias", root, project_relative: null });
+      if (kind === "task-alias") {
+        fs.symlinkSync(
+          path.join(sibling, ref),
+          file(".trellis/tasks/alias"),
+          "dir",
+        );
+        plan.tasks.push({
+          ...structuredClone(peer),
+          workspace: "main",
+          task_ref: ".trellis/tasks/alias",
+        });
+      }
+      if (kind === "omitted-task")
+        plan.tasks = plan.tasks.filter((t) => t !== peer);
+      if (kind === "omitted-artifact")
+        plan.files = plan.files.filter(
+          (entry) =>
+            !(
+              entry.target.workspace === "sibling" &&
+              entry.target.path === `${ref}/design.md`
+            ),
+        );
+      if (kind === "peer-artifact")
+        plan.files.push({
+          target: {
+            kind: "project",
+            workspace: "sibling",
+            path: `${ref}/deliveries/invented.json`,
+          },
+          owner: "artifact",
+          action: "write",
+          source: null,
+          target_content_base64: b64("{}"),
+          target_mode: 0o600,
+        });
+      if (kind === "wrong-location") peer.disposition = "convert_archive";
+      if (kind === "marker") {
+        // Remove inherited duplicate groups but retain complete inventory: a marker
+        // on a unique authority must still demand reviewed binding information.
+        for (const task of plan.tasks.filter(
+          (t) => t.disposition === "defer",
+        )) {
+          const workspace = required(
+            plan.workspaces.find((w) => w.id === task.workspace),
+          );
+          fs.rmSync(path.join(workspace.root, task.task_ref), {
+            recursive: true,
+          });
+          plan.files = plan.files.filter(
+            (entry) =>
+              !(
+                entry.target.workspace === task.workspace &&
+                entry.target.path.startsWith(`${task.task_ref}/`)
+              ),
+          );
+        }
+        plan.tasks = plan.tasks.filter((t) => t.disposition !== "defer");
+        plan.branch_bindings = [];
+        fs.rmSync(file(".git/trellis/task-branches"), { recursive: true });
+        write(".trellis/guru-team/extension.json", "{}");
+      }
+      await rejectMixed(message);
+    },
+  );
+
+  it.each(["legacy", "1.0"] as const)(
+    "AC3 preserves exact homogeneous %s validator messages without mixed diagnostic wrapping",
+    async (mode) => {
+      plan.source.task_schema = mode;
+      const task = required(plan.tasks[0]);
+      if (mode === "legacy")
+        await rejectMixed(/^Source Task is not the declared legacy schema$/);
+      else {
+        replaceSource(task, (record) => {
+          record.extra = "unknown";
+        });
+        await rejectMixed(/^task.extra is not a supported field$/);
+      }
+    },
+  );
 });
