@@ -42,7 +42,11 @@ import {
 import { readDeliveryWorkflowContract } from "../utils/delivery-workflow.js";
 import { computeHash } from "../utils/template-hash.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
-import { migrationPlan2Schema, type RawSnapshot } from "./migration2-schema.js";
+import {
+  migrationPlan2Schema,
+  type MigrationPlan2,
+  type RawSnapshot,
+} from "./migration2-schema.js";
 import { compareVersions } from "../utils/compare-versions.js";
 import { assertProjectPath } from "../utils/path-boundary.js";
 import type {
@@ -71,6 +75,29 @@ function snapshotBytes(snapshot: RawSnapshot): Buffer {
   if (rawMigrationDigest(bytes) !== snapshot.sha256)
     throw new Error("Snapshot raw SHA mismatch");
   return bytes;
+}
+/** Validate only the reviewed original; live partial targets are not predecessors. */
+function validatePredecessor(
+  mode: MigrationPlan2["source"]["task_schema"],
+  task: MigrationPlan2["tasks"][number],
+  source: unknown,
+): void {
+  const schema = mode === "mixed" ? required(task.source_task_schema) : mode;
+  try {
+    if (schema === "1.0") taskRecordSchema.parse(source);
+    else if (!isKnownLegacyTaskRecord(source))
+      throw new Error(
+        task.disposition === "defer"
+          ? "Deferred record is not the declared legacy schema"
+          : "Source Task is not the declared legacy schema",
+      );
+  } catch (error) {
+    if (mode !== "mixed") throw error;
+    throw new Error(
+      `${task.workspace}:${task.task_ref} (${task.disposition}, source_task_schema=${schema}): ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 interface State {
   sha256: string;
@@ -545,14 +572,7 @@ export async function migrate2(
       task.disposition === "convert_archive";
     if (converted || task.disposition === "current") {
       const sourceSnapshot = required(task.source);
-      if (converted && plan.source.task_schema === "1.0")
-        taskRecordSchema.parse(source);
-      if (
-        converted &&
-        plan.source.task_schema === "legacy" &&
-        !isKnownLegacyTaskRecord(source)
-      )
-        throw new Error("Source Task is not the declared legacy schema");
+      if (converted) validatePredecessor(plan.source.task_schema, task, source);
       const record = converted
         ? validateTaskV2Projection(source, task.record)
         : parseTaskRecordV2(source);
@@ -583,11 +603,8 @@ export async function migrate2(
         throw new Error(
           "Deferred/history Task cannot project execution authority",
         );
-      if (task.disposition === "defer") {
-        if (plan.source.task_schema === "1.0") taskRecordSchema.parse(source);
-        else if (!isKnownLegacyTaskRecord(source))
-          throw new Error("Deferred record is not the declared legacy schema");
-      }
+      if (task.disposition === "defer")
+        validatePredecessor(plan.source.task_schema, task, source);
       prepare(root, `${task.task_ref}/task.json`, "preserve", task.source);
     }
   }
@@ -1144,7 +1161,7 @@ export async function migrate2(
       const outcome = record.deliveries
         .flatMap((d) => [d.delivery_result, d.publication_result])
         .find((result) => result?.result_id === fact.result_id);
-      if (!outcome || outcome.owner_id !== fact.owner_id)
+      if (outcome?.owner_id !== fact.owner_id)
         throw new Error(`Legacy result owner/identity mismatch ${fact.field}`);
       if (fact.field === "commit") {
         const commit =

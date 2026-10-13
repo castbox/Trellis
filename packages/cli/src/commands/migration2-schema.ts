@@ -47,7 +47,7 @@ export const migrationPlan2Schema = z
     source: z
       .object({
         version: z.string().min(1),
-        task_schema: z.enum(["legacy", "1.0"]),
+        task_schema: z.enum(["legacy", "1.0", "mixed"]),
         delivery_api: z.null(),
       })
       .strict(),
@@ -91,6 +91,7 @@ export const migrationPlan2Schema = z
             "history_only",
           ]),
           source: rawSnapshotSchema.nullable(),
+          source_task_schema: z.enum(["legacy", "1.0"]).optional(),
           record: z.unknown().optional(),
           legacy_facts: z
             .array(
@@ -185,6 +186,28 @@ export const migrationPlan2Schema = z
         .strict(),
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((plan, context) => {
+    for (const [index, task] of plan.tasks.entries()) {
+      const requiresSelector =
+        plan.source.task_schema === "mixed" &&
+        ["convert_active", "convert_archive", "defer"].includes(
+          task.disposition,
+        );
+      if (requiresSelector && task.source_task_schema === undefined)
+        context.addIssue({
+          code: "custom",
+          path: ["tasks", index, "source_task_schema"],
+          message: "Mixed predecessor disposition requires source_task_schema",
+        });
+      else if (!requiresSelector && task.source_task_schema !== undefined)
+        context.addIssue({
+          code: "custom",
+          path: ["tasks", index, "source_task_schema"],
+          message:
+            "source_task_schema is forbidden for this source mode/disposition",
+        });
+    }
+  });
 export type MigrationPlan2 = z.infer<typeof migrationPlan2Schema>;
 export type RawSnapshot = z.infer<typeof rawSnapshotSchema>;
