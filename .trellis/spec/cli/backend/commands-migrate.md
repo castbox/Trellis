@@ -133,6 +133,7 @@ The closed plan fields and their consumers are:
 | `tasks` | Exact active/archive ref and `convert_active`, `convert_archive`, `current`, `defer` or `history_only`; original raw snapshot (null only for missing-record `history_only` roots); complete owner-reviewed v2 record for conversions. |
 | `legacy_facts` within a converted Task | Every nonempty old commit/PR/date fact has an explicit producer-owned disposition: matching normalized result, or retained `source_snapshot` with reason ref. Dates cannot manufacture Completion. |
 | `sessions` | Exact common-dir or workspace-local session filename, source snapshot and optional reviewed schema-3 projection. Preserve Task/generation; Delivery selection is null or a valid current-generation nonterminal identity. |
+| `branch_bindings` (optional, default `[]`) | Exact TaskId/generation and raw snapshot of its existing fixed common-dir binding. Required for admitted inherited-copy groups and projected active Tasks with existing bindings; preserve-only, never a binding writer. |
 | `workflows` | Per-workspace required `template_id` and exact target runtime contract, matched by the actual supplied workflow content. No replacement fallback or inferred template identity for custom workflows. |
 | `templates` | Frozen candidate digest and exact owned path/raw hash/mode set from the prospective collector. |
 | `files` | Typed project target, owner (`template`, `workflow`, `artifact`, `preserve`), exact action/source snapshot and optional target bytes/full mode. Ownership bounds the action; preserve grants no write capability. |
@@ -214,3 +215,93 @@ Verify controlled old copies with actual installed Python contract/continuation,
 registered sibling worktrees and common sessions, raw modes, stale zero-write,
 ordinary-failure replay and exact rollback. Plan-1 regressions remain required.
 These upstream tests do not supply Guru's private migration or joint acceptance.
+
+## Scenario: inherited active copies in registered worktrees
+
+### 1. Scope / Trigger
+
+Tracked predecessor Tasks can occur in several registered checkouts. Plan2 may
+convert the one branch-bound execution copy and defer its inherited peers while
+retaining the complete inventory. This exception does not reopen completed
+upstream acceptance or require downstream joint validation.
+
+### 2. Signatures
+
+The existing command remains
+`trellis migrate --from <version> --plan <file> [--dry-run]`. Plan2 accepts
+optional `branch_bindings: {task_id,lifecycle_generation,source}[]`, where
+`source` is the existing non-null raw snapshot. No Task-schema/Delivery-API or
+Plan2-version change occurs. Older closed-schema executors cannot read the new
+field; use the exact new candidate.
+
+### 3. Contracts
+
+Binding paths are derived exclusively as
+`<git-common-dir>/trellis/task-branches/<task_id>/<generation>.json`. Rows have
+portable IDs and nonnegative safe-integer generations. Decoded JSON has exactly
+`schema_version: "1.0"`, matching `task_id`/`lifecycle_generation`, nonnegative
+safe-integer `binding_revision`, and nonempty `branch_name`. No arbitrary path,
+target bytes, action, normalization, repair or producer API is accepted.
+
+An admitted repeated-ID group has identical case-exact ID/generation and
+semantic immutable source (including disposition); mutable branch metadata and
+planning may differ. Known legacy absence alone defaults generation to zero.
+Exactly one active row is `convert_active` or `current`; every peer is valid
+declared-predecessor active `defer`, in a different canonical project root and
+Task directory. The reviewed binding must select that authority through exactly
+one live current branch checkout across the complete eligible roots. Retain
+single-entry projected authority and historical visible-name occupation checks.
+Group validation uses original snapshots even after a partial migration.
+
+Projected active Tasks with existing bindings require reviewed snapshots even
+without copies. In Git topology, an extension marker file at
+`.trellis/guru-team/extension.json` in any eligible root also requires existing
+bindings for projected active Tasks, matching the public reader for invocation
+from those roots. Git-free resolution bypasses the marker and rejects supplied
+common binding rows. No unrelated historical-binding inventory is introduced.
+
+Preview includes raw binding preserve actions with equal pre/post bytes/modes.
+Deferred descendants and selected root planning stay raw; only authority-owned
+reviewed Delivery artifacts may be added. Session projection selects only the
+unique active authority/eligible Delivery. Recheck topology, current checkouts,
+binding preimages and relevant binding absence/marker predicates before the
+first write, alongside the existing entire-set source-or-target check. This
+does not add locking or transactionality during the subsequent writes.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Missing, invalid, duplicate or unrelated reviewed binding | Reject before writes; never infer authority. |
+| Different case/generation/source, two authorities or all-defer duplicates | Identity collision/ambiguity; no exception. |
+| Same canonical root/Task directory, archive/history duplicate | Reject copy admission. |
+| Detached, absent, ambiguous or deferred-peer branch selection | Checkout authority error before writes. |
+| Binding raw byte/mode drift | Existing third-state conflict; execution/retry write nothing. |
+| Unsafe binding path or changed topology/checkout/absence/marker predicate | Containment or preflight error before first mutation. |
+| Missing workspace/Task/session/artifact or added peer Delivery target | Existing completeness/ownership rejection. |
+| Exact completed/partial source-or-target replay | Resume; preserve files are not rewritten. |
+
+### 5. Good/Base/Bad Cases
+
+Good: two inherited Tasks each convert in their own bound checkout and defer in
+the opposite checkout, retaining different branch planning. Base: unique-ID
+native plan with no binding continues unchanged. Bad: convert every copy, use
+history-only for nonempty active records, or omit a peer to avoid collisions.
+
+### 6. Tests Required
+
+Create real Git fixtures with tracked predecessor Tasks before sibling creation.
+Assert complete zero-write preview, raw modes/planning preservation, order
+independence, binding/source/generation negatives and canonical aliases. Exercise
+final pre-write authority changes, partial failure/replay/third states and exact
+rollback. Use the actual installed CLI plus Python current-task/contract/
+continuation readers from both roots; direct deferred selection remains blocked.
+Cover native no-marker, Git marker missing-binding and Git-free marker bypass.
+Existing Plan1/Plan2 regressions remain required.
+
+### 7. Wrong vs Correct
+
+Wrong: reject all inherited IDs unconditionally or choose the invocation copy
+after creating multiple execution authorities. Correct: validate the complete
+reviewed identity group and existing binding first, project one authority, and
+preserve every peer without new lifecycle facts.

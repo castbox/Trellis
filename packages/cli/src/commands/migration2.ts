@@ -77,11 +77,14 @@ interface State {
   mode: number;
 }
 interface Prepared {
+  root: string;
+  name: string;
   full: string;
   facts: MigrationAction;
   source: State | null;
   target: State | null;
   bytes?: Buffer;
+  observed: State | null;
 }
 interface Repository {
   roots: Set<string>;
@@ -352,6 +355,8 @@ export async function migrate2(
     if (roots.has(workspace.id) || !path.isAbsolute(workspace.root))
       throw new Error("Duplicate or non-absolute workspace");
     const root = fs.realpathSync(workspace.root);
+    if ([...roots.values()].includes(root))
+      throw new Error("Duplicate canonical workspace");
     if (workspace.project_relative !== repo.suffix)
       throw new Error("Monorepo suffix mismatch");
     const top = workspace.project_relative
@@ -428,7 +433,16 @@ export async function migrate2(
       before_mode: before?.mode ?? null,
       after_mode: after?.mode ?? null,
     };
-    const item = { full, facts, source: before, target: after, bytes };
+    const item = {
+      root,
+      name,
+      full,
+      facts,
+      source: before,
+      target: after,
+      bytes,
+      observed: live,
+    };
     pending.push(item);
     byFull.set(full, item);
     return item;
@@ -438,11 +452,25 @@ export async function migrate2(
     { record: TaskRecordV2; active: boolean; workspace: string }
   >();
   const refs = new Map<string, Set<string>>();
-  const identities = new Map<string, string>();
+  interface SourceIdentity {
+    id: string;
+    generation: unknown;
+    provenance: unknown;
+    active: boolean;
+    disposition: string;
+    workspace: string;
+  }
+  const identities = new Map<string, SourceIdentity[]>();
+  const taskDirectories = new Map<string, string>();
   const unknownArchiveNames = new Set<string>();
   const oldRecords = new Map<string, Record<string, unknown>>();
   for (const task of plan.tasks) {
     const root = rootOf(task.workspace);
+    const taskPath = contained(root, task.task_ref);
+    const directory = fs.realpathSync(taskPath);
+    if ([...taskDirectories.values()].includes(directory))
+      throw new Error("Duplicate canonical Task directory");
+    taskDirectories.set(taskPath, directory);
     const archived =
       /^\.trellis\/tasks\/archive\/[0-9]{4}-(?:0[1-9]|1[0-2])\/[^/]+$/.test(
         task.task_ref,
@@ -494,9 +522,18 @@ export async function migrate2(
       throw new Error("Invalid source Task identity");
     if (validId) {
       const identity = validId.toLowerCase();
-      if (identities.has(identity))
-        throw new Error(`Task identity collision ${validId}`);
-      identities.set(identity, task.task_ref);
+      const members = identities.get(identity) ?? [];
+      members.push({
+        id: validId,
+        generation: isKnownLegacyTaskRecord(source)
+          ? 0
+          : header?.lifecycle_generation,
+        provenance: header?.source,
+        active,
+        disposition: task.disposition,
+        workspace: task.workspace,
+      });
+      identities.set(identity, members);
     } else {
       const visible = path.posix.basename(task.task_ref);
       unknownArchiveNames.add(visible.toLowerCase());
@@ -563,6 +600,106 @@ export async function migrate2(
   for (const identity of identities.keys())
     if (unknownArchiveNames.has(identity))
       throw new Error(`Historical visible-name occupation ${identity}`);
+
+  // Group frozen originals, never live migrated targets: replay must use the
+  // same source identity and provenance even after an ordinary partial write.
+  const duplicateKeys = new Set<string>();
+  for (const members of identities.values()) {
+    if (members.length === 1) continue;
+    const first = required(members[0]);
+    const authorities = members.filter(
+      (member) =>
+        member.active &&
+        ["convert_active", "current"].includes(member.disposition),
+    );
+    if (
+      !Number.isSafeInteger(first.generation) ||
+      Number(first.generation) < 0 ||
+      authorities.length !== 1 ||
+      new Set(members.map((member) => member.workspace)).size !==
+        members.length ||
+      members.some(
+        (member) =>
+          member.id !== first.id ||
+          member.generation !== first.generation ||
+          !isDeepStrictEqual(member.provenance, first.provenance) ||
+          !member.active ||
+          !["convert_active", "current", "defer"].includes(member.disposition),
+      )
+    )
+      throw new Error(`Task identity collision ${first.id}`);
+    duplicateKeys.add(`${first.id}/${String(first.generation)}`);
+  }
+
+  const bindings = new Map<string, { branch: string; workspace: string }>();
+  function extensionMarker(root: string): boolean {
+    const full = contained(root, ".trellis/guru-team/extension.json");
+    return fs.statSync(full, { throwIfNoEntry: false })?.isFile() ?? false;
+  }
+  const markers = repo.common
+    ? new Map([...roots.values()].map((root) => [root, extensionMarker(root)]))
+    : new Map<string, boolean>();
+  function boundWorkspace(branch: string): string {
+    const matches = [...roots].filter(
+      ([, root]) => git(root, "branch", "--show-current").trim() === branch,
+    );
+    if (matches.length !== 1)
+      throw new Error("current_task_checkout_unresolved");
+    return required(matches[0])[0];
+  }
+  for (const entry of plan.branch_bindings ?? []) {
+    if (!repo.common)
+      throw new Error("Git-free migration cannot use branch bindings");
+    const key = `${entry.task_id}/${entry.lifecycle_generation}`;
+    const task = projected.get(key);
+    if (!task?.active)
+      throw new Error(`Unknown active binding identity ${key}`);
+    if (bindings.has(key)) throw new Error(`Duplicate branch binding ${key}`);
+    const value = json(snapshotBytes(entry.source));
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+      throw new Error(`invalid_task_branch_binding: ${key}`);
+    const binding = value as Record<string, unknown>;
+    if (
+      !isDeepStrictEqual(
+        Object.keys(binding).sort(),
+        [
+          "schema_version",
+          "task_id",
+          "lifecycle_generation",
+          "binding_revision",
+          "branch_name",
+        ].sort(),
+      ) ||
+      binding.schema_version !== "1.0" ||
+      binding.task_id !== entry.task_id ||
+      binding.lifecycle_generation !== entry.lifecycle_generation ||
+      !Number.isSafeInteger(binding.binding_revision) ||
+      Number(binding.binding_revision) < 0 ||
+      typeof binding.branch_name !== "string" ||
+      binding.branch_name.length === 0
+    )
+      throw new Error(`invalid_task_branch_binding: ${key}`);
+    const workspace = boundWorkspace(binding.branch_name);
+    if (workspace !== task.workspace)
+      throw new Error(
+        `Branch binding selects a different Task authority ${key}`,
+      );
+    const name = `trellis/task-branches/${entry.task_id}/${entry.lifecycle_generation}.json`;
+    prepare(repo.common, name, "preserve", entry.source);
+    bindings.set(key, { branch: binding.branch_name, workspace });
+  }
+  const absentBindings: string[] = [];
+  for (const [key, task] of projected) {
+    if (!task.active || !repo.common) continue;
+    const name = `trellis/task-branches/${task.record.id}/${task.record.lifecycle_generation}.json`;
+    const full = contained(repo.common, name, false);
+    if (bindings.has(key)) continue;
+    if (fs.lstatSync(full, { throwIfNoEntry: false }) || duplicateKeys.has(key))
+      throw new Error(`Missing reviewed branch binding ${key}`);
+    if ([...markers.values()].some(Boolean))
+      throw new Error(`binding_required: ${key}`);
+    absentBindings.push(full);
+  }
   const contracts = new Map<
     string,
     ReturnType<typeof validateWorkflowContract>
@@ -1113,7 +1250,64 @@ export async function migrate2(
     actions: pending.map((item) => item.facts),
     conflicts,
   };
-  if (options.dryRun) return result;
+  // Freeze routing as well as bytes: unchanged binding JSON alone does not
+  // prove that its branch is still checked out at the reviewed authority.
+  const refreshed = repository(cwd);
+  if (
+    refreshed.common !== repo.common ||
+    refreshed.suffix !== repo.suffix ||
+    !isDeepStrictEqual([...refreshed.roots].sort(), [...repo.roots].sort()) ||
+    !isDeepStrictEqual(
+      [...refreshed.roots]
+        .map((top) => path.resolve(top, refreshed.suffix ?? ""))
+        .filter((root) => fs.existsSync(path.join(root, ".trellis")))
+        .sort(),
+      liveRoots,
+    )
+  )
+    throw new Error("Repository topology changed during preflight");
+  for (const workspace of plan.workspaces) {
+    const root = rootOf(workspace.id);
+    if (fs.realpathSync(workspace.root) !== root)
+      throw new Error("Workspace path changed during preflight");
+    if (repo.common) {
+      const top = fs.realpathSync(git(root, "rev-parse", "--show-toplevel"));
+      if (
+        !refreshed.roots.has(top) ||
+        path.resolve(top, workspace.project_relative ?? "") !== root ||
+        fs.realpathSync(
+          path.resolve(root, git(root, "rev-parse", "--git-common-dir")),
+        ) !== repo.common
+      )
+        throw new Error("Repository identity changed during preflight");
+    }
+  }
+  for (const [full, original] of taskDirectories)
+    if (fs.realpathSync(full) !== original)
+      throw new Error("Task directory changed during preflight");
+  for (const [root, present] of markers)
+    if (extensionMarker(root) !== present)
+      throw new Error("Extension binding predicate changed during preflight");
+  for (const binding of bindings.values())
+    if (boundWorkspace(binding.branch) !== binding.workspace)
+      throw new Error("Branch checkout changed during preflight");
+  for (const full of absentBindings) {
+    contained(
+      required(repo.common),
+      path.relative(required(repo.common), full).split(path.sep).join("/"),
+      false,
+    );
+    if (fs.lstatSync(full, { throwIfNoEntry: false }))
+      throw new Error("Branch binding appeared during preflight");
+  }
+  for (const item of pending)
+    contained(item.root, item.name, item.root !== repo.common);
+  if (options.dryRun) {
+    for (const item of pending)
+      if (!isDeepStrictEqual(liveState(item.full), item.observed))
+        throw new Error(`Migration changed during preflight: ${item.full}`);
+    return result;
+  }
   if (conflicts.length)
     throw new Error(`Migration preflight conflicts: ${conflicts.join(", ")}`);
   // Entire-set recheck before first write; no per-file retry can hide third states.
