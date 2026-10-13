@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation approved and task activated on 2026-10-13. Implementation and local acceptance are complete; commit and publication are not authorized. Original business workspaces remain read-only. Verification results are recorded below.
+Implementation approved and task activated on 2026-10-13. Implementation, independent review, local commit and PR publication/merge are complete. The exact merged candidate passed main CI. Task archived on 2026-10-13; archive bookkeeping is pending its own commit/publication. Original business workspaces remain read-only. Verification results are recorded below.
 
 ## Ordered implementation
 
@@ -71,4 +71,4 @@ All six acceptance criteria have local source/installed evidence in [final-verif
 
 Required checks: lint, TypeScript types, Python types (0 errors, 48 existing warnings), Python 3.9.6 syntax for all 89 tracked files, build and context validation passed. Three targeted files passed 142 tests. Complete Core passed 475 tests with one existing optional skip. Complete CLI passed all 2,225 tests in 99 files with one worker and the unchanged 10-second timeout; earlier default/four-worker timeout runs remain recorded as failures. Packed installed rehearsal and independent evidence audit passed, including zero-write preview/rejection, four runtime routes, actual partial-write recovery, completed replay and exact rollback.
 
-Source/pack/plan hashes and all AC evidence are recorded in the final verification report. The source manifest before build, after packing and after checks is identical. Original business trees, Issue #31 and downstream tasks were not mutated. Remaining workflow steps are exact local commit approval/execution, then separately authorized wrap-up; no publication or release validation is claimed.
+Source/pack/plan hashes and all AC evidence are recorded in the final verification report. The source manifest before build, after packing and after checks is identical. Original business trees, Issue #31 and downstream tasks were not mutated. The reviewed local commit `1e40014023de53ddfd9368b3fb4d0a7a31e92293` was published in PR #36 and squash-merged as `a5eb8b2dfd32b41e30d9bbf1c3ba8f98bcaf1258`; both PR and exact main CI passed. See [closeout.md](research/closeout.md) for live delivery facts and archive disposition. Release validation is not claimed.
