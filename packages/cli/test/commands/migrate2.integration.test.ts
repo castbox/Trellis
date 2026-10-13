@@ -1689,11 +1689,17 @@ describe("migration plan 2.0 controlled old-copy cutover", () => {
     try {
       for (const directory of [root, other]) {
         execFileSync("git", ["init", directory], { stdio: "pipe" });
+        // Detached auto-maintenance can change .git after commit returns,
+        // racing the full unrelated-repository preservation snapshot below.
         execFileSync(
           "git",
           [
             "-C",
             directory,
+            "-c",
+            "maintenance.auto=false",
+            "-c",
+            "gc.auto=0",
             "-c",
             "user.name=Test",
             "-c",
