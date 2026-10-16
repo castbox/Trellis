@@ -572,7 +572,15 @@ def _require_selected_runtime(task_path: Path, workspace: Path) -> None:
     data, reason = read_json_checked(task_path / "task.json")
     if data is None:
         raise SessionBindingError(f"task_metadata_{reason}: {task_path}")
-    require_task_runtime(workspace, data)
+    try:
+        require_task_runtime(workspace, data)
+    except ValueError as exc:
+        if getattr(exc, "code", None) in {"maintenance_required", "unsupported_task_schema"}:
+            from .maintenance import task_maintenance_diagnostic
+            diagnostic = task_maintenance_diagnostic(task_path)
+            if diagnostic:
+                raise SessionBindingError(diagnostic) from exc
+        raise
 
 
 def resolve_active_task(
@@ -609,9 +617,13 @@ def resolve_active_task(
                     facts, context_key
                 )
                 if unsupported:
+                    from .maintenance import carrier_maintenance_diagnostic
+                    old = _read_json(unsupported[0], root)
+                    owner = unsupported[0].parent.parent.parent.parent
+                    diagnostic = carrier_maintenance_diagnostic(old, unsupported[0], owner)
                     raise SessionBindingError(
                         "unsupported_binding_schema: "
-                        f"{unsupported[0]}; run task.py start"
+                        f"{unsupported[0]}; " + (diagnostic or "run task.py start")
                     )
             if record is not None:
                 resolved = resolve_task_identity(

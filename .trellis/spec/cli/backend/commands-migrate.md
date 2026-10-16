@@ -417,3 +417,9 @@ Wrong: reject all inherited IDs unconditionally or choose the invocation copy
 after creating multiple execution authorities. Correct: validate the complete
 reviewed identity group and existing binding first, project one authority, and
 preserve every peer without new lifecycle facts.
+
+## Independent maintenance boundary
+
+[Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
+selected-task CLI/SDK boundary. It does not relax this document's ordinary
+operation, current writer, or complete migration contracts.

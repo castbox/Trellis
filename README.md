@@ -165,3 +165,16 @@ writes until the conflict is resolved.
 <a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE">AGPL-3.0 License</a> •
 Built by <a href="https://github.com/mindfold-ai">Mindfold</a>
 </p>
+
+### Independent installation and task maintenance
+
+`trellis maintain` separates one-checkout tool installation, one selected old Task
+conversion and historical closeout. Run `trellis maintain contract --json` from a
+complete matching CLI/Core candidate, then inspect the explicit target. Preview is
+write-free; apply uses a frozen private plan and bounded recovery. Old Task data
+is not automatically converted by tool installation. Public SDK:
+`import { maintenance } from "@mindfoldhq/trellis"`.
+
+See [inputs, supported sources, commands and recovery](.trellis/spec/cli/backend/commands-maintain.md).
+Executor success, target-native continuation, business acceptance and software
+release are separate results.

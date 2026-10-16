@@ -457,9 +457,25 @@ async function collectRegistrySpecTemplates(
   return result.files;
 }
 
+/** Ordinary update retains its installed-runtime preflight. */
 export async function collectTemplateFiles(
   cwd: string,
   options: { registrySpecs?: boolean } = {},
+): Promise<Map<string, string>> {
+  const active = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
+  assertProjectPath(active, cwd);
+  if (fs.existsSync(active)) {
+    const content = fs.readFileSync(active, "utf8");
+    if (readDeliveryWorkflowContract(content))
+      preflightDeliveryWorkflow(cwd, content);
+  }
+  return collectProspectiveTemplateFiles(cwd, options);
+}
+
+/** Shared rendering only: no installed dispatcher, version mutation or preflight. */
+export async function collectProspectiveTemplateFiles(
+  cwd: string,
+  options: { registrySpecs?: boolean; applySkipPaths?: boolean } = {},
 ): Promise<Map<string, string>> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);
@@ -493,7 +509,6 @@ export async function collectTemplateFiles(
     ? fs.readFileSync(activeWorkflowPath, "utf8")
     : "";
   const deliveryContract = readDeliveryWorkflowContract(activeWorkflow);
-  if (deliveryContract) preflightDeliveryWorkflow(cwd, activeWorkflow);
   const workflowHash = loadHashes(cwd)[PATHS.WORKFLOW_GUIDE_FILE];
   // Custom workflows remain user-owned, including forced update/reapply.
   if (!activeWorkflow || workflowHash) {
@@ -546,7 +561,8 @@ export async function collectTemplateFiles(
     }
   }
 
-  const skipPaths = loadUpdateSkipPaths(cwd);
+  const skipPaths =
+    options.applySkipPaths === false ? [] : loadUpdateSkipPaths(cwd);
   if (skipPaths.length > 0) {
     for (const [filePath] of [...files]) {
       if (

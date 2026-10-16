@@ -88,3 +88,5 @@ After writing code, verify against these guidelines:
 ---
 
 **Language**: All documentation should be written in **English**.
+
+- Independent installation/selected-task maintenance → [commands-maintain.md](./commands-maintain.md)

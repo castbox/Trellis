@@ -292,8 +292,11 @@ def read_record(path: Path, root: Path, facts: RepositoryFacts) -> SessionRecord
     if data is None:
         raise SessionBindingError(f"binding_{reason}: {path}")
     if type(data.get("schema_version")) is not int or data["schema_version"] not in (2, 3):
+        from .maintenance import carrier_maintenance_diagnostic
+        diagnostic = carrier_maintenance_diagnostic(data, path, root)
         raise SessionBindingError(
-            f"unsupported_binding_schema: {path}; run task.py start"
+            f"unsupported_binding_schema: {path}; "
+            + (diagnostic or "run task.py start")
         )
     expected = {"schema_version", "task_id", "lifecycle_generation"}
     if data["schema_version"] == 3:
@@ -402,6 +405,10 @@ def resolve_task_identity(
                 continue
             data, reason = read_json_checked(task_json)
             if data is None:
+                from .maintenance import task_maintenance_diagnostic
+                diagnostic = task_maintenance_diagnostic(directory)
+                if diagnostic:
+                    raise SessionBindingError(diagnostic)
                 raise SessionBindingError(f"task_metadata_{reason}: {task_json}")
             try:
                 candidate_generation = lifecycle_generation(data, task_json)
