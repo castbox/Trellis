@@ -325,3 +325,20 @@ Earlier validation remains bound to its original candidate. The revised code
 still needs its own commit/publication and fresh CI before merge; this local
 result does not turn the failed PR CI into a pass or advance Guru source lock,
 Issue closure, business acceptance or release readiness.
+
+## Final upstream acceptance and delivery
+
+The complete upstream R1-R12 / A1-A9 scope is accepted based on the targeted
+maintenance/native/packed evidence above, the full independent branch review,
+and the final exact-candidate CI. PR #41 merged into main as
+`a57f2f915beade1b2d8db712815949c61b46dd1a`; its reviewed head is
+`fa3fa1e78df8518e7a160e2b92315773e493a6e9`.
+CI run 38838075120 passed: Core 479 passed / 1 existing skipped, CLI 2325 passed,
+plus syntax/type/lint/build and build-output checks. This supersedes the
+pre-publication status statements above, not their original evidence identities.
+
+Guru #566 / PR #568 owns the separately reported joint evidence on its original
+candidate. Formal Guru source-lock adoption, real business installation/migration
+and acceptance, software publication and the complete release-platform matrix
+remain outside this upstream Task. This closeout does not upgrade or clean any
+business installation or remove branches/worktrees.
