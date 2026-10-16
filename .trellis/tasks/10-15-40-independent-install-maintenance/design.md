@@ -65,6 +65,12 @@ trellis maintain rollback --recovery <private-operation-directory> --json
 
 The candidate `contract` result declares `maintenance_api: "1.0"`, supported operation-plan kinds, source version/record/session families, CLI version and Core version. Missing/mismatched capability rejects before writes. It does not claim release status, semantic approval or source provenance. Exact source/build/tar identities are supplied by package verification evidence; execution additionally freezes the actual CLI/Core package bytes/modes used by that operation.
 
+Package fingerprints cover durable `package.json`, `bin`, `src` and `dist`
+content/modes. Exclude interpreter-generated `__pycache__` directories and
+`.pyc`/`.pyo` files so an ordinary Python import between prepare and execute
+does not change candidate identity. Actual source/build edits and permission
+changes remain stale-candidate errors; a new package still needs a fresh plan.
+
 ### 4.2 Public SDK surface
 
 Expose the command implementation through a documented named `maintenance` namespace from the existing CLI package root (`import { maintenance } from "@mindfoldhq/trellis"`), not an undocumented deep import from `dist/commands`. Preserve existing `VERSION`/`init` exports and current package path resolution; do not add a restrictive CLI exports map that breaks existing imports. Add only the Core `./task/maintenance` explicit subpath without widening legacy `/task` or Core root exports.

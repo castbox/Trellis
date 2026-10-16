@@ -261,9 +261,13 @@ function packageDigest(root: string): string {
     const full = path.join(root, ref);
     if (!fs.existsSync(full)) return;
     const stat = fs.statSync(full);
-    if (stat.isDirectory())
+    // Python imports create runtime caches without changing this candidate's
+    // source/build content. Keep those disposable files out of its identity.
+    if (stat.isDirectory()) {
+      if (path.basename(ref) === "__pycache__") return;
       for (const name of fs.readdirSync(full).sort()) walk(`${ref}/${name}`);
-    else if (stat.isFile()) {
+    } else if (stat.isFile()) {
+      if (/\.py[co]$/.test(ref)) return;
       hash.update(ref);
       hash.update(String(stat.mode & 0o777));
       hash.update(fs.readFileSync(full));

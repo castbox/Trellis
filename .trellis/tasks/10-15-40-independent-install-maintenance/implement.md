@@ -280,3 +280,48 @@ joint evidence. This does not adopt a formal Guru source lock or complete the
 upstream Git delivery. Task #40 remains in progress pending its independent
 commit/PR/merge and native wrap-up. Business installations, software release
 and the complete release-platform matrix remain outside this quality refresh.
+
+## PR #41 cold-cache follow-up
+
+The first delivery commit is `7fcbe647e1079bd8767a3a8de9f5578d5f47c893`.
+Its [CI run](https://github.com/castbox/Trellis/actions/runs/38836372092)
+passed Core (479 passed, 1 skipped) but failed two CLI tests with
+`candidate_mismatch` (2322 passed, 2 failed). These were not timeouts.
+The CI log did not capture file-level package changes, so it does not directly
+identify which cache files changed in that run.
+
+An independent isolated copy of the reviewed installed CLI/Core pair reproduced
+the mechanism through its public SDK: cold prepare, then an ordinary Python
+import of shipped `common.workflow_phase`, added eight `__pycache__/*.pyc`
+files without changing any authoritative content or mode. Apply rejected the
+candidate before target writes or recovery-state creation. Warm reprepare
+passed; a separate cold copy using `-B` for that import also passed. These are
+causal/counterfactual observations, not a bytecode-disable workaround. The
+macOS system Python's external cache prefix and warm caches can mask the bug.
+
+The bounded fix excludes only Python runtime cache directories and `.pyc/.pyo`
+files from package fingerprints. Durable package/source/build bytes and modes
+remain bound. A new isolated real-bin regression creates caches through actual
+Python imports/compilation, executes and recovers the original plan, then proves
+that real build-file byte changes and POSIX permission changes still reject
+before writes. Windows retains the byte-change check without assuming POSIX
+execute-bit behavior. No CI, environment or parallelism change implements the
+fix. Spec and design now state the durable package-inventory boundary.
+
+On the revised local candidate, build, full lint, both package typechecks,
+targeted ESLint/Prettier and public/tools/engine tests (23/23) passed. After the
+Windows-only assertion adjustment, public API tests passed again (4/4).
+The original pre-commit script then passed with `VITEST_MAX_WORKERS=2`:
+Core 28 files / 479 passed / 1 existing skipped; CLI 104 files / 2325 passed,
+zero failures. Independent increment review has no remaining finding.
+
+The revised exact pair was freshly packed and installed with scripts disabled;
+actual public bin/SDK imports passed and neither archive contains bytecode or
+sidecars. CLI tar SHA-256 is
+`bf10061b73f68270a15eb5824e67abd4f146c87658afa58de986106778f4cec4`;
+Core remains
+`036e895a4f088cc48e90f01cde0b8db91379ffb105f4dd3f135c909d39601496`.
+Earlier validation remains bound to its original candidate. The revised code
+still needs its own commit/publication and fresh CI before merge; this local
+result does not turn the failed PR CI into a pass or advance Guru source lock,
+Issue closure, business acceptance or release readiness.

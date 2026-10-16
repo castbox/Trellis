@@ -156,7 +156,12 @@ restoration needs a separate reviewed operation, never expanded backups.
 Typical diagnostics include unsupported_source/version/carrier, target_key_mismatch,
 ambiguous_authority, conflict, stale_source, candidate_mismatch, later_work_conflict,
 incompatible_restore and restore_compatibility_unknown. Same version labels alone
-do not identify builds: candidate fingerprints bind actual package bytes/modes.
+do not identify builds: candidate fingerprints bind the durable bytes/modes in
+`package.json`, `bin`, `src` and `dist`. Python runtime `__pycache__` directories
+and `.pyc`/`.pyo` files are excluded: a normal import may create them after
+preparation without changing the candidate. Real source/build byte or permission
+changes still return `candidate_mismatch` before writes. Cache exclusion does not
+permit applying a plan prepared for an earlier package build.
 
 ## Verification boundary
 
@@ -165,6 +170,11 @@ before CLI; install the exact packed pair in a throwaway to verify package expor
 and dependency rewrite. Preserve full Plan1/Plan2 and ordinary update regressions,
 minimum Python 3.9 support and shipped/dogfood parity. This is targeted maintenance
 acceptance, not the full release/platform matrix or Guru overlay/business acceptance.
+
+Candidate freshness regression must use an isolated public package: prepare with
+cold caches, let a real Python import create bytecode, then execute the original
+plan successfully. A real source/build edit must still fail before target writes.
+Do not make CI disable bytecode or serialize tests to hide cache-sensitive hashes.
 
 The supported unversioned local session includes both the historical singleton
 `current_task` shape and the original 0.6 `set_active_task` metadata shape:
