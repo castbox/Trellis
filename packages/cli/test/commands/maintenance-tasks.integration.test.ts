@@ -52,6 +52,48 @@ beforeEach(()=>{
 afterEach(()=>{vi.restoreAllMocks();fs.rmSync(base,{recursive:true,force:true});});
 
 describe("selected task maintenance",()=>{
+  it.each(["conversion", "history"] as const)("maintains native schema-1 metadata sessions through %s, recovery and exact rollback",async(kind)=>{
+    // Historical 43fffc17 set_active_task output, including optional context metadata.
+    const writer={platform:"codex",last_seen_at:"2026-10-15T09:58:29Z",schema_version:1,repository_common_dir:common,task_workspace_root:root,current_task:ref,current_run:null,sessionId:"original-session",transcript_path:"/platform/transcript"};
+    write(common,"trellis/sessions/codex_old.json",writer,0o600);
+    // Enumerated before the selected session; supported unselected records must classify.
+    write(common,"trellis/sessions/aaa_other.json",JSON.stringify({...writer,current_task:".trellis/tasks/another"})+"\n",0o604);
+    write(common,"trellis/sessions/aaa_peer.json",{...writer,task_workspace_root:sibling},0o600);
+    write(sibling,".trellis/tasks/another/task.json",emptyTaskRecord({id:"another",name:"Another",title:"Another"}));
+    const sessionsBefore=bytes(common,"trellis"),taskBefore=bytes(root,ref),peerBefore=bytes(sibling,".");
+    const unselected=()=>[bytes(common,"trellis/sessions/aaa_other.json"),bytes(common,"trellis/sessions/aaa_peer.json")];
+    const otherBefore=unselected(),inspected=selected();
+    expect(inspected.carriers.map(carrier=>carrier.path)).toEqual(["trellis/sessions/codex_old.json"]);
+    // Exercise the built public pair, beyond Vitest's source aliases.
+    const smoke=spawnSync(process.execPath,["--input-type=module","-e",`
+      import { maintenance } from './dist/index.js';
+      import { classifySessionCarrier } from '@mindfoldhq/trellis-core/task/maintenance';
+      const { root, key, ref, writer, common } = JSON.parse(process.argv[1]);
+      const classified = classifySessionCarrier(writer, { task_id: key.task_id, generation: key.lifecycle_generation, task_path: root + '/' + ref, common_dir: common });
+      const inspected = maintenance.inspectTaskTarget({ root, key, task_ref: ref });
+      const plan = maintenance.prepareLegacyCloseout({ root, key, task_ref: ref, source_kind: 'schema1', archive_ref: '.trellis/tasks/archive/2026-10/selected', history_note: 'Original owner history retained.', retirements: [...inspected.carriers, inspected.branch_binding] });
+      process.stdout.write(JSON.stringify({ classified, carriers: inspected.carriers.map(c => c.path), kind: plan.kind }));
+    `,JSON.stringify({root,key,ref,writer,common})],{cwd:path.resolve(__dirname,"../.."),encoding:"utf8"});
+    expect(smoke.status,smoke.stdout+smoke.stderr).toBe(0);
+    expect(JSON.parse(smoke.stdout)).toEqual({classified:{kind:"path1",matches:true},carriers:["trellis/sessions/codex_old.json"],kind:"legacy_closeout"});
+    const plan=kind==="conversion"?prepareTaskConversion(conversion()):prepareLegacyCloseout({root,key,task_ref:ref,source_kind:"schema1",archive_ref:".trellis/tasks/archive/2026-10/selected",history_note:"Original owner history retained.",retirements:[...inspected.carriers,...(inspected.branch_binding?[inspected.branch_binding]:[])]});
+    expect(bytes(common,"trellis")).toEqual(sessionsBefore);expect(bytes(root,ref)).toEqual(taskBefore);
+    const result=await applyPlan(plan,path.join(base,"state"));
+    expect(result.status).toBe("applied");
+    if(kind==="conversion"){
+      expect(JSON.parse(fs.readFileSync(path.join(common,"trellis/sessions/codex_old.json"),"utf8"))).toEqual({schema_version:3,...key,delivery_id:null});
+      expect(fs.readFileSync(path.join(root,ref,"migration/source-task.json"))).toEqual(Buffer.from(selectedSource(plan),"base64"));
+    }else{
+      expect(fs.existsSync(path.join(common,"trellis/sessions/codex_old.json"))).toBe(false);
+      expect(fs.readFileSync(path.join(root,".trellis/tasks/archive/2026-10/selected/task.json"))).toEqual(Buffer.from(selectedSource(plan),"base64"));
+    }
+    expect(unselected()).toEqual(otherBefore);expect(bytes(sibling,".")).toEqual(peerBefore);
+    expect((await recoverOperation(result.recovery_ref as string)).status).toBe("applied");
+    expect((await applyPlan(plan,path.join(base,"state"))).operation_id).toBe(plan.operation_id);
+    expect(unselected()).toEqual(otherBefore);expect(bytes(sibling,".")).toEqual(peerBefore);
+    expect((await rollbackOperation(result.recovery_ref as string)).status).toBe("rolled_back");
+    expect(bytes(common,"trellis")).toEqual(sessionsBefore);expect(bytes(root,ref)).toEqual(taskBefore);expect(bytes(sibling,".")).toEqual(peerBefore);
+  });
   it("returns typed public SDK input errors before inspecting or writing a target",()=>{
     const invalidCalls = [
       () => parseTaskConversionInput({root}),

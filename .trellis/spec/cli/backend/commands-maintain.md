@@ -183,6 +183,58 @@ writer's optional session/conversation/transcript string aliases. Maintenance
 classifies these as path carriers; native current execution still stops with
 maintenance-required for a positively supported old selected Task.
 
+### Native schema-1 session metadata
+
+#### Scope and signatures
+
+`classifySessionCarrier(value, selected)` on Core `/task/maintenance` also
+recognizes schema-1 records emitted by the original native `set_active_task`
+writer. CLI `maintenance.inspectTaskTarget` and both selected-Task preparation
+APIs consume that classification; their signatures and current native execution
+authority are unchanged. The original writer is traceable at
+`43fffc170927c85d9f7fc106cc5a059e80d4530b`, shipped
+`common/active_task.py`, `_context_metadata` and `set_active_task`.
+
+#### Closed contract
+
+Keep the existing exact four-field schema-1 form (`schema_version: 1`,
+`repository_common_dir`, `task_workspace_root`, `current_task`). The writer form
+adds required nonempty strings `platform` and `last_seen_at`, plus required
+`current_run: null`. Only these optional nonempty string aliases are allowed:
+`session_id`, `sessionId`, `sessionID`, `conversation_id`, `conversationId`,
+`conversationID`, `transcript_path`, `transcriptPath`, `transcript`.
+Metadata is predecessor context, never Task/Delivery execution authority.
+
+Both forms retain existing absolute workspace/common-dir validation and resolve
+the original workspace plus `current_task` against the selected Task path and
+repository common directory. Do not infer ownership from platform/session IDs.
+
+#### Validation and cases
+
+| Input | Result |
+| --- | --- |
+| Complete writer form selecting the exact Task/workspace/common-dir | `path1`, `matches: true`; include in explicit selected dispositions. |
+| Existing exact four-field form | Existing `path1` behavior. |
+| Supported form naming another Task/workspace/common-dir | `matches: false`; exclude from selected writes and preserve bytes/modes. |
+| Unknown field, partial metadata, empty/non-string metadata, non-null run slot | `unsupported_carrier`; do not silently skip it. |
+
+Good: inspect shared storage containing both selected and unrelated complete
+writer records. Base: inspect the original minimal schema-1 form. Bad: strip
+metadata from real source records or accept arbitrary keys to bypass the error.
+
+#### Required regression proof
+
+Core tests use writer-derived metadata-bearing schema-1 inputs and cover the
+finite aliases, minimal form, ownership mismatches and closed-format rejection.
+CLI real-Git/shared-session tests cover inspect/prepare, conversion and historical
+closeout, selected fixed-plan effects, unselected bytes/modes, same-operation
+recovery and rollback through existing maintenance APIs. Keep metadata intact.
+
+Wrong: catch classification errors before ownership filtering and ignore those
+records. Correct: positively recognize supported predecessor formats in Core,
+then apply the existing selected-ownership filter. This compatibility repair does
+not change current writers, full migration semantics or downstream acceptance.
+
 Regression coverage must include an original old `task.py start` creating a
 second same-Task session after closeout preparation: applying the old plan must
 leave the Task, archive, recovery state and both sessions unchanged. A newly

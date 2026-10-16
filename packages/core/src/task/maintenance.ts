@@ -57,9 +57,8 @@ function exact(value: Record<string, unknown>, keys: string[]): boolean {
 const taskId = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v);
 const generation = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
 const legacySessionMetadata = ["session_id", "sessionId", "sessionID", "conversation_id", "conversationId", "conversationID", "transcript_path", "transcriptPath", "transcript"];
-function unversionedLocalCarrier(value: Record<string, unknown>): boolean {
-  if (exact(value, ["current_task"])) return true;
-  const required = ["platform", "last_seen_at", "current_task", "current_run"];
+function legacyMetadataCarrier(value: Record<string, unknown>, pathKeys: string[]): boolean {
+  const required = [...pathKeys, "platform", "last_seen_at", "current_run"];
   const allowed = new Set([...required, ...legacySessionMetadata]);
   // The 0.6 set_active_task writer adds context metadata and a null run slot.
   // These fields identify a predecessor carrier; none grant current authority.
@@ -68,6 +67,9 @@ function unversionedLocalCarrier(value: Record<string, unknown>): boolean {
     && value.current_run === null
     && ["platform", "last_seen_at", ...legacySessionMetadata.filter(key => Object.hasOwn(value, key))]
       .every(key => typeof value[key] === "string" && value[key] !== "");
+}
+function unversionedLocalCarrier(value: Record<string, unknown>): boolean {
+  return exact(value, ["current_task"]) || legacyMetadataCarrier(value, ["current_task"]);
 }
 export interface CarrierSelection extends MaintenanceTaskIdentity { task_path: string; carrier_workspace?: string; common_dir?: string | null }
 export function classifySessionCarrier(value: unknown, selected: CarrierSelection): { kind: "identity2" | "identity3" | "path1" | "path0"; matches: boolean } {
@@ -79,7 +81,7 @@ export function classifySessionCarrier(value: unknown, selected: CarrierSelectio
   }
   const old = value.schema_version === 1;
   const keys = old ? ["schema_version", "repository_common_dir", "task_workspace_root", "current_task"] : ["current_task"];
-  if (!(old ? exact(value, keys) : unversionedLocalCarrier(value)) || typeof value.current_task !== "string" || !value.current_task.startsWith(".trellis/tasks/") || value.current_task.split("/").length !== 3) throw new MaintenanceError("unsupported_carrier", "Unknown path-based session");
+  if (!(old ? exact(value, keys) || legacyMetadataCarrier(value, keys) : unversionedLocalCarrier(value)) || typeof value.current_task !== "string" || !value.current_task.startsWith(".trellis/tasks/") || value.current_task.split("/").length !== 3) throw new MaintenanceError("unsupported_carrier", "Unknown path-based session");
   const workspace = old ? value.task_workspace_root : selected.carrier_workspace;
   if (typeof workspace !== "string" || !path.isAbsolute(workspace) || (old && (typeof value.repository_common_dir !== "string" || !path.isAbsolute(value.repository_common_dir)))) throw new MaintenanceError("unsupported_carrier", "Path carrier requires its original absolute workspace/common storage");
   return { kind: old ? "path1" : "path0", matches: path.resolve(workspace, value.current_task) === path.resolve(selected.task_path) && (!old || path.resolve(String(value.repository_common_dir)) === selected.common_dir) };
