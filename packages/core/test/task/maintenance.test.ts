@@ -44,4 +44,24 @@ describe("selected maintenance domain boundary", () => {
     expect(() => classifySessionCarrier({ current_task: "selected" }, selected)).toThrow("unsupported_carrier");
     expect(classifyBranchBinding({ schema_version: "1.0", task_id: "selected", lifecycle_generation: 1, binding_revision: 0, branch_name: "task" }, selected).matches).toBe(false);
   });
+  it("recognizes the native schema-1 writer and retains exact path ownership", () => {
+    const selected = { task_id: "selected", generation: 0, task_path: "/owner/.trellis/tasks/selected", common_dir: "/common" };
+    // 43fffc17 active_task.py set_active_task: metadata + schema-1 path identity.
+    const writer = { platform: "codex", last_seen_at: "2026-10-15T09:58:29Z", schema_version: 1, repository_common_dir: "/common", task_workspace_root: "/owner", current_task: ".trellis/tasks/selected", current_run: null };
+    expect(classifySessionCarrier(writer, selected)).toEqual({ kind: "path1", matches: true });
+    for (const alias of ["session_id", "sessionId", "sessionID", "conversation_id", "conversationId", "conversationID", "transcript_path", "transcriptPath", "transcript"]) {
+      expect(classifySessionCarrier({ ...writer, [alias]: "original-context" }, selected)).toEqual({ kind: "path1", matches: true });
+      expect(() => classifySessionCarrier({ ...writer, [alias]: "" }, selected)).toThrow("unsupported_carrier");
+    }
+    for (const change of [{ current_task: ".trellis/tasks/other" }, { task_workspace_root: "/peer" }, { repository_common_dir: "/different" }]) {
+      expect(classifySessionCarrier({ ...writer, ...change }, selected)).toEqual({ kind: "path1", matches: false });
+    }
+    for (const change of [{ platform: "" }, { last_seen_at: null }, { current_run: {} }, { arbitrary: "unknown" }]) {
+      expect(() => classifySessionCarrier({ ...writer, ...change }, selected)).toThrow("unsupported_carrier");
+    }
+    for (const missing of ["platform", "last_seen_at", "current_run"]) {
+      const partial = Object.fromEntries(Object.entries(writer).filter(([key]) => key !== missing));
+      expect(() => classifySessionCarrier(partial, selected)).toThrow("unsupported_carrier");
+    }
+  });
 });

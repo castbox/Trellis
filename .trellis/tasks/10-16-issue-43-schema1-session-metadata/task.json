@@ -1,0 +1,29 @@
+{
+  "id": "issue-43-schema1-session-metadata",
+  "name": "issue-43-schema1-session-metadata",
+  "lifecycle_generation": 0,
+  "source": {
+    "kind": "issue",
+    "repo_ref": "castbox/Trellis",
+    "number": 43,
+    "disposition": "exact_source"
+  },
+  "title": "修复旧原生 schema-1 会话维护兼容",
+  "description": "承接 castbox/Trellis#43，兼容原生 writer 的 schema-1 元数据并验证公开维护路径",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "cli",
+  "priority": "P2",
+  "createdAt": "2026-10-16",
+  "completedAt": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
