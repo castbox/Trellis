@@ -92,4 +92,4 @@ def require_task_runtime(workspace: Path, task_data: dict) -> None:
             return
         raise
     if not is_v2:
-        raise RuntimeContractError("unsupported_task_schema: schema-2 workflow requires explicit migration before execution")
+        raise RuntimeContractError("unsupported_task_schema: maintenance_required: schema-2 workflow requires explicit migration before execution; use a complete matching new CLI/Core candidate: trellis maintain inspect-task --target <checkout> --task-id <id> --generation <generation> --task-ref <ref> --json; conversion or historical closeout does not require normal continuation")

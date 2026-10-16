@@ -1,7 +1,7 @@
 {
   "name": "@mindfoldhq/trellis-core",
   "version": "0.7.0-castbox.3",
-  "description": "Trellis core SDK — channel and task domain primitives consumed by the Trellis CLI and downstream Node services",
+  "description": "Trellis core SDK \u2014 channel and task domain primitives consumed by the Trellis CLI and downstream Node services",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -46,6 +46,11 @@
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js",
       "default": "./dist/testing/index.js"
+    },
+    "./task/maintenance": {
+      "types": "./dist/task/maintenance.d.ts",
+      "import": "./dist/task/maintenance.js",
+      "default": "./dist/task/maintenance.js"
     }
   },
   "files": [

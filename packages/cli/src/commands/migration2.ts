@@ -12,7 +12,10 @@ import {
   validateWorkflowContract,
   type TaskRecordV2,
 } from "@mindfoldhq/trellis-core/task/v2";
-import { validateTaskV2Projection } from "@mindfoldhq/trellis-core/task/migration-v2";
+import {
+  classifyMaintenanceTask,
+  validateSelectedTaskProjection,
+} from "@mindfoldhq/trellis-core/task/maintenance";
 import {
   taskRecordSchema,
   isKnownLegacyTaskRecord,
@@ -84,8 +87,14 @@ function validatePredecessor(
 ): void {
   const schema = mode === "mixed" ? required(task.source_task_schema) : mode;
   try {
-    if (schema === "1.0") taskRecordSchema.parse(source);
-    else if (!isKnownLegacyTaskRecord(source))
+    if (schema === "1.0") {
+      taskRecordSchema.parse(source); // Retain canonical field-level diagnostics.
+      if (classifyMaintenanceTask(source).kind !== "schema1")
+        throw new Error("Source Task is not the declared schema1");
+    } else if (
+      !isKnownLegacyTaskRecord(source) ||
+      classifyMaintenanceTask(source).kind !== "legacy"
+    )
       throw new Error(
         task.disposition === "defer"
           ? "Deferred record is not the declared legacy schema"
@@ -490,7 +499,6 @@ export async function migrate2(
   const identities = new Map<string, SourceIdentity[]>();
   const taskDirectories = new Map<string, string>();
   const unknownArchiveNames = new Set<string>();
-  const oldRecords = new Map<string, Record<string, unknown>>();
   for (const task of plan.tasks) {
     const root = rootOf(task.workspace);
     const taskPath = contained(root, task.task_ref);
@@ -566,7 +574,6 @@ export async function migrate2(
       unknownArchiveNames.add(visible.toLowerCase());
       unknownArchiveNames.add(visible.replace(/^\d+-\d+-/, "").toLowerCase());
     }
-    if (header) oldRecords.set(`${task.workspace}:${task.task_ref}`, header);
     const converted =
       task.disposition === "convert_active" ||
       task.disposition === "convert_archive";
@@ -574,7 +581,15 @@ export async function migrate2(
       const sourceSnapshot = required(task.source);
       if (converted) validatePredecessor(plan.source.task_schema, task, source);
       const record = converted
-        ? validateTaskV2Projection(source, task.record)
+        ? validateSelectedTaskProjection(
+            source,
+            task.record,
+            (task.legacy_facts ?? []).map((fact) =>
+              fact.disposition === "result"
+                ? { ...fact, disposition: "delivery_result" as const }
+                : fact,
+            ),
+          )
         : parseTaskRecordV2(source);
       if (!converted && task.record !== undefined)
         throw new Error("Current Task must preserve raw bytes");
@@ -1060,7 +1075,6 @@ export async function migrate2(
         throw new Error("Only converted Task needs legacy fact attribution");
       continue;
     }
-    const old = required(oldRecords.get(`${task.workspace}:${task.task_ref}`));
     const record = parseTaskRecordV2(task.record);
     for (const delivery of record.deliveries)
       for (const artifact of [
@@ -1143,46 +1157,8 @@ export async function migrate2(
       }
     }
 
-    const facts = task.legacy_facts ?? [];
-    const actualFields = ["commit", "pr_url", "completedAt"].filter(
-      (field) =>
-        old[field] !== undefined && old[field] !== null && old[field] !== "",
-    );
-    if (
-      !isDeepStrictEqual(
-        actualFields.sort(),
-        facts.map((fact) => fact.field).sort(),
-      )
-    )
-      throw new Error(`Unresolved legacy fact attribution ${task.task_ref}`);
-    for (const fact of facts) {
+    for (const fact of task.legacy_facts ?? [])
       verifyReason(rootOf(task.workspace), fact.reason);
-      if (fact.disposition === "source_snapshot") continue;
-      const outcome = record.deliveries
-        .flatMap((d) => [d.delivery_result, d.publication_result])
-        .find((result) => result?.result_id === fact.result_id);
-      if (outcome?.owner_id !== fact.owner_id)
-        throw new Error(`Legacy result owner/identity mismatch ${fact.field}`);
-      if (fact.field === "commit") {
-        const commit =
-          outcome.profile === "local_commit"
-            ? outcome.commit
-            : outcome.profile === "pull_request" && "merge_commit" in outcome
-              ? outcome.merge_commit
-              : null;
-        if (commit !== old.commit)
-          throw new Error(
-            "Legacy commit does not match retained actual result",
-          );
-      } else {
-        const url =
-          outcome.profile === "pull_request"
-            ? `https://github.com/${outcome.repo_ref}/pull/${outcome.pr_number}`
-            : null;
-        if (url !== old.pr_url)
-          throw new Error("Legacy PR does not match retained actual result");
-      }
-    }
   }
   const installationIds = new Set<string>();
   for (const installation of plan.installations) {

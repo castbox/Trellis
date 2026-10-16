@@ -13,6 +13,7 @@ import {
   runWorkflowCommand,
   WorkflowCommandError,
 } from "../commands/workflow.js";
+import { registerMaintenanceCommand } from "../commands/maintenance/command.js";
 import { registerChannelCommand } from "../commands/channel/index.js";
 import { DIR_NAMES } from "../constants/paths.js";
 import { PACKAGE_NAME, VERSION } from "../constants/version.js";
@@ -58,6 +59,7 @@ function checkForUpdates(cwd: string): void {
 const cwd = process.cwd();
 if (
   process.argv[2] !== "migrate" &&
+  process.argv[2] !== "maintain" &&
   fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))
 ) {
   checkForUpdates(cwd);
@@ -413,6 +415,7 @@ program
     }
   });
 
+registerMaintenanceCommand(program);
 registerChannelCommand(program);
 
 program.parse();

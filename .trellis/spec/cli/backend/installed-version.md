@@ -14,3 +14,9 @@ does not relax these ordinary initialization/update or task schema boundaries.
 Managed-template inventory and conflict behavior are specified in
 [the update command](./commands-update.md). Release packaging and version
 checks are specified in [Release Process](./release-process.md).
+
+## Independent maintenance boundary
+
+[Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
+selected-task CLI/SDK boundary. It does not relax this document's ordinary
+operation, current writer, or complete migration contracts.

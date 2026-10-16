@@ -275,7 +275,12 @@ describe.skipIf(!available)("Delivery task relocation (minimum interpreter)", ()
       fs.writeFileSync(workflow, text);
       const result = run(root, "task", ["current", "--json"]);
       expect(result.status).toBe(1);
-      expect(result.stdout).toContain(text === nativeText ? "unsupported_task_schema" : "invalid_runtime_contract_json");
+      expect(result.stdout).toContain(text === nativeText ? "maintenance_required" : "invalid_runtime_contract_json");
+      if (text === nativeText) {
+        expect(result.stdout).toContain("trellis maintain inspect-task --target");
+        expect(result.stdout).toContain("--task-id legacy-guard --generation 0");
+        expect(JSON.parse(result.stdout).current_task).toBeNull();
+      }
       expect(run(root, "task", ["start", legacy]).status).toBe(1);
       expect(run(root, "task", ["archive", legacy, "--no-commit"]).status).toBe(1);
       expect(fs.readFileSync(path.join(root, legacy, "task.json"))).toEqual(taskBytes);

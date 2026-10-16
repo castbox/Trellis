@@ -228,3 +228,9 @@ Rule of thumb when changing task behavior:
 
 Unknown task properties are rejected by the canonical SDK record and Python
 task readers. See [Task Lifecycle](./task-lifecycle.md).
+
+## Independent maintenance boundary
+
+[Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
+selected-task CLI/SDK boundary. It does not relax this document's ordinary
+operation, current writer, or complete migration contracts.

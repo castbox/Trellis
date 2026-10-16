@@ -27,7 +27,10 @@ def get_current_delivery(
             allow_environment_context=allow_environment_context,
         )
         if active.error:
-            return {"kind": "error", "code": "stale_binding", "message": active.error}
+            pending = (active.error.startswith("maintenance_required:")
+                       or "; maintenance_required:" in active.error)
+            return {"kind": "error", "code": "maintenance_required" if pending else "stale_binding",
+                    "message": active.error}
         if active.resolved_task_path is None or active.task_workspace_root is None:
             return {"kind": "no_current_task"}
         data, reason = read_json_checked(active.resolved_task_path / "task.json")

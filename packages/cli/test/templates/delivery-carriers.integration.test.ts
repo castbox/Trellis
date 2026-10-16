@@ -297,7 +297,9 @@ describe("generated schema-2 SessionStart and extension carriers", () => {
       );
       const before = snapshot(root);
       const output = await invoke(platform);
-      expect(output).toContain("unsupported_task_schema");
+      expect(output).toContain("maintenance_required");
+      expect(output).toContain("trellis maintain inspect-task --target");
+      expect(output).toContain("--task-id slice-task --generation 0");
       expect(output).not.toContain("ROOT TASK ARTIFACT");
       expect(output).not.toContain("SELECTED DELIVERY PRD");
       expect(output).not.toContain("Status: PLANNING");

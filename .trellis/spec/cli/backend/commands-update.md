@@ -36,3 +36,9 @@ Test fresh initialization, a clean reapply, each conflict choice, managed
 block preservation, user-deleted files, rollback after a write failure, and
 rejection of a mismatched installed version before project-data reads.
 Run the platform registry tests so generated assets remain synchronized.
+
+## Independent maintenance boundary
+
+[Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
+selected-task CLI/SDK boundary. It does not relax this document's ordinary
+operation, current writer, or complete migration contracts.
