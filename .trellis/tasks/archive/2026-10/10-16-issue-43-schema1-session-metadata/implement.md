@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: implementation and independent quality review completed locally on 2026-10-16; local commit authorized on 2026-10-16; commit execution pending. Task remains `in_progress` until workflow closeout. Validation outcomes and full-suite caveat are recorded in `research/validation.md` and `research/check.md`.
+Status: implementation and independent quality review completed locally on 2026-10-16; work committed, PR #44 merged, Issue #43 closed and exact merged-main CI passed on 2026-10-16; local Task archival follows. Task remains `in_progress` until workflow closeout. Validation outcomes and full-suite caveat are recorded in `research/validation.md` and `research/check.md`.
 
 ## Ordered work
 
@@ -55,3 +55,7 @@ Independent check found no actionable findings across A1-A7. Stable targeted che
 ## Authorized commit
 
 User approved one local commit `fix(maintenance): #43 兼容旧原生 schema-1 会话元数据` containing the four reviewed code/test/spec files and this Task directory. The commit hook runs its configured checks. No push, PR, merge, release, cleanup or business migration is authorized by this approval.
+
+## Delivered outcome
+
+Reviewed work commit `e28e44b7` was published through PR #44 and merged as `2a6f10ba`; both exact PR and merged-main CI passed. Original local failures and later successful profiles are preserved in validation evidence. Accepted A1-A7 is complete for upstream Issue #43; Guru #575 adoption and business acceptance remain outside this Task. Task bookkeeping archive publication requires a separately reviewed commit.
