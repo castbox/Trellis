@@ -5,7 +5,7 @@
 用户于 2026-10-17 修订性能验收口径。原估定绝对耗时和固定百分比不再阻塞交付。
 修订说明见 `acceptance-revision.md`。旧冻结文件和失败样本保持原样。
 本轮独立审核已通过修订后的技术验收，见 `revised-acceptance-review.md`。
-Task 保持 `in_progress`，等待当前提交 CI、合并及正式交付。
+实现与正式安装交付均已通过独立审核。Issue #47 已关闭；本 Task 待原生归档。
 
 ## 已有功能与质量证据
 
@@ -33,9 +33,14 @@ Ubuntu 128 路径混合内容的完整恢复改善 3.52%，历史查询改善 4.
 嵌套诊断仅补充区间归属，不能替代验收样本，也不证明数值不可能性。
 没有新设时间上限，没有重测择样，没有把历史 FAIL 改判为 PASS。
 
-## 剩余交付
+## 正式交付
 
-本轮独立审查已按修订合同核对完整范围，结论为可进入合并流程。
-仍须等待当前提交 CI，并完成 main 合并、精确配对安装包、不可变 Release 及下载重装复验。
-这些交付完成后，才能关闭 Issue #47 并归档本 Task。
-下游 #589 的正式采用和原 Task Completion 仍由下游负责。
+[PR #50](https://github.com/castbox/Trellis/pull/50) 已合并至 main，源码为 `9f40ec70914f98fce2619560274cc1d0619f2f7e`。
+精确 main CI 通过。`.4` 成对安装包已发布，标签绑定上述提交。
+发布后重新下载的校验和、1013 个文件字节与权限，以及全部 7 项安装行为检查通过。
+npm 发布 workflow 和 job 均为 skipped。
+完整不可变来源与复验证据见 `release4/README.md` 和 `release4/verification.json`。
+
+上游技术与安装交付已完成，最终独立交付审核通过。Issue #47 已关闭，实际结果见 `release4/issue-closure.json`。
+本 Task 接下来通过原生归档流程收尾。归档提交的 CI、合并与 main 同步以 GitHub 实际结果为准。
+下游 #589 的匹配采用、正式集成和原 Task Completion 仍由下游负责。
