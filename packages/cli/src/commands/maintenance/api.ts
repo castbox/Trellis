@@ -14,6 +14,7 @@ import * as tools from "./tools.js";
 import * as tasks from "./tasks.js";
 import type { ToolsInstallationInput, ToolsTargetInspection } from "./tools.js";
 import type {
+  ArchivedTaskResumeInput,
   TaskConversionInput,
   LegacyCloseoutInput,
   InspectTaskTargetInput,
@@ -32,8 +33,13 @@ export type {
   ToolsTargetInspection,
   ToolsWorkflowDecision,
 } from "./tools.js";
-export { parseTaskConversionInput, parseLegacyCloseoutInput } from "./tasks.js";
+export {
+  parseTaskConversionInput,
+  parseLegacyCloseoutInput,
+  parseArchivedTaskResumeInput,
+} from "./tasks.js";
 export type {
+  ArchivedTaskResumeInput,
   TaskConversionInput,
   LegacyCloseoutInput,
   InspectTaskTargetInput,
@@ -88,6 +94,11 @@ export function prepareTaskConversion(
 ): PreparedMaintenancePlan {
   return perform(() => tasks.prepareTaskConversion(input));
 }
+export function prepareArchivedTaskResume(
+  input: ArchivedTaskResumeInput,
+): PreparedMaintenancePlan {
+  return perform(() => tasks.prepareArchivedTaskResume(input));
+}
 export function prepareLegacyCloseout(
   input: LegacyCloseoutInput,
 ): PreparedMaintenancePlan {
@@ -101,10 +112,16 @@ export interface MaintenanceContract {
     "tools_install",
     "task_conversion",
     "legacy_closeout",
+    "task_resume",
   ];
   source_versions: string[];
   task_families: string[];
   session_families: string[];
+  archive_resume: {
+    task_families: string[];
+    generation: "preserve";
+    original_archive: "read_only";
+  };
 }
 export function getMaintenanceContract(): MaintenanceContract {
   const candidate = candidateIdentity();
@@ -116,12 +133,18 @@ export function getMaintenanceContract(): MaintenanceContract {
       "tools_install",
       "task_conversion",
       "legacy_closeout",
+      "task_resume",
     ] as const,
     source_versions: [
       "stable 0.6.x",
       "0.7.0-castbox.N, N >= 1, no newer than candidate",
     ],
     task_families: ["known_legacy", "schema1", "schema2_preserve_only"],
+    archive_resume: {
+      task_families: ["known_legacy", "schema1"],
+      generation: "preserve",
+      original_archive: "read_only",
+    },
     session_families: [
       "unversioned_local",
       "schema1_path",

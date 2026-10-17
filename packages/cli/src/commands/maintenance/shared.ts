@@ -63,6 +63,7 @@ export interface TaskGuard {
   generation: number;
   task_ref: string;
   archive_ref?: string;
+  original_task_ref?: string;
   target_branch: string | null;
 }
 interface PlanBase {
@@ -76,7 +77,10 @@ interface PlanBase {
 export type PreparedMaintenancePlan = PlanBase &
   (
     | { kind: "tools_install"; guard: ToolsGuard }
-    | { kind: "task_conversion" | "legacy_closeout"; guard: TaskGuard }
+    | {
+        kind: "task_conversion" | "legacy_closeout" | "task_resume";
+        guard: TaskGuard;
+      }
   );
 export type PreparePlanInput = Omit<
   PlanBase,
@@ -85,7 +89,7 @@ export type PreparePlanInput = Omit<
   (
     | { kind: "tools_install"; guard: ToolsGuard }
     | {
-        kind: "task_conversion" | "legacy_closeout";
+        kind: "task_conversion" | "legacy_closeout" | "task_resume";
         guard: Omit<TaskGuard, "target_branch">;
       }
   );
@@ -95,6 +99,10 @@ export interface MaintenanceResult {
   status: "prepared" | "pending" | "applied" | "rolled_back";
   pending_paths: string[];
   recovery_ref: string | null;
+  resumed_task?: {
+    key: { task_id: string; lifecycle_generation: number };
+    task_ref: string;
+  };
 }
 interface StoredOperation {
   plan: PreparedMaintenancePlan;
@@ -322,9 +330,12 @@ function validateSnapshot(value: RawSnapshot | DirectorySnapshot | null): void {
 function validatePlan(plan: PreparedMaintenancePlan, candidate = true): void {
   if (
     plan.schema_version !== "1.0" ||
-    !["tools_install", "task_conversion", "legacy_closeout"].includes(
-      plan.kind,
-    ) ||
+    ![
+      "tools_install",
+      "task_conversion",
+      "legacy_closeout",
+      "task_resume",
+    ].includes(plan.kind) ||
     !/^[a-f0-9-]{36}$/.test(plan.operation_id)
   )
     fail("invalid_plan", "Unknown maintenance plan");
@@ -372,6 +383,41 @@ function validatePlan(plan: PreparedMaintenancePlan, candidate = true): void {
       "candidate_mismatch",
       "Prepared CLI/Core content no longer matches executing candidate",
     );
+  if (plan.kind === "task_resume") {
+    if (
+      !/^\.trellis\/tasks\/[^/]+$/.test(plan.guard.task_ref) ||
+      plan.guard.task_ref === ".trellis/tasks/archive" ||
+      !plan.guard.archive_ref ||
+      !/^\.trellis\/tasks\/archive\/[^/]+\/[^/]+$/.test(
+        plan.guard.archive_ref,
+      ) ||
+      !plan.guard.original_task_ref ||
+      !/^\.trellis\/tasks\/[^/]+$/.test(plan.guard.original_task_ref) ||
+      plan.guard.original_task_ref === ".trellis/tasks/archive"
+    )
+      fail(
+        "invalid_plan",
+        "Archive resume requires exact frozen archive, original and active Task paths",
+      );
+    for (const action of plan.actions) {
+      if (action.root !== plan.target_root) continue;
+      if (
+        (action.path === plan.guard.archive_ref ||
+          action.path.startsWith(`${plan.guard.archive_ref}/`)) &&
+        !isDeepStrictEqual(action.source, action.target)
+      )
+        fail("invalid_scope", "Original archive is read-only");
+      if (
+        (action.path === plan.guard.task_ref ||
+          action.path.startsWith(`${plan.guard.task_ref}/`)) &&
+        action.source !== null
+      )
+        fail(
+          "invalid_scope",
+          "Active resume destination must have been absent",
+        );
+    }
+  }
   const paths = new Set<string>();
   for (const action of plan.actions) {
     contained(action.root, action.path);
@@ -515,28 +561,34 @@ function save(ref: string, stored: StoredOperation): void {
   fs.mkdirSync(path.dirname(ref), { recursive: true });
   writeFileAtomic(ref, JSON.stringify(stored, null, 2) + "\n", 0o600);
 }
-function validateCloseoutCarriers(plan: PreparedMaintenancePlan): void {
-  if (plan.kind !== "legacy_closeout") return;
+function validateSelectedCarriers(plan: PreparedMaintenancePlan): void {
+  if (plan.kind !== "legacy_closeout" && plan.kind !== "task_resume") return;
   const repo = observeRepository(plan.target_root);
   const selected = {
     task_id: plan.guard.task_id,
     generation: plan.guard.generation,
     task_path: contained(plan.target_root, plan.guard.task_ref),
+    task_paths:
+      plan.kind === "task_resume"
+        ? [plan.guard.archive_ref, plan.guard.original_task_ref].flatMap(
+            (ref) => (ref ? [contained(plan.target_root, ref)] : []),
+          )
+        : [],
   };
-  const requireRetirement = (root: string, ref: string): void => {
+  const requireDisposition = (root: string, ref: string): void => {
     if (
       !plan.actions.some(
         (action) =>
           action.root === root &&
           action.path === ref &&
           action.kind !== "directory" &&
-          action.source !== null &&
-          action.target === null,
+          (plan.kind === "task_resume" ||
+            (action.source !== null && action.target === null)),
       )
     )
       fail(
         "stale_source",
-        `Selected Task carrier was not reviewed for retirement: ${root}:${ref}; prepare a new closeout with the current carrier inventory`,
+        `Selected Task carrier was not reviewed${plan.kind === "legacy_closeout" ? " for retirement" : ""}: ${root}:${ref}; prepare a new operation with the current carrier inventory`,
       );
   };
   const directories = [
@@ -566,7 +618,7 @@ function validateCloseoutCarriers(plan: PreparedMaintenancePlan): void {
           common_dir: repo.common_dir,
         }).matches
       )
-        requireRetirement(directory.root, ref);
+        requireDisposition(directory.root, ref);
     }
   }
   if (repo.common_dir) {
@@ -579,13 +631,73 @@ function validateCloseoutCarriers(plan: PreparedMaintenancePlan): void {
         selected,
       ).matches
     )
-      requireRetirement(repo.common_dir, ref);
+      requireDisposition(repo.common_dir, ref);
+  }
+}
+function validateResumeTrees(plan: PreparedMaintenancePlan): void {
+  if (plan.kind !== "task_resume") return;
+  if (
+    plan.guard.original_task_ref &&
+    plan.guard.original_task_ref !== plan.guard.task_ref &&
+    fs.existsSync(contained(plan.target_root, plan.guard.original_task_ref))
+  )
+    fail(
+      "later_work_conflict",
+      "The original active path was occupied after preparation; its carriers no longer belong to the selected archive",
+    );
+  for (const ref of [plan.guard.archive_ref, plan.guard.task_ref]) {
+    if (!ref) continue;
+    const walk = (current: string): void => {
+      const full = contained(plan.target_root, current);
+      if (!fs.existsSync(full)) return;
+      const entry = fs.lstatSync(full);
+      const action = plan.actions.find(
+        (item) => item.root === plan.target_root && item.path === current,
+      );
+      if (!action || (action.kind === "directory") !== entry.isDirectory())
+        fail(
+          "later_work_conflict",
+          `Task tree contains an unreviewed entry: ${current}`,
+        );
+      if (entry.isDirectory())
+        for (const name of fs.readdirSync(full)) walk(`${current}/${name}`);
+    };
+    walk(ref);
+  }
+  const tasks = contained(plan.target_root, ".trellis/tasks");
+  for (const name of fs.readdirSync(tasks)) {
+    if (name === "archive" || `.trellis/tasks/${name}` === plan.guard.task_ref)
+      continue;
+    const ref = `.trellis/tasks/${name}/task.json`;
+    if (
+      !fs
+        .statSync(contained(plan.target_root, `.trellis/tasks/${name}`))
+        .isDirectory()
+    )
+      continue;
+    const raw = readSnapshot(plan.target_root, ref);
+    if (!raw) continue;
+    const value: unknown = JSON.parse(
+      Buffer.from(raw.content_base64, "base64").toString("utf8"),
+    );
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "id" in value &&
+      typeof value.id === "string" &&
+      value.id.toLowerCase() === plan.guard.task_id.toLowerCase()
+    )
+      fail(
+        "later_work_conflict",
+        `Selected Task identity gained another active record: ${ref}`,
+      );
   }
 }
 function pending(
   plan: PreparedMaintenancePlan,
   direction: "target" | "source",
 ): MaintenanceAction[] {
+  validateResumeTrees(plan);
   const result: MaintenanceAction[] = [];
   for (const action of plan.actions) {
     const state = live(action);
@@ -599,7 +711,8 @@ function pending(
       );
     if (!isDeepStrictEqual(state, action[direction])) result.push(action);
   }
-  if (direction === "target") validateCloseoutCarriers(plan);
+  if (direction === "target" || plan.kind === "task_resume")
+    validateSelectedCarriers(plan);
   // A later business child is outside this operation's frozen directory tree.
   for (const action of result)
     if (action.kind === "directory" && action[direction] === null) {
@@ -690,6 +803,17 @@ function result(
     status,
     pending_paths: actions.map((a) => `${a.root}:${a.path}`),
     recovery_ref: ref,
+    ...(plan.kind === "task_resume"
+      ? {
+          resumed_task: {
+            key: {
+              task_id: plan.guard.task_id,
+              lifecycle_generation: plan.guard.generation,
+            },
+            task_ref: plan.guard.task_ref,
+          },
+        }
+      : {}),
   };
 }
 async function postvalidate(plan: PreparedMaintenancePlan): Promise<void> {
