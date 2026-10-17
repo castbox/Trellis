@@ -41,3 +41,11 @@ The sole benchmark run 39011401555 completed all cases and failed acceptance: 18
 All inputs, 84 pyc OIDs, raw scopes and resource records passed integrity checks; independent recomputation exactly matches the artifact.
 Full evidence is retained at research/benchmark/ci-cohort1. Original Mac results remain unchanged.
 No merge, release, Issue closure or archive is authorized by this failed result.
+
+
+## Nested diagnostic boundary
+
+A single non-acceptance nested diagnostic per operation is retained in research/nested-owner-diagnostic.{md,json}. It preserves the first instrumentation failure and harmless import probes before the corrected observations. Public method intervals and wrapper complements reconcile exactly in integer nanoseconds. Both observed complements are below the original caps; this does not support numerical impossibility. This current-Mac diagnostic lacks the original count/RSS observer and cannot replace any acceptance sample or establish a performance pass. No production or frozen input changed.
+
+
+The independent checker reviewed the nested integer intervals, exact inputs, embedded scripts and stated limits without starting a measurement; no finding remains in this diagnostic record. The evidence-only closeout commit uses HUSKY=0 and [skip ci]; it changes no executable source or frozen acceptance file. Full hook and CI both passed for ef101a642f2f570a7268062005a52450e6666aef. Those code-quality passes do not change performance FAIL.
