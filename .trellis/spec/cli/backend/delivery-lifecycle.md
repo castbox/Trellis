@@ -336,3 +336,66 @@ Performance evidence must exercise complete supported public operations and
 report all Git subprocesses, unique/requested objects, actual bytes, timings and
 Python/Git RSS scope separately. Freeze numerical gates after before measurement
 and before production changes; never relax them using after results.
+
+### Public immutable Git candidates
+
+The installed `common.delivery_store.GitCandidateContent(root, *,
+no_lazy_fetch=False)` exposes the same digest owner to historical pull-request
+consumers. Use `with GitCandidateContent(actual_root, no_lazy_fetch=True) as
+content:` and `content.content_ref(exact_commit, paths)`. The input must name a
+full lowercase actual commit OID. Branch names, tags, abbreviations, non-commit
+objects and a 40-hex prefix in a SHA-256 repository fail with `invalid_git_fact`.
+The context resolves and fixes one actual repository root, including a bare
+history repository. It strips inherited `GIT_*` redirects and sets `LC_ALL=C` for stable Git
+diagnostics in the old-Git compatibility fallback. Explicit
+`no_lazy_fetch=True` sets `GIT_NO_LAZY_FETCH=1` on every Git subprocess.
+
+The public context reads only selected literal tree paths in argument batches
+bounded to 64 KiB including fixed arguments. It retains directory and other
+non-regular entries for type validation. Existing full-tree/scope helper calls
+retain their behavior. Each call validates its own nonempty unique relative path list, private-path
+exclusions, actual commit, tree entry type/mode and object availability. Each
+consumer compares its expected candidate independently. Repeated blob identities
+share raw-content SHA256 facts within that context. Identical serialized entries
+may share an aggregate SHA256 only after current-input validation. A cached hash
+does not bypass the Git availability/type check. Missing paths retain deletion
+entries; directories, symlinks and gitlinks fail. Literal path lookup and the
+original compact UTF-8 digest serialization remain unchanged. There are no
+caller-supplied hash facts or persistent cache files.
+
+`close()` clears reduced facts and rejects later use with `invalid_git_fact`.
+Context exit closes on ordinary success and consumer failure. Blob bodies use
+the existing bounded, spooled object reader. This public context uses finite
+4096-request batches to amortize process startup for broad candidates. The
+first batch includes an exact commit OID/type control request within that
+limit. A content batch uses `cat-file --batch-command` with `info` for the
+commit and `contents` for blobs. The commit control request transports no body
+and computes no blob hash. Git versions that explicitly reject that option use
+a separate commit metadata check followed by the original blob batch protocol.
+Other failures do not trigger fallback. A metadata batch validates commit identity/type even when
+all selected paths are deleted or all content hashes are cached. This replaces
+a separate commit-check subprocess while retaining validation on every call. Shared
+reader defaults remain 128 requests for Task and local-commit consumers. Neither
+setting keeps blob bodies resident across calls. Metadata may scale with
+selected paths and unique objects.
+
+A supported historical consumer replaces snapshot materialization plus
+`candidate_content_ref(snapshot, paths, "git")` with this public context. A
+standalone recovery owns one context. A history query owns one context for its
+actual repository and closes/recreates it when preparation switches to an
+isolated scratch root. Historical preparation remains the fetch/recovery owner;
+the digest owner does not prepare history. Preserve that owner's explicit
+no-lazy-fetch policy and independent recorded-fact comparisons. Capability
+checks may select the additive class through the existing module projection.
+An old filesystem fallback remains compatible, but does not prove immutable
+reuse. Ordinary `candidate_content_ref` Path values remain mutable observations,
+including files originally materialized from Git. The API-1.0 contract shape and
+normal local-commit verification remain unchanged.
+
+Regression coverage uses real Git repositories for filesystem-oracle parity,
+literal paths, deletion/empty/executable entries, per-operation unique blob
+observations, fresh/closed context boundaries, independent invalid inputs,
+HEAD/index/worktree movement, missing cached objects, bare repositories,
+repository environment isolation, explicit no-lazy-fetch and exact SHA-256
+commit width. Full recovery/query wrappers and installed projection evidence
+must accompany performance claims; direct digest tests alone are insufficient.
