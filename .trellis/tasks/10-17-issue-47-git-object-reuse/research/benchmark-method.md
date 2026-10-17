@@ -69,3 +69,15 @@ python3 .trellis/tasks/10-17-issue-47-git-object-reuse/research/task_components.
 ```
 
 The companion's hash, inputs and schedule are pinned in `frozen-task-component-probe.json`. No source implementation is changed or mocked by either measurement wrapper.
+
+## Fixture equivalence boundary
+
+The before/after fixtures use byte-identical candidate data, Task metadata data, path sets, modes, and history topology/cardinality. Immutable blob OIDs and tree modes therefore match. Repositories are freshly constructed; Git commit author/committer timestamps use construction-time defaults, so the complete commit OIDs differ. This experiment does **not** claim byte-identical complete commit objects across the passes. Commit-body sizes were not recorded separately. Logical candidate byte totals and largest input object sizes are compared explicitly; the unique/blob-body counters observe actual reads rather than inferring them from commit identity. Pinning commit timestamps would improve a future experiment, but the frozen harness and gates were retained for this one.
+
+The revised normal-delivery implementation retains batched `--batch-check` metadata requests for filesystem-seeded immutable object identities, preserving missing promised-object read failures. The frozen main `requested_object_reads` counter measures blob **body** reads only; zero body rereads does not mean zero Git requests. The supplemental functional probe's isolated subprocess observer logs the actual `--batch-check` stdin OIDs and counts, plus fixed `cat-file -t` checks. It separately runs a normal Delivery and a distinct historical Delivery in each 10,001-path fixture. Both include one 4 MiB blob, so the repeated-content fixture has exactly two unique blobs; the distinct-content fixture has 10,001.
+
+Evaluate a reproduced after report against the original frozen numeric gates, without regenerating or loosening those gates:
+
+```sh
+python3 .trellis/tasks/10-17-issue-47-git-object-reuse/research/evaluate.py --after /tmp/issue47-after.json --limits .trellis/tasks/10-17-issue-47-git-object-reuse/research/frozen-numeric-limits.json --output /tmp/issue47-acceptance.json
+```

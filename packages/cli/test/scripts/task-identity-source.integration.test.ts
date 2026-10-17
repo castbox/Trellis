@@ -168,6 +168,73 @@ resolve_task_identity(repository_facts(Path.cwd()), 'current', 0)
     expect(fs.readdirSync(path.join(repo, ".trellis/tasks"))).toEqual(before);
   });
 
+  it("reserves permissive historical identities across distinct heads sharing blobs and observes new refs on the next call", () => {
+    const history = path.join(repo, ".trellis/tasks/history");
+    fs.mkdirSync(history, { recursive: true });
+    const metadataFile = path.join(history, "task.json");
+    const commit = (message: string) => {
+      git(repo, "add", ".trellis/tasks");
+      git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", message);
+    };
+    // History intentionally accepts ID-only records, numeric IDs and malformed
+    // JSON which would be rejected by the independent live-workspace reader.
+    fs.writeFileSync(metadataFile, JSON.stringify({ id: "Shared_Reserved" }));
+    commit("shared history");
+    git(repo, "branch", "shared-history");
+    const other = path.join(repo, ".trellis/tasks/other");
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, "task.json"), JSON.stringify({ id: 123 }));
+    const malformed = path.join(repo, ".trellis/tasks/malformed");
+    fs.mkdirSync(malformed);
+    fs.writeFileSync(path.join(malformed, "task.json"), "{");
+    const bom = path.join(repo, ".trellis/tasks/bom");
+    fs.mkdirSync(bom);
+    fs.writeFileSync(path.join(bom, "task.json"), '\uFEFF{"id":"BOM_Ignored"}');
+    commit("different head with same blob and unique metadata");
+    fs.rmSync(path.join(repo, ".trellis/tasks"), { recursive: true });
+    for (const id of ["shared_reserved", "123"]) {
+      const result = task(repo, "create", "Blocked", "--description", "Historical identity", "--slug", "blocked", "--task-id", id, "--no-start");
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("task_id_collision");
+      expect(fs.existsSync(path.join(repo, ".trellis/tasks"))).toBe(false);
+    }
+    expect(task(repo, "create", "Fresh", "--description", "Malformed history ignored", "--slug", "fresh", "--no-start").status).toBe(0);
+    expect(task(repo, "create", "BOM", "--description", "BOM history ignored", "--slug", "bom-case", "--task-id", "BOM_Ignored", "--no-start").status).toBe(0);
+    const freshFile = path.join(repo, ".trellis/tasks", taskDir(repo, "fresh"), "task.json");
+    const freshBytes = fs.readFileSync(freshFile);
+    const freshDirectories = fs.readdirSync(path.join(repo, ".trellis/tasks"));
+    const retry = task(repo, "create", "Fresh", "--description", "Malformed history ignored", "--slug", "fresh", "--no-start");
+    expect(retry.status).toBe(1);
+    expect(retry.stderr).toContain("task_id_collision");
+    expect(fs.readFileSync(freshFile)).toEqual(freshBytes);
+    expect(fs.readdirSync(path.join(repo, ".trellis/tasks"))).toEqual(freshDirectories);
+    fs.rmSync(path.join(repo, ".trellis/tasks"), { recursive: true });
+    fs.mkdirSync(history, { recursive: true });
+    fs.writeFileSync(metadataFile, JSON.stringify({ id: "Later_Reserved" }));
+    commit("new mutable branch head");
+    fs.rmSync(path.join(repo, ".trellis/tasks"), { recursive: true });
+    const later = task(repo, "create", "Later", "--description", "Fresh refs", "--slug", "later", "--task-id", "later_reserved", "--no-start");
+    expect(later.status).toBe(1);
+    expect(later.stderr).toContain("task_id_collision");
+  });
+
+  it("retains historical gitlink reads and fails on missing referenced objects before creating a Task", () => {
+    fs.writeFileSync(path.join(repo, "seed"), "seed");
+    git(repo, "add", "seed");
+    const commit = () => git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "historical gitlink");
+    commit();
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+    git(repo, "update-index", "--add", "--cacheinfo", `160000,${head},.trellis/tasks/link/task.json`);
+    commit();
+    expect(task(repo, "create", "Present", "--description", "Existing historical commit", "--slug", "present", "--no-start").status).toBe(0);
+    fs.rmSync(path.join(repo, ".trellis/tasks"), { recursive: true });
+    git(repo, "update-index", "--add", "--cacheinfo", `160000,${"f".repeat(40)},.trellis/tasks/link/task.json`);
+    commit();
+    const missing = task(repo, "create", "Missing", "--description", "Missing historical object", "--slug", "missing", "--no-start");
+    expect(missing.status).toBe(1);
+    expect(fs.existsSync(path.join(repo, ".trellis/tasks"))).toBe(false);
+  });
+
   it("creates a no-Issue task without branch metadata and archives it in a remote-backed repo", () => {
     const created = task(repo, "create", "Standalone", "--description", "Local work", "--slug", "standalone", "--no-start");
     expect(created.status, created.stderr).toBe(0);

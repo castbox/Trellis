@@ -192,6 +192,8 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
       expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
     }
     expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request(git(root, "rev-parse", "candidate-tag")))]).stderr).toContain("invalid_git_fact");
+    expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request("0".repeat(40)))]).stderr).toContain("invalid_git_fact");
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(before);
     const hexNamedBranch = "1".repeat(40); git(root, "branch", hexNamedBranch);
     expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request(hexNamedBranch))]).stderr).toContain("invalid_git_fact");
     expect(ready(true)).toEqual(original);
@@ -201,6 +203,171 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     expect(gitFree.content_ref).not.toBe(original.content_ref);
     expect(apply({ ...request(head), expected_phase: "publishing", historical_success: false }).phase).toBe("delivered");
     expect(record().deliveries[0]?.delivery_result?.candidate).toEqual(original);
+  });
+
+  for (const format of ["sha1", "sha256"]) {
+    it(`preserves literal paths, binary bytes, repeated blob modes and deletions in ${format} public apply`, () => {
+      git(root, "init", "-q", `--object-format=${format}`);
+      const names = ["plain", "空格文件", "with space", "with\ttab", "with\nnewline", "with:colon", "[abc]", " leading", "trailing ", "executable"];
+      const contents = Buffer.from("hello\0world\n");
+      for (const name of names) {
+        fs.writeFileSync(path.join(root, name), contents);
+        fs.chmodSync(path.join(root, name), name === "executable" ? 0o755 : 0o644);
+      }
+      fs.writeFileSync(path.join(root, "a"), "pathspec decoy");
+      git(root, "add", "--", ...names, "a");
+      git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "literal paths");
+      const paths = [...names, "deleted"];
+      const expected = digest(JSON.stringify([...paths].sort().map((name) => name === "deleted" ? [name, null, null] : [name, name === "executable" ? 0o755 : 0o644, createHash("sha256").update(contents).digest("hex")])));
+      const actual = JSON.parse(ok(root, "delivery", ["candidate", "--kind", "git", "--paths", ...paths])) as { content_ref: string };
+      expect(actual.content_ref).toBe(expected);
+      prepare(d1, "local_commit");
+      const head = git(root, "rev-parse", "HEAD");
+      const current: CandidateRef = { kind: "git", paths, content_ref: expected, head_ref: head, base_ref: null };
+      const request = operation("record_delivery", "delivery", { expected_phase: "planning", historical_success: true, result: { result_id: "literal-paths", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "local_commit", commit: head } }, d1);
+      const bad = operation("record_delivery", "delivery", { expected_phase: "planning", historical_success: true, result: { result_id: "wrong-digest", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: { ...current, content_ref: digest("incorrect") }, profile: "local_commit", commit: head } }, d1);
+      const preimage = fs.readFileSync(path.join(root, task, "task.json"));
+      expect(run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(bad)]).stderr).toContain("candidate_mismatch");
+      expect(fs.readFileSync(path.join(root, task, "task.json"))).toEqual(preimage);
+      expect(apply(request).phase).toBe("delivered");
+      const before = fs.readFileSync(path.join(root, task, "task.json"));
+      fs.writeFileSync(path.join(root, "plain"), "changed later");
+      const changed = JSON.parse(ok(root, "delivery", ["candidate", "--kind", "git", "--paths", ...paths])) as { content_ref: string };
+      expect(changed.content_ref).not.toBe(expected);
+      expect(apply(request).changed).toBe(false);
+      expect(fs.readFileSync(path.join(root, task, "task.json"))).toEqual(before);
+    });
+  }
+
+  it("retains explicit Git-mode hashing without a Git repo and observes mutable bytes, mode, index and HEAD on later calls", () => {
+    const noRepo = JSON.parse(ok(root, "delivery", ["candidate", "--kind", "git", "--paths", "artifact.txt"])) as { content_ref: string };
+    expect(noRepo.content_ref).toBe(digest(JSON.stringify([["artifact.txt", 0o644, createHash("sha256").update(fs.readFileSync(path.join(root, "artifact.txt"))).digest("hex")]])));
+    git(root, "init", "-q");
+    git(root, "add", "artifact.txt");
+    git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "mutable baseline");
+    const current = candidate(true);
+    const observed = spawnSync(python, ["-c", `
+import json,subprocess,sys
+from pathlib import Path
+from common.delivery_store import verify_candidate
+from common.delivery_schema import DeliveryError
+root=Path.cwd();value=json.loads(sys.argv[1]);file=root/'artifact.txt';original=file.read_bytes();results=[]
+def verify():
+    try: verify_candidate(root,value);results.append('ok')
+    except DeliveryError as exc: results.append(exc.code)
+verify()
+file.write_bytes(b'changed bytes');verify()
+subprocess.run(['git','add','artifact.txt'],check=True)
+file.write_bytes(original);verify()
+file.chmod(0o755);verify();file.chmod(0o644)
+subprocess.run(['git','-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','-qm','changed index and HEAD'],check=True)
+verify()
+print(json.dumps(results))
+`, JSON.stringify(current)], { cwd: root, encoding: "utf8", env: { ...process.env, PYTHONPATH: path.join(root, ".trellis/scripts") } });
+    expect(observed.status, observed.stderr).toBe(0);
+    expect(JSON.parse(observed.stdout)).toEqual(["ok", "candidate_mismatch", "ok", "candidate_mismatch", "candidate_mismatch"]);
+  });
+
+  it("hashes repeated observed content and identical aggregates once during normal public store delivery", () => {
+    git(root, "init", "-q");
+    // Larger than the bounded in-memory spool; repeated bytes still need each
+    // mutable file observed before its immutable commit identity can be reused.
+    const contents = Buffer.alloc(2 * 1024 * 1024, 0x61);
+    const paths = ["artifact.txt", "duplicate.txt", "executable.txt"];
+    for (const name of paths) {
+      fs.writeFileSync(path.join(root, name), contents);
+      fs.chmodSync(path.join(root, name), name === "executable.txt" ? 0o755 : 0o644);
+    }
+    git(root, "add", "--", ...paths);
+    git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "shared large bytes");
+    prepare(d1, "local_commit");
+    const hash = JSON.parse(ok(root, "delivery", ["candidate", "--kind", "git", "--paths", ...paths])) as { content_ref: string };
+    const head = git(root, "rev-parse", "HEAD");
+    const current: CandidateRef = { kind: "git", paths, ...hash, head_ref: head, base_ref: null };
+    const planning = gate("planning", "planning", null, null);
+    apply(operation("begin_check", "implementation", { expected_phase: "implementing", candidate: current }, d1));
+    const check = gate("check", "checking", current, planning);
+    const review = gate("full_review", "reviewing", current, check);
+    gate("readiness", "reviewing", current, review);
+    const request = operation("record_delivery", "delivery", { expected_phase: "publishing", result: { result_id: "hash-once", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "local_commit", commit: head } }, d1);
+    const observed = spawnSync(python, ["-c", `
+import hashlib,json,sys
+from pathlib import Path
+from common.delivery_store import apply_to_store
+original=hashlib.sha256
+targets={sys.argv[3]:0,sys.argv[4]:0}
+class CountingHash:
+    def __init__(self,*args,**kwargs): self.inner=original(*args,**kwargs)
+    def update(self,value): self.inner.update(value)
+    def hexdigest(self):
+        result=self.inner.hexdigest()
+        if result in targets: targets[result]+=1
+        return result
+hashlib.sha256=CountingHash
+result=apply_to_store(Path.cwd()/sys.argv[1],Path.cwd(),json.loads(sys.argv[2]))
+print(json.dumps({'changed':result['changed'],'counts':list(targets.values())}))
+`, task, JSON.stringify(request), createHash("sha256").update(contents).digest("hex"), hash.content_ref.slice(7)], { cwd: root, encoding: "utf8", env: { ...process.env, PYTHONPATH: path.join(root, ".trellis/scripts") } });
+    expect(observed.status, observed.stderr).toBe(0);
+    expect(JSON.parse(observed.stdout)).toEqual({ changed: true, counts: [1, 1] });
+  });
+
+  it("retains actual blob availability checks for a normal local delivery in an offline partial clone", () => {
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-promisor-source-"));
+    const cloneParent = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-promisor-clone-"));
+    extra.push(source, cloneParent);
+    const clone = path.join(cloneParent, "clone");
+    git(source, "init", "-q");
+    git(source, "config", "uploadpack.allowFilter", "true");
+    const contents = fs.readFileSync(path.join(root, "artifact.txt"));
+    fs.writeFileSync(path.join(source, "artifact.txt"), contents);
+    git(source, "add", "artifact.txt");
+    git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "promised candidate");
+    execFileSync("git", ["clone", "-q", "--filter=blob:none", "--no-checkout", `file://${source}`, clone]);
+    expect(git(clone, "rev-list", "--objects", "--missing=print", "HEAD")).toMatch(/\n\?[a-f0-9]+/);
+    git(clone, "remote", "set-url", "origin", path.join(cloneParent, "offline-origin"));
+    // Copy only local workflow/worktree inputs; no checkout or object deletion.
+    fs.cpSync(path.join(root, ".trellis"), path.join(clone, ".trellis"), { recursive: true });
+    for (const name of ["artifact.txt", "requirements.md", "plan.md"]) fs.copyFileSync(path.join(root, name), path.join(clone, name));
+    const originalRoot = root;
+    root = clone;
+    try {
+      prepare(d1, "local_commit");
+      const current = ready(true);
+      const before = fs.readFileSync(path.join(root, task, "task.json"));
+      const request = operation("record_delivery", "delivery", { expected_phase: "publishing", result: { result_id: "offline-promised-blob", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: current, profile: "local_commit", commit: current.head_ref } }, d1);
+      const outcome = run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request)]);
+      expect(outcome.status).toBe(1);
+      expect(outcome.stderr).toContain("invalid_git_fact");
+      expect(fs.readFileSync(path.join(root, task, "task.json"))).toEqual(before);
+    } finally {
+      root = originalRoot;
+    }
+  });
+
+  it("rejects committed directories, symlinks and gitlinks without writing the Task", () => {
+    git(root, "init", "-q");
+    fs.mkdirSync(path.join(root, "directory"));
+    fs.writeFileSync(path.join(root, "directory/child"), "child");
+    fs.symlinkSync("artifact.txt", path.join(root, "link"));
+    git(root, "add", "artifact.txt", "directory", "link");
+    git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "entry types");
+    git(root, "update-index", "--add", "--cacheinfo", `160000,${git(root, "rev-parse", "HEAD")},gitlink`);
+    git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "gitlink");
+    prepare(d1, "local_commit");
+    const before = fs.readFileSync(path.join(root, task, "task.json"));
+    for (const locator of ["directory", "link", "gitlink"]) {
+      const head = git(root, "rev-parse", "HEAD");
+      const request = operation("record_delivery", "delivery", { expected_phase: "planning", historical_success: true, result: { result_id: "unsupported", owner_id: native.workflow.owners.delivery, evidence: [ref("plan.md")], candidate: { kind: "git", paths: [locator], content_ref: digest("placeholder"), head_ref: head, base_ref: null }, profile: "local_commit", commit: head } }, d1);
+      const result = run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify(request)]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("invalid_git_fact");
+      expect(fs.readFileSync(path.join(root, task, "task.json"))).toEqual(before);
+    }
+    for (const [locator, code] of [["directory", "invalid_candidate"], ["link", "invalid_locator"]]) {
+      const result = run(root, "delivery", ["candidate", "--kind", "git", "--paths", locator]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(code);
+    }
   });
 
   it("isolates Python candidate and historical blob reads from a different real repository", () => {

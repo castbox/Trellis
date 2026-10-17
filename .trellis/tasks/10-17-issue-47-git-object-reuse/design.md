@@ -17,3 +17,7 @@ Fixed exact-commit type/full-OID, current HEAD/base, authorities, operation/gene
 Freeze measured before results and numeric gates before production implementation. Functional tests compare original digest bytes and typed exits through public operations; include lost-output retry preserving task bytes and a single fact. Build/package via official CLI flow, install paired local tarballs in an isolated prefix and run representative init/reapply/drift checks. Source commit plus packaged exact dependency provenance supplies installable delivery; no global install changes.
 
 Rollback is a focused revert of this commit and its managed projection; no persisted schema or migration changes. Downstream guru-trellis#589 retains its matching-install/integration/Completion responsibility. Full cross-platform release proof is explicitly separate.
+
+## Review correction: object availability
+
+Normal local_commit digest reuse retains a batch128 Git metadata readability/type check for each seeded unique blob. A real offline blob:none partial clone with independently reconstructed worktree bytes must still fail with invalid_git_fact and preserve Task bytes when Git cannot resolve the referenced blob. The initial provisional after candidate skipped this check; its measurements are not final evidence. The corrected source reruns the unchanged frozen after benchmark and limits. Standalone candidates/gates retain direct streaming SHA256 without raw-object/spool work.
