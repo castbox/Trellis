@@ -5,7 +5,7 @@
 用户于 2026-10-17 修订性能验收口径。原估定绝对耗时和固定百分比不再阻塞交付。
 修订说明见 `acceptance-revision.md`。旧冻结文件和失败样本保持原样。
 本轮独立审核已通过修订后的技术验收，见 `revised-acceptance-review.md`。
-实现与正式安装交付均已通过独立审核。Issue #47 已关闭；本 Task 待原生归档。
+实现与正式安装交付均已通过独立审核。Issue #47 已关闭；本 Task 已通过原生流程归档为 `completed`。
 
 ## 已有功能与质量证据
 
@@ -42,5 +42,5 @@ npm 发布 workflow 和 job 均为 skipped。
 完整不可变来源与复验证据见 `release4/README.md` 和 `release4/verification.json`。
 
 上游技术与安装交付已完成，最终独立交付审核通过。Issue #47 已关闭，实际结果见 `release4/issue-closure.json`。
-本 Task 接下来通过原生归档流程收尾。归档提交的 CI、合并与 main 同步以 GitHub 实际结果为准。
+本 Task 已通过原生流程归档，会话当前 Task 绑定已清空。归档提交的 CI、合并与 main 同步以 GitHub 实际结果为准。
 下游 #589 的匹配采用、正式集成和原 Task Completion 仍由下游负责。

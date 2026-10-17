@@ -63,9 +63,12 @@ The independent checker reviewed the nested integer intervals, exact inputs, emb
 - [x] Build from exact merged main, pack/install/verify the paired .4 artifacts.
 - [x] Publish immutable release, download/checksum and repeat isolated install verification; confirm fork npm job skipped.
 - [x] Close Issue47 under the revised criteria after independent delivery verification.
-- [ ] Archive only this Task through the native owner. Closeout commit CI/merge and clean synced main are verified from actual GitHub/Git state.
+- [x] Archive only this Task through the native owner. Closeout commit CI/merge and clean synced main are verified from actual GitHub/Git state.
 
 This requirements/review commit is documentation-only and uses HUSKY=0. It does not repeat the already-passing full hook; standard CI runs on the actual submitted commit. No production, test, version or frozen measurement file changed.
 
 
 Final independent delivery review passed (research/release4/independent-delivery-review.md). Issue47 is actually CLOSED (release4/issue-closure.json). Temporary benchmark workflow removal belongs to closeout only; no runtime source changed. Release evidence/temporary-workflow removal and archive bookkeeping commits use HUSKY=0; standard closeout CI verifies the submitted tree. Published tag9f40ec70 and asset bytes remain fixed. GitHub immutable=false is explicitly recorded; fixed identities/non-rewrite policy are not a platform-lock claim.
+
+
+Native archive executed successfully on 2026-10-17. The selected Task is completed at archive/2026-10/10-17-issue-47-snapshot-hash-reuse. The current-session resolver returns (none). Closeout PR CI/merge/main synchronization are administrative final checks reported through the actual GitHub PR and Issue47; archive does not claim those future operations occurred. No other Task or old .3 archive was modified.
