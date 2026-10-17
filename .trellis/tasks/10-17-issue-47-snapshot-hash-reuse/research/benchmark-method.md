@@ -14,7 +14,7 @@
 
 第 0 次调用先记录实际本地 merge 对应的 Delivery。它是预热样本。第 1、2 次调用恢复同一 Publication 的既有结果。每次 query2 都读取并校验已记录的实际 merge。计时门槛使用第 1、2 次的中位数。第 0 次另有不退化门槛。全部样本均保留。
 
-128 和 10001 是完整候选的路径数，包含 15 个原 fixture 自动承接文件和 1 个删除路径。剩余路径是新增内容文件。前三个内容文件各为 4 MiB，内容互不相同。`repeated` 的其余内容文件使用相同字节。`mixed` 的其余内容文件各有独立内容。每 17 个内容文件中有 1 个可执行文件。
+128 和 10001 是完整候选的路径数，包含原 fixture 自动产生的 14 个 Python bytecode 文件、原 app.txt 和 1 个删除路径。剩余路径是新增内容文件。前三个内容文件各为 4 MiB，内容互不相同。`repeated` 的其余内容文件使用相同字节。`mixed` 的其余内容文件各有独立内容。每 17 个内容文件中有 1 个可执行文件。
 
 3 和 30 的精确探针另行只选择 payload 文件。它调用原 `commit_candidate`。两个探针均只有 1 个 blob，包含普通和可执行 mode，分别产生 4、31 次 SHA-256 构造。完整 wrapper 的其他候选文件仍正常存在，不把完整 wrapper 的 SHA 数混称为探针数字。
 
@@ -37,3 +37,29 @@
 用 Python 3.14 执行 `residual_benchmark.py`。环境变量 `BENCH_COUNT` 取 3、30、128 或 10001；`BENCH_VARIANT` 取 `repeated` 或 `mixed`。两个源码目录可用 `PINNED_GURU`、`PINNED_FORK` 指定。每个 case 单独启动进程。顺序执行，避免同时修改隔离 fixture。Git 作者和提交者固定为 `Local Test <test@example.invalid>`；两个日期均为 `2026-10-17T00:00:00Z`。
 
 原 Issue 47 和 PR 48 的交付证据保持原状。这组证据仅覆盖公开 immutable candidate 摘要残余。
+
+## OID 复现修正
+
+实施后首次核对发现，原 fixture 主 Python 会在 feature commit 前生成 14 个 `__pycache__` 文件。这些文件的字节包含临时目录绝对路径。原文将这些路径误写为 Planning 文件；现已更正。它们确实属于原正常候选。没有移除这些输入，也没有改写冻结基线或门槛。
+
+为复现同一不可变输入，after runner 从 before 进程 argv 读取原 fixture 目录，仅在该目录不存在时重新创建它。正常 fixture 使用原源码和固定作者/日期重建完全相同的 commit。runner 在计时前强制比较完整 head OID。相同 commit OID 约束整个 tree；runner 另存完整 candidate、mode/blob tree 和公开 content_ref。
+
+先前尝试在 Check 前覆盖新 runtime 时，原 Check 以 `stale_identity.reviewed_paths` 拒绝脏源码。这次尝试没有产生 after 性能样本。最终方法先按原入口完成合法 Publication fixture，再覆盖实际 after runtime，然后执行全部被测公开 manual/query2 操作。这模拟发布后的 runtime 采用。没有改写 Task、Gate、Publication 或历史 commit。
+
+覆盖后清除主进程旧 API 命名空间，再从目标安装目录重新加载。runner 检查新公开类存在，且其方法的执行文件是目标 `delivery_store.py`。新源码大小/mtime 也使原 bytecode 失效。运行前后核对所有安装源码 SHA-256。
+
+## 新协议的资源观察
+
+第三组起，公开 owner 将 commit 校验并入第一批 `cat-file --batch-command`：使用 `info <commit>` 读取 commit metadata，使用 `contents <blob>` 读取候选正文。commit 正文没有传输。其余 blob 批次仍用原 `--batch`。旧 Git 明确不支持新 option 时，owner 才回退到 metadata 校验和原正文 batch。
+
+冻结 observer 只识别原 `--batch`。因此 after runner 在隔离启动目录附加 `sitecustomize_batch_command_metrics.py`。这个扩展只观察新增协议和 metadata batch，不改动请求、响应、摘要或返回值。它保持原文件游标，按原协议读取 header 并 seek 过实际正文。它另记 metadata 请求、返回类型、advertised size 和实际 header 字节。`successful_body_bytes` 始终是实际传输的全部正文；commit 的 advertised size 不计为已传输正文。所有正文资源门槛和原 evaluator 保持不变。
+
+第三组因为独立检查发现 locale 对旧 Git fallback 的影响，在当前 case 正常结束后暂停。未启动该组最后一例。样本保存在 `interrupted-generation-3`，不用于宣称全组通过。第一、二组完整失败样本分别保存在 `failed-generation-1`、`failed-generation-2`。每次重新测量均对应真实实现修复。没有重复测量未改动源码来选择较快结果。
+
+## 精确路径 metadata 修复
+
+前一组已登记配对结果仍为原绝对检查 187/188、额外检查 24/24。唯一 136.232 微秒失败按原值保留。随后发现独立的 metadata 范围回归：新摘要入口读取完整 tree，原 pinned CandidateObjects 只读取请求路径。
+
+真实 Trellis HEAD `7d48f2a4db3be180b61e0d06555d87c650bbd093` 的只读诊断中，全树输出为 3498 行、417555 字节。最终新 helper 对两个实际文件和一个缺失路径只输出相关 13 行、1061 字节，并将结果过滤为两个精确请求文件。`-t` 用于保留同时请求的 parent directory，避免它因 descendant 选择而误变为删除。实际 directory 仍由公开 owner 拒绝。默认 read_tree 行为不变。
+
+这一修复完成独立检查后，新的完整配对协议在计时前提交为 `6c053879`。case 顺序、固定样本、原 188 项绝对门槛和额外 24 项配对检查均不变。其新 source checksum、run 和 evaluation 使用独立文件。没有用不同源码的样本拼接通过。

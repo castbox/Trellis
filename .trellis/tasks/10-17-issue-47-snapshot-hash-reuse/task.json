@@ -10,7 +10,7 @@
   },
   "title": "Issue 47 continuation: immutable snapshot digest reuse",
   "description": "Complete the original Issue47 public immutable-snapshot digest reuse path used by Guru pull-request recovery and query2; preserve prior delivery.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "cli",
   "package": "cli",
