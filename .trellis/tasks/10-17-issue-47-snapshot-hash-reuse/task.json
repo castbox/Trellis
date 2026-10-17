@@ -1,0 +1,30 @@
+{
+  "id": "issue-47-snapshot-hash-reuse",
+  "name": "issue-47-snapshot-hash-reuse",
+  "lifecycle_generation": 0,
+  "source": {
+    "kind": "issue",
+    "repo_ref": "castbox/Trellis",
+    "number": 47,
+    "disposition": "exact_source"
+  },
+  "title": "Issue 47 continuation: immutable snapshot digest reuse",
+  "description": "Complete the original Issue47 public immutable-snapshot digest reuse path used by Guru pull-request recovery and query2; preserve prior delivery.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cli",
+  "package": "cli",
+  "priority": "P2",
+  "createdAt": "2026-10-17",
+  "completedAt": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {},
+  "branch": "codex/47-snapshot-hash-reuse"
+}
