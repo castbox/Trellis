@@ -2,7 +2,7 @@
 
 ## 结论
 
-本次实现尚未完成全部验收。Task 保持 `in_progress`。Issue #47 保持打开。
+本次实现尚未完成全部验收。Task 保持 `in_progress`。Issue #47 保持打开。PR #50 保持草稿。
 当前候选不得合并、发布或作为下游正式采用的来源。
 
 公开摘要模块已提供 `GitCandidateContent`。该能力在一次操作内复用实际仓库中不可变 blob 的内容摘要。
@@ -13,37 +13,45 @@
 
 - 原 #48 能力复验通过 44/44。证据：`old-capability-acceptance.json`。
 - 正常恢复与历史流程通过 28/28。证据：`benchmark/public-fixture-results.json`。
-- 独立质量检查记录于 `final-quality.md`。正常生产提交 hook 已通过：2828 项通过，1 项跳过。
-- 候选安装通过全部 7 项检查。两个包的 1013 个文件字节与权限一致。证据：`candidate-install-verification.json` 和 `candidate-pack-verification.json`。候选包尚未发布，不能作为不可变 Release 交付证明。
+- 正常生产提交及 CI 登记提交的完整 hook 均通过：2828 项通过，1 项跳过。lint、类型检查、Python 3.9 编译和构建通过。
+- [标准 CI 39011401447](https://github.com/castbox/Trellis/actions/runs/39011401447) 通过，验证提交 `520b8d8c863845b15c7eec488ccfcbacda21253c`。
+- 候选安装通过全部 7 项检查。两个包的 1013 个文件字节与权限一致。证据：`candidate-install-verification.json` 和 `candidate-pack-verification.json`。候选包尚未发布。
 
-## 未通过的门槛
+## 性能验收仍未通过
 
-最后一组完整测量使用预先提交的显式进程策略协议。
-原绝对检查通过 183/188。额外配对检查通过 21/24。
-失败项涉及 128 路径的完整恢复或历史查询耗时，以及首次记录耗时。
-全部 10001 路径、摘要一致性、对象读取、SHA 次数及单进程资源检查通过。
-这些局部通过结果不能替代全部验收。
+两种环境分别保留结果。后一次测量不覆盖前一次失败。
 
-冻结标准、每次失败和暂停记录均保留。
-压缩归档提供原字节 SHA256 和解压校验。
-未放宽门槛，未丢弃样本，未用环境疑点替代通过证据。
-精确数值见 `benchmark/paired-controlled-policy-results.md`。
+|环境|原绝对检查|同环境配对检查|结论|
+|---|---:|---:|---|
+|原 Mac，显式进程策略|183/188|21/24|失败|
+|预先登记的 Ubuntu cohort 1|181/188|22/24|失败|
+
+Mac 失败项涉及 128 路径耗时。原始数值见 `benchmark/paired-controlled-policy-results.md`。
+Ubuntu 完整执行全部 6 个场景和 12 个 phase。7 个绝对门槛未通过；2 个配对门槛未通过。
+128 路径混合内容的 manual 改善 3.52%，query2 改善 4.40%，均低于 5% 要求。
+10001 路径混合内容的 manual 为 2.273483433 秒，超过原上限 2.168253252 秒。
+展示数值不用于取整放行。完整原值见 `benchmark/ci-cohort1/`。
+
+Ubuntu 的全部精确输入、84 个 pyc OID、进程范围和资源检查通过。
+独立复算的 188 个绝对检查和 24 个配对检查与原 artifact 完全一致。
+这是完整性能失败，不能归类为测量工具或 setup 失败。
+原 artifact、92 个正式结果和 3348 个原始进程记录均已保全。
+没有重跑、补样本、更换 runner、放宽门槛或丢弃失败。
 
 ## 后续责任边界
 
-独立实现分析和测量分析均未发现当前 Trellis 摘要模块内有实证支持的必要优化。
-摘要组件的独立观察约为 50–59 ms。完整恢复的中位耗时约为 717–731 ms。
+现有诊断未发现当前摘要模块内有实证支持、足以补齐剩余门槛的必要优化。
+此前诊断中的摘要组件观察约为 50–59 ms，完整恢复约为 717–731 ms。
 两组观察不是嵌套 profiler，不能直接相减并归因。
 
-固定 Guru 源码的 `manual_recovery.terminal_facts()` 逐个启动 Git，检查四个 commit 角色。
-原 Guru owner 可评估一次有界元数据批读，并保留每个角色的独立响应校验和原恢复行为。
-此建议属于下游调用方的责任范围。当前会话没有修改 Guru 正式源码，也没有承诺该建议能够满足时限。
-详细证据见 `benchmark/128-bottleneck-analysis.md`。
+Guru 原调用方可评估四个 commit 角色的元数据批读及 managed runtime 的重复进程启动。
+这些建议属于下游 owner，尚未实施，也不构成收益承诺。
+四角色检查只影响 manual，不能单独补齐 query2 的失败。
+本次没有修改 Guru 正式源码，也没有修改下游 Task 或 Issue。
 
 下游 #589 继续负责匹配安装、正式集成和原 Task Completion。
-本次上游候选不能制造或替代下游完成事实。
+后续必须取得全部冻结门槛的有效通过证据，才能合并和发布。
+发布后必须完成下载资产、校验和与隔离安装复验，才能关闭 #47 和归档本 Task。
 
-后续必须取得全部冻结门槛的有效通过证据，才能合并和发布新版本。
-发布后必须验证下载资产、校验和及隔离安装，才能关闭 #47 和归档本 Task。
-
-源码提交：`69033a662d68701610f09caa97f1d292bccd1076`。草稿 PR：https://github.com/castbox/Trellis/pull/50。
+生产源码提交：`69033a662d68701610f09caa97f1d292bccd1076`。
+PR：https://github.com/castbox/Trellis/pull/50。

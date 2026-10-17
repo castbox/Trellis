@@ -24,7 +24,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "Draft PR #50; production commit 69033a66. Quality and candidate installation pass. Frozen residual performance FAIL: 183/188 original and 21/24 paired. Keep in_progress; no merge, release, Issue closure or archive.",
+  "notes": "Draft PR #50; production commit 69033a66, registered candidate 520b8d8c. Standard CI and full hook pass (2828 passed/1 skipped); original44/44, caller28/28, unpublished install pass. Frozen performance FAIL: Mac183/188+21/24; sole Ubuntu cohort181/188+22/24, full integrity verified. Keep in_progress; no merge, release, closure or archive. All failures preserved.",
   "meta": {},
   "branch": "codex/47-snapshot-hash-reuse"
 }

@@ -1,3 +1,16 @@
+# 当前结果：Ubuntu 完整复验仍未通过
+
+唯一一次预先登记的 [Ubuntu cohort 1](https://github.com/castbox/Trellis/actions/runs/39011401555) 已完整执行。
+原绝对检查通过 **181/188**。同机配对检查通过 **22/24**。
+全部精确输入、原始进程范围和资源检查通过。独立复算与原 artifact 完全一致。
+这是性能门槛失败，不是 setup 错误。没有重跑或更换 runner。
+
+完整结果、失败项及校验清单见 [ci-cohort1/README.md](ci-cohort1/README.md)。
+原 Mac 失败和下列历史结论保持有效。原 `evaluation.json` 未被覆盖。
+当前不能合并、发布、关闭 Issue 或归档 Task。
+
+---
+
 # 当前结果：显式进程策略验证仍未通过全部门槛
 
 按计时前提交的 `7c767409` 协议，以 `/usr/sbin/taskpolicy -a -d default -t 0 -l 0` 启动整个 before/after cohort。它只改变本次用户进程及其子进程的执行策略，不改系统全局状态。原绝对检查通过 183/188；额外配对检查通过 21/24。

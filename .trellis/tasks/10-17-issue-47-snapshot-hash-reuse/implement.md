@@ -28,7 +28,16 @@ Draft PR: https://github.com/castbox/Trellis/pull/50. Production commit: 69033a6
 - [x] Recheck the exact current Task and continuation contract under the user's continuous-goal authorization.
 - [x] Diagnose real wrapper imports/parsing and before/after environment symmetry without changing production or rerunning accepted samples.
 - [x] Independently review the original contract: an explicitly qualified, preregistered isolated runner replication is permitted; original Mac failures remain failures.
-- [ ] Review and commit the new Linux adapters, temporary CI workflow and exact protocol before any accepted timing. Run the normal hook for this executable change.
-- [ ] Execute the one declared Ubuntu cohort. Require all original 188 checks, all 24 same-runner paired checks, exact inputs and complete resource records. Keep all errors and samples.
+- [x] Review and commit the new Linux adapters, temporary CI workflow and exact protocol before any accepted timing. Run the normal hook for this executable change.
+- [x] Execute the one declared Ubuntu cohort. Require all original 188 checks, all 24 same-runner paired checks, exact inputs and complete resource records. Keep all errors and samples.
 - [ ] If the whole cohort passes, refresh independent whole-scope evidence and resume the original merge/installable-delivery sequence. Otherwise preserve the failure and return to the actual owner; do not loosen gates or select another runner.
 - [ ] At final closeout, remove only the temporary benchmark workflow and archive only this completed Task. Preserve all prior evidence and unrelated resources.
+
+
+## Ubuntu cohort 1 result
+
+Registration commit `520b8d8c` passed the normal hook and standard CI 39011401447.
+The sole benchmark run 39011401555 completed all cases and failed acceptance: 181/188 absolute and 22/24 paired.
+All inputs, 84 pyc OIDs, raw scopes and resource records passed integrity checks; independent recomputation exactly matches the artifact.
+Full evidence is retained at research/benchmark/ci-cohort1. Original Mac results remain unchanged.
+No merge, release, Issue closure or archive is authorized by this failed result.
