@@ -15,7 +15,9 @@ executing matching CLI/Core candidate. Same-version cutover is supported. Missin
 unknown, beta/RC and newer source versions are explicit errors.
 
 Selected Task operations take `{task_id,lifecycle_generation}` and a direct active
-`.trellis/tasks/<directory>` locator. Known preidentity legacy and strict schema1
+`.trellis/tasks/<directory>` locator. Explicit inspection and archived resume also
+accept `.trellis/tasks/archive/YYYY-MM/<directory>`; ordinary conversion and
+history closeout remain active-only. Known preidentity legacy and strict schema1
 are predecessors; schema1 has no literal schema_version field. Schema2 is preserved
 by tools installation and rejected as a fresh conversion predecessor. Unknown
 records are not an empty selection. Existing identity sessions (integer 2/3),
@@ -60,8 +62,8 @@ writer and is not reexported through legacy `/task` or Core root.
 
 ## Closed inputs
 
-CLI prepare takes `{kind,input}`; kind is `tools_install`, `task_conversion` or
-`legacy_closeout`. SDK has separate typed preparation functions. Exact exported
+CLI prepare takes `{kind,input}`; kind is `tools_install`, `task_conversion`,
+`legacy_closeout` or `task_resume`. SDK has separate typed preparation functions. Exact exported
 TypeScript types and closed parsers live in
 `packages/cli/src/commands/maintenance/{tools,tasks}.ts`; they are exported through
 the public namespace. A raw snapshot is
@@ -242,3 +244,129 @@ reviewed plan includes both carriers and completes with no native selection of
 the archived Task. Partial retirement and completed-result recovery use the
 same freshness rule. Do not merely retire the original list and report success
 while a normally created, unreviewed session still selects the removed Task.
+
+
+## Selected manually archived Task resume
+
+### Scope and trigger
+
+Use `task_resume` only for a positively recognized legacy or schema1 manually
+archived Task whose original owner reviewed the history and confirmed no pending
+private closeout transaction. Current schema2 formal archives retain formal
+`reopen_task` semantics; this operation never supplies its missing Completion.
+The source archive is read-only history; one ordinary active schema2 Task becomes
+execution authority. Generation is preserved because no formal completed lifecycle
+is being reopened. No alternative TaskId, empty Delivery or completion is created.
+
+### Public signatures
+
+```sh
+trellis maintain inspect-task --target /project --task-id selected --generation 0 --task-ref .trellis/tasks/archive/2026-10/manual-history --original-task-ref .trellis/tasks/original-location --json
+trellis maintain prepare --input /private/resume-input.json --json
+```
+
+```ts
+import { maintenance } from "@mindfoldhq/trellis";
+const plan = maintenance.prepareArchivedTaskResume(reviewedInput);
+const result = await maintenance.applyMaintenance(plan, {state_dir});
+// result.resumed_task = {key: {task_id, lifecycle_generation}, task_ref}
+```
+
+The prepare envelope is `{kind:"task_resume",input:ArchivedTaskResumeInput}`.
+Core `/task/maintenance` exports `ArchivedTaskResumeIntent` and
+`validateArchivedTaskResumeProjection(source,projection,facts,intent)`.
+Capability remains `maintenance_api:"1.0"` with additive `task_resume` and
+`archive_resume:{task_families:["known_legacy","schema1"],generation:"preserve",
+original_archive:"read_only"}`. Check this capability plus actual source/build
+identity; matching version labels do not establish matching implementations.
+
+### Request, result and provenance
+
+`ArchivedTaskResumeInput` extends conversion with:
+
+- `task_ref`: exact archive root in the finite `archive/YYYY-MM/directory` layout.
+- `original_task_ref`: explicitly reviewed direct active path before manual
+  archival; never infer it from the archive basename. It may differ from destination.
+- `active_ref`: absent direct active destination. Existing same TaskId at any
+  generation in the target checkout blocks restoration.
+- `resume_intent:{reason:AuthorityRef,archive_review:AuthorityRef,
+  next_owner_id:string,next_action:string}`. Each string is nonempty; references
+  are verified. The caller reviews real history, scope and private transactions.
+  The executor records intent without interpreting or running the next action.
+- Complete schema2 `projection` with accepted scope evidence, unchanged identity,
+  generation/source/metadata/tree, no Completion/Closure, no imported gate results
+  or active Deliveries. Real historical delivered outcomes may be attributed by
+  original owners; unknown facts remain source snapshots.
+- `artifacts`: complete archive-relative retained file dispositions. Preserve
+  source files; only Delivery planning projections may use `write`. Paths map to
+  the active destination; projection authority/plan refs must resolve there or in
+  retained readable sources. All Delivery planning files remain required.
+- `sessions`: exact inspected carriers with `preserve`, `replace` or `retire`, and
+  `delivery_id:null`. Replacement produces schema3 Task selection with no Delivery.
+  Retire removes selected obsolete carriers; preserve grants no new authority.
+  `branch_binding` uses the existing preserve/explicit-establish contract.
+
+The raw archive tree, bytes, modes and empty directories remain intact. Active
+`migration/source-task.json` retains original record bytes;
+`migration/archive-resume.json` retains archive/original path, key and reviewed
+intent. The frozen operation contains destination/preimages and fixed candidate.
+`resumed_task` is returned from that same plan on apply/recover/resume/rollback;
+status determines whether it is currently applied. It is a routing identity, never
+proof that the next semantic owner passed or business work completed.
+
+### Validation and error matrix
+
+| Condition | Diagnostic / behavior |
+| --- | --- |
+| Missing or malformed explicit intent | `resume_intent_required` before writes. |
+| Invalid paths/input or absent destination constraint | `invalid_task_path`, `invalid_input` or `conflict`. |
+| Unsupported predecessor/current schema archive | `unsupported_source`; formal current archive uses reopen. |
+| Key/source mismatch or ambiguous live ownership | `target_key_mismatch`, `ambiguous_authority` or identity conflict. |
+| No accepted scope / manufactured completion / inherited gates / live or empty Delivery | `accepted_scope_required`, `formal_lifecycle_conflict`, `inherited_gate_conflict`, `historical_outcome_required`. |
+| Changed source/build/preimages or unreviewed carriers | `candidate_mismatch`, `stale_source` or `later_work_conflict`; no expanded write set. |
+| Later task files, scope changes, same-ID active records or sessions before rollback | Refuse rollback and preserve later work. |
+| Old reader incompatible with current data | Existing tools rollback compatibility diagnostics remain in force. |
+
+Path carriers may name the selected archive or explicitly reviewed original
+active path; identity carriers match the exact Task/generation. Platform metadata
+never proves ownership. Other tasks/sessions/checkouts remain outside the write
+set. Inherited copies can establish ownership but are never conversion targets.
+A newly attributable carrier after preparation blocks apply/result recovery and
+rollback; original source/target states remain valid for ordinary partial replay.
+
+### Good, base and bad cases
+
+Good: preserve a manually archived delivered slice and its real commit, restore
+same Task/generation with no current Delivery, then let the target-native scope
+owner review a supplement without changing historical outcomes.
+
+Base: no attributable session exists; establish a reviewed Git branch binding and
+use the legal explicit-task route. No fabricated session or Delivery is necessary.
+
+Bad: move the archive manually, create a replacement Task, infer a pass from old
+status, or call formal reopen with invented Completion to bypass its guard.
+
+### Required tests and evidence
+
+Core validates intent, finite predecessor/projection semantics and explicit path
+carrier selection. Real-Git CLI tests cover retained bytes/modes/history, all
+same-ID generations, original-path ambiguity, exact bindings/session dispositions,
+new carrier/source-tree freshness, same-operation retry/lost output/partial apply,
+rollback and later-work conflicts. Keep active conversion, history-only closeout,
+formal reopen and complete Plan2 regressions.
+
+Install actual packed matching CLI/Core into one isolated prefix; use the public
+bin before tools cutover, then target checkout's installed native identity,
+continuation and actual next public consumer. Record source SHA/package digests,
+API, platform/template coverage and limits. Shipped/dogfood parity applies to any
+changed native files. Guru private-owner/joint validation is separate evidence;
+a mock, DTO parse or external tool execution cannot stand in for it.
+
+### Wrong versus correct
+
+Wrong: derive original active path from archive basename, advance generation or
+copy old gates to make continuation appear successful.
+
+Correct: caller explicitly reviews original path/history/next owner, public Core
+validates a same-generation projection, fixed-plan maintenance creates one active
+record, and target-native consumers establish actual continuation independently.

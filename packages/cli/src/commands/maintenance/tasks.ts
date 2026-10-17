@@ -8,6 +8,7 @@ import {
   classifyMaintenanceTask,
   classifyBranchBinding,
   validateSelectedTaskProjection,
+  validateArchivedTaskResumeProjection,
 } from "@mindfoldhq/trellis-core/task/maintenance";
 import {
   verifyAuthority,
@@ -139,6 +140,54 @@ export const taskConversionInputSchema = z
     branch_binding: branchSchema,
   })
   .strict();
+const resumeIntentSchema = z
+  .object({
+    reason: reasonSchema,
+    archive_review: reasonSchema,
+    next_owner_id: z.string().trim().min(1),
+    next_action: z.string().trim().min(1),
+  })
+  .strict();
+export const archivedTaskResumeInputSchema = taskConversionInputSchema
+  .extend({
+    active_ref: z.string().min(1),
+    original_task_ref: z.string().min(1),
+    resume_intent: resumeIntentSchema,
+    sessions: z.array(
+      z
+        .object({
+          carrier: carrierSchema,
+          action: z.enum(["preserve", "replace", "retire"]),
+          delivery_id: z.string().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type ArchivedTaskResumeInput = z.infer<
+  typeof archivedTaskResumeInputSchema
+>;
+export function parseArchivedTaskResumeInput(
+  input: unknown,
+): ArchivedTaskResumeInput {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("resume_intent" in input) ||
+    !resumeIntentSchema.safeParse(input.resume_intent).success
+  )
+    throw new MaintenanceError(
+      "resume_intent_required",
+      "Explicit reviewed resume intent is required",
+    );
+  const parsed = archivedTaskResumeInputSchema.safeParse(input);
+  if (!parsed.success)
+    throw new MaintenanceError(
+      "invalid_input",
+      "Archived Task resume input does not match the public contract",
+    );
+  return parsed.data;
+}
 export const legacyCloseoutInputSchema = z
   .object({
     root: z.string().min(1),
@@ -156,12 +205,14 @@ export interface InspectTaskTargetInput {
   root: string;
   key: MaintenanceTaskKey;
   task_ref: string;
+  original_task_ref?: string;
 }
 const inspectTaskInputSchema = z
   .object({
     root: z.string().min(1),
     key: keySchema,
     task_ref: z.string().min(1),
+    original_task_ref: z.string().min(1).optional(),
   })
   .strict();
 
@@ -230,8 +281,17 @@ function tree(root: string, ref: string): TreeEntry[] {
   walk(ref);
   return entries;
 }
+function isActiveRef(ref: string): boolean {
+  return (
+    /^\.trellis\/tasks\/[^/]+$/.test(ref) && ref !== ".trellis/tasks/archive"
+  );
+}
+function isArchiveRef(ref: string): boolean {
+  return /^\.trellis\/tasks\/archive\/[^/]+\/[^/]+$/.test(ref);
+}
 function inspectTaskTargetDetails(
   input: InspectTaskTargetInput,
+  activeRef?: string,
 ): InspectedTaskTarget {
   const parsed = inspectTaskInputSchema.safeParse(input);
   if (!parsed.success)
@@ -242,12 +302,16 @@ function inspectTaskTargetDetails(
   input = parsed.data;
   const key = input.key;
   const repo = observeRepository(input.root);
+  if (!isActiveRef(input.task_ref) && !isArchiveRef(input.task_ref))
+    throw maintenanceError(
+      "invalid_task_path: selected Task must be a direct active child or finite archive/month/directory",
+    );
   if (
-    !/^\.trellis\/tasks\/[^/]+$/.test(input.task_ref) ||
-    input.task_ref === ".trellis/tasks/archive"
+    input.original_task_ref &&
+    (!isArchiveRef(input.task_ref) || !isActiveRef(input.original_task_ref))
   )
     throw maintenanceError(
-      "invalid_task_path: selected active Task must be a direct task child",
+      "invalid_task_path: original_task_ref is an explicitly reviewed direct active path for an archive",
     );
   taskPath(repo.root, input.task_ref);
   const source = readSnapshot(repo.root, `${input.task_ref}/task.json`);
@@ -262,7 +326,13 @@ function inspectTaskTargetDetails(
     throw maintenanceError(
       "target_key_mismatch: selected task identity/generation",
     );
-  const binding = inspectBindings(repo.root, key, input.task_ref);
+  const binding = inspectBindings(
+    repo.root,
+    key,
+    input.task_ref,
+    input.original_task_ref,
+    activeRef,
+  );
   return {
     root: repo.root,
     common_dir: repo.common_dir,
@@ -327,10 +397,12 @@ function verifyReferences(
   record: TaskRecordV2,
   actions: MaintenanceAction[],
   facts: TaskConversionInput["legacy_facts"],
+  additionalRefs: AuthorityRef[] = [],
 ): void {
   const refs: (AuthorityRef | null)[] = [
     record.accepted_scope,
     ...facts.map((fact) => fact.reason),
+    ...additionalRefs,
   ];
   for (const delivery of record.deliveries) {
     refs.push(delivery.scope_ref.authority, delivery.plan_ref);
@@ -467,20 +539,79 @@ export function prepareTaskConversion(
   rawInput: TaskConversionInput,
 ): PreparedMaintenancePlan {
   const input = parseTaskConversionInput(rawInput);
-  const inspected = inspectTaskTarget({
-    root: input.root,
-    key: input.key,
-    task_ref: input.task_ref,
-  });
+  if (!isActiveRef(input.task_ref))
+    throw maintenanceError(
+      "invalid_task_path: conversion requires a direct active Task; use task_resume for a legacy archive",
+    );
+  return prepareSelectedTask(input);
+}
+export function prepareArchivedTaskResume(
+  rawInput: ArchivedTaskResumeInput,
+): PreparedMaintenancePlan {
+  const input = parseArchivedTaskResumeInput(rawInput);
+  if (
+    !isArchiveRef(input.task_ref) ||
+    !isActiveRef(input.active_ref) ||
+    !isActiveRef(input.original_task_ref)
+  )
+    throw maintenanceError(
+      "invalid_task_path: resume requires exact archive, original active and destination active paths",
+    );
+  if (fs.existsSync(taskPath(input.root, input.active_ref)))
+    throw maintenanceError(
+      "conflict: active destination already exists; recover the original operation",
+    );
+  if (fs.existsSync(taskPath(input.root, input.original_task_ref)))
+    throw maintenanceError(
+      "conflict: original active path is occupied; its path carriers cannot be attributed to the archive",
+    );
+  return prepareSelectedTask(input, input);
+}
+function prepareSelectedTask(
+  input: TaskConversionInput | ArchivedTaskResumeInput,
+  resume?: ArchivedTaskResumeInput,
+): PreparedMaintenancePlan {
+  const inspected = inspectTaskTargetDetails(
+    {
+      root: input.root,
+      key: input.key,
+      task_ref: input.task_ref,
+      ...(resume ? { original_task_ref: resume.original_task_ref } : {}),
+    },
+    resume?.active_ref,
+  );
   const root = inspected.root,
     repo = observeRepository(root);
   assertPredecessor(inspected.classification.kind, input.source_kind);
-  const projection = validateSelectedTaskProjection(
-    rawJson(inspected.source),
-    input.projection,
-    input.legacy_facts,
-  );
-  const actions: MaintenanceAction[] = [];
+  const projection = resume
+    ? validateArchivedTaskResumeProjection(
+        rawJson(inspected.source),
+        input.projection,
+        input.legacy_facts,
+        resume.resume_intent,
+      )
+    : validateSelectedTaskProjection(
+        rawJson(inspected.source),
+        input.projection,
+        input.legacy_facts,
+      );
+  const targetRef = resume?.active_ref ?? input.task_ref;
+  const destination = (ref: string): string =>
+    targetRef + ref.slice(input.task_ref.length);
+  const actions: MaintenanceAction[] = resume
+    ? inspected.artifacts.map(
+        (entry) =>
+          ({
+            ...(entry.kind === "directory"
+              ? { kind: "directory" as const }
+              : {}),
+            root,
+            path: entry.path,
+            source: entry.source,
+            target: entry.source,
+          }) as MaintenanceAction,
+      )
+    : [];
   const rootPrefix = `${input.task_ref}/`;
   const existingFiles = inspected.artifacts
     .filter((entry) => entry.kind === "file")
@@ -507,8 +638,8 @@ export function prepareTaskConversion(
       );
     actions.push({
       root,
-      path: artifact.path,
-      source: artifact.source,
+      path: destination(artifact.path),
+      source: resume ? null : artifact.source,
       target: artifact.action === "write" ? artifact.target : artifact.source,
     });
   }
@@ -526,14 +657,13 @@ export function prepareTaskConversion(
       if (
         !actions.find(
           (action) =>
-            action.path ===
-            `${input.task_ref}/${delivery.planning_root}/${name}`,
+            action.path === `${targetRef}/${delivery.planning_root}/${name}`,
         )?.target
       )
         throw maintenanceError(
           `conflict: missing Delivery planning artifact ${delivery.id}/${name}`,
         );
-  const retained = `${input.task_ref}/migration/source-task.json`;
+  const retained = `${targetRef}/migration/source-task.json`;
   if (seen.has(retained) || readSnapshot(root, retained))
     throw maintenanceError(
       "conflict: source snapshot already exists; recover the original operation",
@@ -546,8 +676,8 @@ export function prepareTaskConversion(
   });
   actions.push({
     root,
-    path: `${input.task_ref}/task.json`,
-    source: inspected.source,
+    path: `${targetRef}/task.json`,
+    source: resume ? null : inspected.source,
     target: snapshot(
       JSON.stringify(projection, null, 2) + "\n",
       inspected.source.mode,
@@ -558,6 +688,17 @@ export function prepareTaskConversion(
     input.sessions.map((session) => session.carrier),
   );
   for (const session of input.sessions) {
+    if (session.action === "retire") {
+      if (!resume || session.delivery_id !== null)
+        throw maintenanceError("conflict: retirement cannot select a Delivery");
+      actions.push({
+        root: session.carrier.root,
+        path: session.carrier.path,
+        source: session.carrier.source,
+        target: null,
+      });
+      continue;
+    }
     if (session.action === "preserve") {
       if (session.delivery_id !== null)
         throw maintenanceError(
@@ -619,6 +760,25 @@ export function prepareTaskConversion(
         target: null,
       });
   }
+  if (resume) {
+    actions.push({
+      root,
+      path: `${targetRef}/migration/archive-resume.json`,
+      source: null,
+      target: snapshot(
+        JSON.stringify(
+          {
+            archive_ref: input.task_ref,
+            original_task_ref: resume.original_task_ref,
+            key: input.key,
+            resume_intent: resume.resume_intent,
+          },
+          null,
+          2,
+        ) + "\n",
+      ),
+    });
+  }
   const binding = inspected.branch_binding;
   if (input.branch_binding.action === "preserve") {
     if (!binding && repo.common_dir)
@@ -659,19 +819,27 @@ export function prepareTaskConversion(
       ),
     });
   }
-  verifyReferences(root, projection, actions, input.legacy_facts);
+  verifyReferences(
+    root,
+    projection,
+    actions,
+    input.legacy_facts,
+    resume
+      ? [resume.resume_intent.reason, resume.resume_intent.archive_review]
+      : [],
+  );
   // Freeze parent-directory preimages, including existing empty directory modes.
   const directories = new Set(
     inspected.artifacts
       .filter((entry) => entry.kind === "directory")
-      .map((entry) => entry.path),
+      .map((entry) => destination(entry.path)),
   );
   for (const action of actions)
-    if (action.root === root && action.path.startsWith(rootPrefix)) {
+    if (action.root === root && action.path.startsWith(`${targetRef}/`)) {
       let parent = path.posix.dirname(action.path);
-      while (parent.startsWith(input.task_ref)) {
+      while (parent === targetRef || parent.startsWith(`${targetRef}/`)) {
         directories.add(parent);
-        if (parent === input.task_ref) break;
+        if (parent === targetRef) break;
         parent = path.posix.dirname(parent);
       }
     }
@@ -682,17 +850,28 @@ export function prepareTaskConversion(
       root,
       path: ref,
       source: readDirectorySnapshot(root, ref),
-      target: readDirectorySnapshot(root, ref) ?? { mode: 0o755 },
+      target: resume
+        ? (readDirectorySnapshot(
+            root,
+            input.task_ref + ref.slice(targetRef.length),
+          ) ?? { mode: 0o755 })
+        : (readDirectorySnapshot(root, ref) ?? { mode: 0o755 }),
     }));
   return preparePlan({
-    kind: "task_conversion",
+    kind: resume ? "task_resume" : "task_conversion",
     target_root: root,
     common_dir: repo.common_dir,
     actions: [...dirActions, ...uniqueActions(actions)],
     guard: {
       task_id: input.key.task_id,
       generation: input.key.lifecycle_generation,
-      task_ref: input.task_ref,
+      task_ref: targetRef,
+      ...(resume
+        ? {
+            archive_ref: input.task_ref,
+            original_task_ref: resume.original_task_ref,
+          }
+        : {}),
     },
   });
 }
@@ -710,12 +889,16 @@ function uniqueActions(actions: MaintenanceAction[]): MaintenanceAction[] {
 export function prepareLegacyCloseout(
   rawInput: LegacyCloseoutInput,
 ): PreparedMaintenancePlan {
-  const input = parseLegacyCloseoutInput(rawInput),
-    inspected = inspectTaskTarget({
-      root: input.root,
-      key: input.key,
-      task_ref: input.task_ref,
-    });
+  const input = parseLegacyCloseoutInput(rawInput);
+  if (!isActiveRef(input.task_ref))
+    throw maintenanceError(
+      "invalid_task_path: historical closeout requires a direct active Task",
+    );
+  const inspected = inspectTaskTarget({
+    root: input.root,
+    key: input.key,
+    task_ref: input.task_ref,
+  });
   const root = inspected.root;
   assertPredecessor(inspected.classification.kind, input.source_kind);
   if (inspected.inherited_copies.length && inspected.authority !== "bound")

@@ -51,6 +51,75 @@ export function validateSelectedTaskProjection(source: unknown, projection: unkn
   }
   return record;
 }
+/** Caller-owned semantic review; the executor never interprets the next action. */
+export interface ArchivedTaskResumeIntent {
+  reason: AuthorityRef;
+  archive_review: AuthorityRef;
+  next_owner_id: string;
+  next_action: string;
+}
+export function validateArchivedTaskResumeProjection(
+  source: unknown,
+  projection: unknown,
+  facts: readonly LegacyFactDisposition[],
+  intent: ArchivedTaskResumeIntent,
+): TaskRecordV2 {
+  if (
+    !isPlainObject(intent) ||
+    !exact(intent, [
+      "reason",
+      "archive_review",
+      "next_owner_id",
+      "next_action",
+    ]) ||
+    typeof intent.next_owner_id !== "string" ||
+    !intent.next_owner_id.trim() ||
+    typeof intent.next_action !== "string" ||
+    !intent.next_action.trim() ||
+    [intent.reason, intent.archive_review].some(
+      (ref) =>
+        !isPlainObject(ref) ||
+        !exact(ref, ["locator", "revision"]) ||
+        typeof ref.locator !== "string" ||
+        !ref.locator.trim() ||
+        typeof ref.revision !== "string" ||
+        !ref.revision.trim(),
+    )
+  )
+    throw new MaintenanceError(
+      "resume_intent_required",
+      "Explicit original archive review, reason and next owner/action are required",
+    );
+  const record = validateSelectedTaskProjection(source, projection, facts);
+  if (!record.accepted_scope)
+    throw new MaintenanceError(
+      "accepted_scope_required",
+      "Resumed Task requires owner-authored accepted scope evidence",
+    );
+  if (record.completion_results.length || record.closure_results.length)
+    throw new MaintenanceError(
+      "formal_lifecycle_conflict",
+      "Legacy archive resume cannot import or manufacture Completion/Closure; formal archives use reopen",
+    );
+  for (const delivery of record.deliveries) {
+    if (Object.values(delivery.results).some((result) => result !== null))
+      throw new MaintenanceError(
+        "inherited_gate_conflict",
+        "Legacy archive resume cannot import gate authority",
+      );
+    if (
+      delivery.phase !== "delivered" ||
+      !delivery.delivery_result ||
+      delivery.stop_result ||
+      !delivery.delivery_result.evidence.length
+    )
+      throw new MaintenanceError(
+        "historical_outcome_required",
+        "Only real historical delivered outcomes with original-owner evidence may be imported; the next owner creates current work",
+      );
+  }
+  return record;
+}
 function exact(value: Record<string, unknown>, keys: string[]): boolean {
   return isDeepStrictEqual(Object.keys(value).sort(), keys.sort());
 }
@@ -71,7 +140,7 @@ function legacyMetadataCarrier(value: Record<string, unknown>, pathKeys: string[
 function unversionedLocalCarrier(value: Record<string, unknown>): boolean {
   return exact(value, ["current_task"]) || legacyMetadataCarrier(value, ["current_task"]);
 }
-export interface CarrierSelection extends MaintenanceTaskIdentity { task_path: string; carrier_workspace?: string; common_dir?: string | null }
+export interface CarrierSelection extends MaintenanceTaskIdentity { task_path: string; task_paths?: readonly string[]; carrier_workspace?: string; common_dir?: string | null }
 export function classifySessionCarrier(value: unknown, selected: CarrierSelection): { kind: "identity2" | "identity3" | "path1" | "path0"; matches: boolean } {
   if (!isPlainObject(value)) throw new MaintenanceError("unsupported_carrier", "Session must be an object");
   if (value.schema_version === 2 || value.schema_version === 3) {
@@ -81,10 +150,10 @@ export function classifySessionCarrier(value: unknown, selected: CarrierSelectio
   }
   const old = value.schema_version === 1;
   const keys = old ? ["schema_version", "repository_common_dir", "task_workspace_root", "current_task"] : ["current_task"];
-  if (!(old ? exact(value, keys) || legacyMetadataCarrier(value, keys) : unversionedLocalCarrier(value)) || typeof value.current_task !== "string" || !value.current_task.startsWith(".trellis/tasks/") || value.current_task.split("/").length !== 3) throw new MaintenanceError("unsupported_carrier", "Unknown path-based session");
+  if (!(old ? exact(value, keys) || legacyMetadataCarrier(value, keys) : unversionedLocalCarrier(value)) || typeof value.current_task !== "string" || !/^\.trellis\/tasks\/(?:[^/]+|archive\/[^/]+\/[^/]+)$/.test(value.current_task) || value.current_task === ".trellis/tasks/archive" || value.current_task.split("/").some(part => part === "." || part === "..")) throw new MaintenanceError("unsupported_carrier", "Unknown path-based session");
   const workspace = old ? value.task_workspace_root : selected.carrier_workspace;
   if (typeof workspace !== "string" || !path.isAbsolute(workspace) || (old && (typeof value.repository_common_dir !== "string" || !path.isAbsolute(value.repository_common_dir)))) throw new MaintenanceError("unsupported_carrier", "Path carrier requires its original absolute workspace/common storage");
-  return { kind: old ? "path1" : "path0", matches: path.resolve(workspace, value.current_task) === path.resolve(selected.task_path) && (!old || path.resolve(String(value.repository_common_dir)) === selected.common_dir) };
+  return { kind: old ? "path1" : "path0", matches: [selected.task_path, ...(selected.task_paths ?? [])].some(taskPath => path.resolve(workspace, String(value.current_task)) === path.resolve(taskPath)) && (!old || path.resolve(String(value.repository_common_dir)) === selected.common_dir) };
 }
 export function classifyBranchBinding(value: unknown, selected: MaintenanceTaskIdentity): { matches: boolean; branch_name: string; binding_revision: number } {
   if (!isPlainObject(value) || !exact(value, ["schema_version", "task_id", "lifecycle_generation", "binding_revision", "branch_name"]) || value.schema_version !== "1.0" || !taskId(value.task_id) || !generation(value.lifecycle_generation) || !generation(value.binding_revision) || typeof value.branch_name !== "string" || !value.branch_name) throw new MaintenanceError("unsupported_binding", "Expected a canonical schema1 branch binding");

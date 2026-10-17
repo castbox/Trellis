@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyTaskRecord } from "../../src/task/schema.js";
 import { emptyTaskRecordV2 } from "../../src/task/v2/operations.js";
-import { classifyMaintenanceTask, classifySessionCarrier, classifyBranchBinding, validateSelectedTaskProjection } from "../../src/task/maintenance.js";
+import { classifyMaintenanceTask, classifySessionCarrier, classifyBranchBinding, validateSelectedTaskProjection, validateArchivedTaskResumeProjection } from "../../src/task/maintenance.js";
 
 describe("selected maintenance domain boundary", () => {
   const old = emptyTaskRecord({ id: "selected", lifecycle_generation: 2, completedAt: "2026-09-01", commit: "old-commit", status: "completed" });
@@ -63,5 +63,209 @@ describe("selected maintenance domain boundary", () => {
       const partial = Object.fromEntries(Object.entries(writer).filter(([key]) => key !== missing));
       expect(() => classifySessionCarrier(partial, selected)).toThrow("unsupported_carrier");
     }
+  });
+});
+
+describe("legacy archive resume semantics", () => {
+  const source = emptyTaskRecord({
+    id: "retained",
+    lifecycle_generation: 0,
+    status: "completed",
+    completedAt: "2026-10-01",
+  });
+  const reason = { locator: "history.md", revision: "owner-review" };
+  const intent = {
+    reason,
+    archive_review: reason,
+    next_owner_id: "completion-owner",
+    next_action: "review whole Task acceptance",
+  };
+  const facts = [
+    {
+      field: "completedAt" as const,
+      disposition: "source_snapshot" as const,
+      owner_id: "original-owner",
+      reason,
+    },
+  ];
+  const projection = emptyTaskRecordV2({
+    id: "retained",
+    accepted_scope: reason,
+  });
+  it("keeps the same identity/generation and accepted scope without manufacturing an empty Delivery or completed Task", () => {
+    const record = validateArchivedTaskResumeProjection(
+      source,
+      projection,
+      facts,
+      intent,
+    );
+    expect(record).toEqual(projection);
+    expect(record.deliveries).toEqual([]);
+    expect(record.completion_results).toEqual([]);
+    expect(record.closure_results).toEqual([]);
+    expect(() =>
+      validateArchivedTaskResumeProjection(
+        source,
+        { ...projection, lifecycle_generation: 1 },
+        facts,
+        intent,
+      ),
+    ).toThrow("preserve lifecycle_generation");
+  });
+  it("requires explicit review and accepted scope, rejecting a formal archive rather than bypassing reopen", () => {
+    expect(() =>
+      validateArchivedTaskResumeProjection(source, projection, facts, {
+        ...intent,
+        next_owner_id: "",
+      }),
+    ).toThrow("resume_intent_required");
+    expect(() =>
+      validateArchivedTaskResumeProjection(
+        source,
+        { ...projection, accepted_scope: null },
+        facts,
+        intent,
+      ),
+    ).toThrow("accepted_scope_required");
+    expect(() =>
+      validateArchivedTaskResumeProjection(projection, projection, [], intent),
+    ).toThrow("already_current");
+    expect(() =>
+      validateArchivedTaskResumeProjection(
+        source,
+        {
+          ...projection,
+          completion_results: [
+            {
+              result_id: "11111111-1111-4111-8111-111111111111",
+              owner_id: "completion",
+              evidence: [reason],
+              lifecycle_generation: 0,
+              accepted_scope: reason,
+              delivery_result_ids: [],
+              outcome: "completed",
+            },
+          ],
+        },
+        facts,
+        intent,
+      ),
+    ).toThrow("formal_lifecycle_conflict");
+  });
+  it("rejects synthetic current Deliveries and inherited gate authority while retaining actual historical outcomes", () => {
+    const delivery = {
+      id: "11111111-1111-4111-8111-111111111111",
+      lifecycle_generation: 0,
+      scope_ref: { authority: reason, anchors: ["historical"] },
+      planning_root: "deliveries/11111111-1111-4111-8111-111111111111",
+      profile: "manual",
+      phase: "planning",
+      plan_ref: null,
+      candidate: null,
+      results: {
+        planning: null,
+        check: null,
+        full_review: null,
+        readiness: null,
+      },
+      publication_result: null,
+      delivery_result: null,
+      stop_result: null,
+    };
+    expect(() =>
+      validateArchivedTaskResumeProjection(
+        source,
+        { ...projection, deliveries: [delivery] },
+        facts,
+        intent,
+      ),
+    ).toThrow("historical_outcome_required");
+    const historical = {
+      ...delivery,
+      phase: "delivered",
+      delivery_result: {
+        result_id: "22222222-2222-4222-8222-222222222222",
+        owner_id: "original-delivery-owner",
+        evidence: [reason],
+        profile: "manual",
+        artifact: reason,
+        candidate: {
+          kind: "git_free",
+          content_ref: `sha256:${"a".repeat(64)}`,
+          paths: ["artifact.txt"],
+          head_ref: null,
+          base_ref: null,
+        },
+      },
+    };
+    expect(
+      validateArchivedTaskResumeProjection(
+        source,
+        { ...projection, deliveries: [historical] },
+        facts,
+        intent,
+      ).deliveries,
+    ).toEqual([historical]);
+    const gate = {
+      result_id: "33333333-3333-4333-8333-333333333333",
+      owner_role: "planning",
+      owner_id: "old-planning-owner",
+      outcome: "accepted",
+      scope_ref: historical.scope_ref,
+      plan_ref: reason,
+      candidate: null,
+      predecessor_result_id: null,
+      obligations: [],
+      evidence: [reason],
+    };
+    expect(() =>
+      validateArchivedTaskResumeProjection(
+        source,
+        {
+          ...projection,
+          deliveries: [
+            {
+              ...historical,
+              results: { ...historical.results, planning: gate },
+            },
+          ],
+        },
+        facts,
+        intent,
+      ),
+    ).toThrow("inherited_gate_conflict");
+  });
+  it("matches only finite reviewed path aliases and exact identity generations", () => {
+    const selected = {
+      task_id: "retained",
+      generation: 0,
+      task_path: "/owner/.trellis/tasks/archive/2026-10/renamed",
+      task_paths: ["/owner/.trellis/tasks/original"],
+      carrier_workspace: "/owner",
+    };
+    expect(
+      classifySessionCarrier(
+        { current_task: ".trellis/tasks/original" },
+        selected,
+      ).matches,
+    ).toBe(true);
+    expect(
+      classifySessionCarrier(
+        { current_task: ".trellis/tasks/archive/2026-10/renamed" },
+        selected,
+      ).matches,
+    ).toBe(true);
+    expect(
+      classifySessionCarrier(
+        { current_task: ".trellis/tasks/renamed" },
+        selected,
+      ).matches,
+    ).toBe(false);
+    expect(() =>
+      classifySessionCarrier(
+        { current_task: ".trellis/tasks/archive/../other" },
+        selected,
+      ),
+    ).toThrow("unsupported_carrier");
   });
 });

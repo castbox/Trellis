@@ -68,6 +68,8 @@ export function inspectBindings(
   root: string,
   key: MaintenanceTaskKey,
   taskRef: string,
+  originalTaskRef?: string,
+  activeRef?: string,
 ): {
   carriers: InspectedCarrier[];
   branch_binding: InspectedCarrier | null;
@@ -79,6 +81,9 @@ export function inspectBindings(
     task_id: key.task_id,
     generation: key.lifecycle_generation,
     task_path: taskPath(root, taskRef),
+    task_paths: [originalTaskRef, activeRef].flatMap((ref) =>
+      ref ? [taskPath(root, ref)] : [],
+    ),
   };
   const carriers: InspectedCarrier[] = [];
   const directories = [
@@ -169,6 +174,10 @@ export function inspectBindings(
           `task_id_casefold_collision: selected identity collides at ${workspace}:${ref}`,
         );
       if (value.id !== key.task_id) continue;
+      if (activeRef && workspace === root)
+        throw maintenanceError(
+          `conflict: selected TaskId already has an active record at ${workspace}:${ref}`,
+        );
       const identity = classifyMaintenanceTask(value);
       if (identity.generation !== key.lifecycle_generation) continue;
       if (workspace === root && ref === taskRef) continue;

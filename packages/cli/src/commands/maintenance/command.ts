@@ -8,7 +8,12 @@ const read = (file: string): unknown =>
   JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
 const envelope = z
   .object({
-    kind: z.enum(["tools_install", "task_conversion", "legacy_closeout"]),
+    kind: z.enum([
+      "tools_install",
+      "task_conversion",
+      "legacy_closeout",
+      "task_resume",
+    ]),
     input: z.unknown(),
   })
   .strict();
@@ -22,6 +27,10 @@ async function prepare(file: string): Promise<PreparedMaintenancePlan> {
     case "task_conversion":
       return api.prepareTaskConversion(
         api.parseTaskConversionInput(value.input),
+      );
+    case "task_resume":
+      return api.prepareArchivedTaskResume(
+        api.parseArchivedTaskResumeInput(value.input),
       );
     case "legacy_closeout":
       return api.prepareLegacyCloseout(
@@ -79,6 +88,10 @@ export function registerMaintenanceCommand(program: Command): void {
       .requiredOption(
         "--task-ref <ref>",
         "Selected project-relative Task directory",
+      )
+      .option(
+        "--original-task-ref <ref>",
+        "Reviewed original active path of selected archive",
       ),
   ).action(
     (options: {
@@ -86,6 +99,7 @@ export function registerMaintenanceCommand(program: Command): void {
       taskId: string;
       generation: string;
       taskRef: string;
+      originalTaskRef?: string;
     }) =>
       run(() => {
         const generation = Number(options.generation);
@@ -98,6 +112,9 @@ export function registerMaintenanceCommand(program: Command): void {
           root: options.target,
           key: { task_id: options.taskId, lifecycle_generation: generation },
           task_ref: options.taskRef,
+          ...(options.originalTaskRef
+            ? { original_task_ref: options.originalTaskRef }
+            : {}),
         });
       }),
   );
