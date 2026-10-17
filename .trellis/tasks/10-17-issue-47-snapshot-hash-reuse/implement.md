@@ -22,3 +22,13 @@ Checkpoint `42417449` freezes all before measurements and numeric gates before p
 See research/acceptance-status.md and research/final-quality.md. Original capability regression is 44/44. Performance is still FAIL. Merge, release, Issue closure and Task archive remain gated on actual acceptance. Preserve the active Task and create only a draft PR for review. Downstream caller opportunities are documented without changing Guru production code.
 
 Draft PR: https://github.com/castbox/Trellis/pull/50. Production commit: 69033a662d68701610f09caa97f1d292bccd1076. Full quality and unpublished installation checks pass; performance acceptance remains FAIL. No merge, release, closure or archive occurred.
+
+## Controlled runner continuation
+
+- [x] Recheck the exact current Task and continuation contract under the user's continuous-goal authorization.
+- [x] Diagnose real wrapper imports/parsing and before/after environment symmetry without changing production or rerunning accepted samples.
+- [x] Independently review the original contract: an explicitly qualified, preregistered isolated runner replication is permitted; original Mac failures remain failures.
+- [ ] Review and commit the new Linux adapters, temporary CI workflow and exact protocol before any accepted timing. Run the normal hook for this executable change.
+- [ ] Execute the one declared Ubuntu cohort. Require all original 188 checks, all 24 same-runner paired checks, exact inputs and complete resource records. Keep all errors and samples.
+- [ ] If the whole cohort passes, refresh independent whole-scope evidence and resume the original merge/installable-delivery sequence. Otherwise preserve the failure and return to the actual owner; do not loosen gates or select another runner.
+- [ ] At final closeout, remove only the temporary benchmark workflow and archive only this completed Task. Preserve all prior evidence and unrelated resources.

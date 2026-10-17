@@ -44,3 +44,41 @@ Before measuring generation3, the baseline owner identified that transferring a 
 The preregistered paired replication passed24/24 stronger relative checks and187/188 original absolute checks. Its only failure exceeded the128 mixed manual ceiling by136.232 microseconds; no tolerance or rounding is accepted. A separate source review identified remaining unnecessary work: the new context scans the whole repository tree, while its supported previous consumer queried only selected candidate paths. Correct this actual metadata regression before delivery. Extend the existing read_tree helper with optional literal selected paths and a64KiB argument budget; default calls/scope retain their exact behavior. The new context passes its independently validated ordered paths. Preserve directory entries so selected directories still fail type checks. Test literal magic-looking/UTF-8/control-character paths and bounded broad selection. Keep all numerical gates and the paired protocol, and preregister the changed measured source before the next complete cohort.
 
 Independent review caught a selected-parent correctness defect before measurements: nonrecursive ls-tree without -t can omit a requested directory when a descendant is also selected. The selected branch must use -t without -r and filter returned rows to the exact requested set. This keeps actual requested directory types available for rejection while excluding unrelated ancestors/descendants from retained facts. Mixed parent+descendant tests and an independent actual-public-class reproduction are required before releasing the next cohort. Default and scope calls remain unchanged.
+
+## Controlled Ubuntu replication
+
+The latest Mac cohort remains FAIL (183/188 original and 21/24 paired). Further
+actual-wrapper diagnostics found no asymmetric interpreter/cache error and no
+evidence supporting a necessary upstream rewrite. Do not make unrelated changes
+merely to obtain another timing attempt. The independent contract review in
+`research/runner-contract-review.md` confirms that the accepted scope does not
+lock performance evidence to the original Mac hardware.
+
+Preregister one complete replication on an isolated standard GitHub-hosted
+`ubuntu-24.04` job. Use Python 3.14.8, the declared runner image and Git version,
+the original six exact fixtures and unchanged production source. All original
+188 numerical checks and 24 same-runner paired checks remain mandatory. The new
+control-before may prove paired improvement; it must never redefine absolute
+caps. A faster host alone does not prove an implementation gain.
+
+New `research/benchmark/ci_*` tools adapt only environment setup, Linux RSS units,
+raw metric completeness and output placement. Recompile all 84 original pyc
+inputs from pinned source bytes, original source mtime and original resolved
+paths, and reject any mismatching blob or full commit OID. Build Task/Gate/
+Publication facts through the original workflow. Overlay the after runtime only
+after normal Publication. Set repo-local maintenance controls immediately after
+each fixture Git init, before any commit, equally in both phases. This isolates
+background maintenance without changing Git trees or lifecycle facts.
+
+The temporary PR-50-only workflow has read-only repository permissions and never
+publishes packages. A registration job admits only a manifest changed at the
+current commit whose parent matches its preregistered parent. Later evidence
+commits skip the benchmark. Reject workflow retries and existing cohort outputs;
+retain every technical failure and raw metric artifact. Do not search multiple
+runners or keep only fast samples. Review the protocol and tools before commit
+and timing. Remove the temporary workflow during final Task closeout.
+
+Report any pass specifically for the declared Ubuntu runner. Preserve all Mac
+failures and the live-provider/downstream-adoption boundaries. A valid complete
+pass can satisfy the performance gate; merge, immutable paired delivery and
+downloaded reinstall verification remain separate required steps.
