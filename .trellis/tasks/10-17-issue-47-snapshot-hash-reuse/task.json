@@ -24,7 +24,7 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "Draft PR #50; production commit 69033a66, registered candidate 520b8d8c. Standard CI and full hook pass (2828 passed/1 skipped); original44/44, caller28/28, unpublished install pass. Frozen performance FAIL: Mac183/188+21/24; sole Ubuntu cohort181/188+22/24, full integrity verified. Keep in_progress; no merge, release, closure or archive. All failures preserved.",
+  "notes": "User revised estimated performance cutoffs on 2026-10-17; see research/acceptance-revision.md. Historical Mac183/188+21/24 and Ubuntu181/188+22/24 remain FAIL under old criteria. Correctness/resources, full hook/CI and candidate install pass. Revised independent review PASS/merge READY (pending current commit CI). Await main merge, exact paired release/download verification, Issue closure and archive. No downstream adoption claim.",
   "meta": {},
   "branch": "codex/47-snapshot-hash-reuse"
 }

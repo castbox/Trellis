@@ -82,3 +82,8 @@ Report any pass specifically for the declared Ubuntu runner. Preserve all Mac
 failures and the live-provider/downstream-adoption boundaries. A valid complete
 pass can satisfy the performance gate; merge, immutable paired delivery and
 downloaded reinstall verification remain separate required steps.
+
+
+## User-approved acceptance revision (current)
+
+The 2026-10-17 user instruction replaces the earlier hard timing/percentage acceptance policy with evidence-based performance assessment. research/acceptance-revision.md is the current acceptance explanation. Preserve every original numerical result and failed review. Do not change the production design to chase an estimated threshold or claim the old gates passed. Keep digest compatibility, per-input checks, operation-local fact reuse, bounded requests/body memory, original resource checks, old capability regression and exact installable delivery. Independent review must assess small-case variation and large-case gains from all retained same-environment data. No new benchmark run is needed for this requirements-only revision.

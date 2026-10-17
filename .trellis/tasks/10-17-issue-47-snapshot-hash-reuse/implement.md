@@ -1,3 +1,7 @@
+# Current execution authority
+
+The user revised the estimated performance acceptance criteria on 2026-10-17. See research/acceptance-revision.md and the updated PRD. Earlier FAIL/no-merge statements below document the prior policy and remain historical evidence. They no longer impose the superseded time/percentage gate. Original raw results and frozen files are unchanged. Resume independent review, then commit/CI/merge, exact paired release, downloaded installation verification, Issue closure and Task archive under the current criteria.
+
 # Execution plan
 
 - [x] Read live Issue and pinned recovery/query2 callers. Preserve archived Task evidence.
@@ -49,3 +53,15 @@ A single non-acceptance nested diagnostic per operation is retained in research/
 
 
 The independent checker reviewed the nested integer intervals, exact inputs, embedded scripts and stated limits without starting a measurement; no finding remains in this diagnostic record. The evidence-only closeout commit uses HUSKY=0 and [skip ci]; it changes no executable source or frozen acceptance file. Full hook and CI both passed for ef101a642f2f570a7268062005a52450e6666aef. Those code-quality passes do not change performance FAIL.
+
+
+## Current delivery checklist after user revision
+
+- [x] Record user authority and current acceptance requirements; preserve old standards/results.
+- [x] Independently review the complete implementation and all retained performance evidence. Revised acceptance PASS; merge readiness READY subject to current commit CI.
+- [ ] Commit current evidence, pass standard CI and merge PR50.
+- [ ] Build from exact merged main, pack/install/verify the paired .4 artifacts.
+- [ ] Publish immutable release, download/checksum and repeat isolated install verification; confirm fork npm job skipped.
+- [ ] Close Issue47 under the revised criteria, archive only this Task, merge closeout and verify clean synced main.
+
+This requirements/review commit is documentation-only and uses HUSKY=0. It does not repeat the already-passing full hook; standard CI runs on the actual submitted commit. No production, test, version or frozen measurement file changed.
