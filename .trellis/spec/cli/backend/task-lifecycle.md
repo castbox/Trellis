@@ -204,3 +204,20 @@ Wrong: classify every historical header as a lifecycle candidate before comparin
 its id with the requested identity.
 Correct: use `read_task_id_reservation` for occupation; use `read_json_checked`
 for the selected task before consuming generation or any other lifecycle field.
+
+## Operation-local historical identity observations
+
+Task creation scans live registered workspaces independently from immutable Git
+history. Resolve the current local/remote heads anew for every create operation.
+Historical identity reservation may reuse tree/object observations within that
+operation only, using exact immutable object identities in the actual repository.
+Read each unique metadata object once using bounded Git batches; do not launch
+one content-reader process per historical path. Retain every head/path's identity
+occupation check and useful collision locator, including case-fold collisions.
+
+This is an identity-only projection, not acceptance of historical records for
+lifecycle operations. Preserve the historical parser's permissive JSON/id behavior
+and the strict current-workspace metadata boundary separately. Failed real reads
+must not become an empty/missing history result. Bodies are streamed or spooled
+and operation-local temporary resources are released on ordinary success/failure;
+no persistent cache or background service is part of this contract.

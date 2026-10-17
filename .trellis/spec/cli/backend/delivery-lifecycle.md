@@ -300,3 +300,39 @@ Wrong: compute a manual git_free hash with automatic Git normalization or rely
 on cwd while passing inherited repository-redirect environment to Git.
 Correct: verify with candidate.kind, and invoke Git in the validated root with
 clean repository environment; store immutable commit OIDs only.
+
+## Operation-local immutable content observations
+
+The installed Python Delivery owner preserves the existing content_ref format:
+sorted path entries, UTF-8 compact JSON with ensure_ascii=False, Git-normalized
+0755/0644 modes (git_free retains full permission bits), SHA256 of raw file bytes,
+and explicit [path,null,null] deletion entries. A tree OID is not a substitute.
+
+A normal local_commit operation verifies both the mutable candidate and immutable
+commit. Each mutable path must be independently observed on every invocation;
+HEAD/base, authorities, identity/owner/phase and preimage checks remain independent.
+Raw Git blob identity established from those observed bytes may seed an
+operation-local content digest fact. The immutable commit may reuse that SHA256
+only for the same exact blob identity in the same repository/hash context.
+Repeated immutable blobs are read/hashed once. Reused content hashes do not
+prove that the referenced Git object is readable: batch-check seeded object
+availability/type through Git so ordinary offline partial-clone failures retain
+invalid_git_fact and do not write a delivered result. Identical ordered path/mode/hash
+entries may share the aggregate digest computation, but each input's expected
+digest is compared independently. Never cache a previous validation conclusion.
+
+Immutable tree lookup preserves literal accepted paths, including UTF-8,
+whitespace, tabs and newlines. Trees, symlinks and gitlinks retain their existing
+invalid_git_fact outcome; genuine missing entries retain deletion semantics.
+Exact full commit object checks and isolated Git environment remain required.
+Historical success still verifies the actual immutable outcome; exact unchanged
+retry still recovers the original fact without writing a second fact.
+
+Use bounded batches and streamed/spooled object bodies. Regular temporary input
+and output files avoid a cat-file stdin/stdout duplex pipe deadlock. Close
+operation-local resources on success/failure. There is no cross-invocation cache,
+public precomputed-digest trust input, schema change, or persistent Git service.
+Performance evidence must exercise complete supported public operations and
+report all Git subprocesses, unique/requested objects, actual bytes, timings and
+Python/Git RSS scope separately. Freeze numerical gates after before measurement
+and before production changes; never relax them using after results.

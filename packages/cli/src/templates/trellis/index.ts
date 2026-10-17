@@ -47,6 +47,7 @@ export const commonConfig = readTemplate("scripts/common/config.py");
 export const commonIo = readTemplate("scripts/common/io.py");
 export const commonLog = readTemplate("scripts/common/log.py");
 export const commonGit = readTemplate("scripts/common/git.py");
+export const commonGitObjects = readTemplate("scripts/common/git_objects.py");
 export const commonTypes = readTemplate("scripts/common/types.py");
 export const commonTasks = readTemplate("scripts/common/tasks.py");
 export const commonTaskContext = readTemplate("scripts/common/task_context.py");
@@ -132,6 +133,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/io.py", commonIo);
   scripts.set("common/log.py", commonLog);
   scripts.set("common/git.py", commonGit);
+  scripts.set("common/git_objects.py", commonGitObjects);
   scripts.set("common/types.py", commonTypes);
   scripts.set("common/tasks.py", commonTasks);
   scripts.set("common/task_context.py", commonTaskContext);
