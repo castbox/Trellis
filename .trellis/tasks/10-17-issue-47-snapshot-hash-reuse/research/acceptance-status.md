@@ -13,8 +13,8 @@
 
 - 原 #48 能力复验通过 44/44。证据：`old-capability-acceptance.json`。
 - 正常恢复与历史流程通过 28/28。证据：`benchmark/public-fixture-results.json`。
-- 独立质量检查记录于 `final-quality.md`。全量测试以正常生产提交 hook 的实际结果为准。
-- 候选安装验证与打包校验单独记录。候选包尚未发布，不能作为不可变 Release 交付证明。
+- 独立质量检查记录于 `final-quality.md`。正常生产提交 hook 已通过：2828 项通过，1 项跳过。
+- 候选安装通过全部 7 项检查。两个包的 1013 个文件字节与权限一致。证据：`candidate-install-verification.json` 和 `candidate-pack-verification.json`。候选包尚未发布，不能作为不可变 Release 交付证明。
 
 ## 未通过的门槛
 
@@ -45,3 +45,5 @@
 
 后续必须取得全部冻结门槛的有效通过证据，才能合并和发布新版本。
 发布后必须验证下载资产、校验和及隔离安装，才能关闭 #47 和归档本 Task。
+
+源码提交：`69033a662d68701610f09caa97f1d292bccd1076`。草稿 PR：https://github.com/castbox/Trellis/pull/50。

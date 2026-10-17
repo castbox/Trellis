@@ -18,5 +18,12 @@
       "dependency": null
     }
   ],
-  "passed": true
+  "passed": true,
+  "source_commit": "69033a662d68701610f09caa97f1d292bccd1076",
+  "source_binding": "The production commit was created after packing. The following canonical source bytes were compared with that commit and the installed owner-file report.",
+  "source_sha256": {
+    "packages/cli/src/templates/trellis/scripts/common/git_objects.py": "2ddaa8736bbca4ddcba07efc2443173f3df615c52d471001ba273b0f828847c8",
+    "packages/cli/src/templates/trellis/scripts/common/task_store.py": "fcbed59b10a90f10fad26f5d5227da3fdf377c9c07cb244464243b68d459f7c1",
+    "packages/cli/src/templates/trellis/scripts/common/delivery_store.py": "038d98832a8359b697a5b3757589f9f1461b26d548fc04d29ad2b4e50d082171"
+  }
 }

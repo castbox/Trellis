@@ -6,7 +6,7 @@
 - [x] Review artifacts, activate exact Task, dispatch Trellis implementer.
 - [x] Implement public owner capability, both script trees and focused semantic tests. Preserve filesystem API and PR48 checks.
 - [x] Run after with isolated adoption and retain every source/adaptation hash and failed cohort. Current performance acceptance FAIL: 183/188 original + 21/24 paired. This checkbox records execution, not acceptance.
-- [ ] Dispatch independent checker. Run lint, TS/Python types, minimum Python compilation, build and focused/full tests. Keep build sequential with dist-consuming tests.
+- [x] Complete independent checker, lint, TS/Python types, 103-file minimum Python compilation, build and normal-hook full tests (2828 passed, 1 skipped). Keep build sequential with dist-consuming tests.
 - [x] Update spec. Pack unpublished paired 0.7.0-castbox.4 candidate. Verify all 1013 package files, original install route, public capability, modes, reapply, drift and sidecars. This is not Release evidence.
 - [ ] Commit through production hook, push PR, verify CI, merge. Publish new immutable paired source and verify downloaded reinstall.
 - [ ] Update Issue using Chinese STE principles with exact evidence and adoption boundary. Close after delivery. Archive only continuation Task through native owner; commit closeout and verify clean synced main.
@@ -20,3 +20,5 @@ Checkpoint `42417449` freezes all before measurements and numeric gates before p
 ## Current acceptance boundary
 
 See research/acceptance-status.md and research/final-quality.md. Original capability regression is 44/44. Performance is still FAIL. Merge, release, Issue closure and Task archive remain gated on actual acceptance. Preserve the active Task and create only a draft PR for review. Downstream caller opportunities are documented without changing Guru production code.
+
+Draft PR: https://github.com/castbox/Trellis/pull/50. Production commit: 69033a662d68701610f09caa97f1d292bccd1076. Full quality and unpublished installation checks pass; performance acceptance remains FAIL. No merge, release, closure or archive occurred.

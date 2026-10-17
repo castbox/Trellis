@@ -10,7 +10,7 @@ Scope: complete Issue47 residual change from base `0e3b23a3045357b76e69ca91e84b9
 ## Findings (not fixed / acceptance incomplete)
 
 - Frozen residual performance acceptance is **FAIL**: the final prospective controlled paired cohort passes183/188 original absolute gates and21/24 strengthened paired checks. Remaining failures are128-path whole-wrapper timings. All10001-path, digest/object traffic and RSS checks pass. Faster owner components or apparent host variance do not satisfy the missing gates. Do not report whole Task complete, close Issue47 or claim downstream adoption/Completion.
-- Full test evidence is pending the supervising owner's normal production commit hook. The checker intentionally did not run a duplicate `pnpm test`. Packaging, installation, publication and release are also owned by the supervising session and are not established by this report.
+- Full tests passed through the supervising owner's normal production commit hook; the checker independently read its log and matched the reviewed source fingerprints to the resulting commit. The checker did not run duplicate tests. Packaging, installation, publication and release remain separate supervising-session evidence; no publication or release is established by this report.
 
 ## Verification performed by checker
 
@@ -26,7 +26,7 @@ Commands ran sequentially. No build/dist-consuming operation ran concurrently.
 | `git diff --check` |0 / PASS |
 | canonical/dogfood `delivery_store.py` and `git_objects.py` byte comparison |0 / PASS |
 | actual public mixed-directory rejection and exact metadata selection |0 / PASS |
-| full `pnpm test` |NOT RUN here; reserved for normal commit hook |
+| full `pnpm test` via normal production commit hook |PASS; core28 files/480 passed/1 skipped; CLI106 files/2348 passed; total2828 passed/1 skipped. Checker verified existing hook log; no rerun |
 
 Logs: `/tmp/issue47-final-lint.log`, `/tmp/issue47-final-typecheck.log`, `/tmp/issue47-final-lintpy.log`, `/tmp/issue47-final-build.log`.
 
@@ -37,6 +37,10 @@ The checker inspected the public owner, original filesystem serialization, exact
 The checker read the current PRD/design/spec, public adoption contract, controlled-policy provenance/results and original-capability acceptance. Prospective paired cohorts retain the original188 caps and add paired improvements; changing process policy is explicitly qualified to that policy, applied to both before/after, and does not establish default-policy success. Failed cohorts remain failures. The final report preserves all failed checks without rounding or accepting the near miss. The checker verified all 32 compressed archive entries against both compressed and decompressed SHA256 values. This integrity check does not independently rerun every timing measurement. Original PR48 benchmark evidence reports44/44 PASS; that is distinct from residual performance acceptance.
 
 The provider is a synthetic local protocol fixture with zero network calls. Isolated consumer adaptation is not downstream production adoption. Installation/release/merge evidence must remain separate.
+
+## Normal production commit verification
+
+Commit: `69033a662d68701610f09caa97f1d292bccd1076`. The normal hook executed root `pnpm test` and the log ends with a successful commit. Independent log verification found both complete Vitest summaries: core480 passed/1 skipped and CLI2348 passed. The existing skip remains a skip, not passing evidence. Log: `/tmp/trellis-47-residual-candidate-01a14785/production-commit.log`. The three fingerprints below match both committed bytes and the current working files. This adds full regression evidence; it does not change the residual performance FAIL.
 
 ## Reviewed source fingerprints
 

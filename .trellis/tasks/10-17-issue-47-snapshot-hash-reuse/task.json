@@ -20,11 +20,11 @@
   "base_branch": "main",
   "worktree_path": null,
   "commit": null,
-  "pr_url": null,
+  "pr_url": "https://github.com/castbox/Trellis/pull/50",
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Draft PR #50; production commit 69033a66. Quality and candidate installation pass. Frozen residual performance FAIL: 183/188 original and 21/24 paired. Keep in_progress; no merge, release, Issue closure or archive.",
   "meta": {},
   "branch": "codex/47-snapshot-hash-reuse"
 }
