@@ -53,6 +53,10 @@ function setupRepo(tmp: string): void {
   // Local commit identity so commit() works in CI without global config.
   git(tmp, "config", "user.email", "test@example.com");
   git(tmp, "config", "user.name", "Test");
+  // Detached Git maintenance can outlive commit and race fixture removal.
+  // Keep these disposable repositories free of background object writers.
+  git(tmp, "config", "maintenance.auto", "false");
+  git(tmp, "config", "gc.auto", "0");
 
   // Stamp the real templates into the test repo.
   const scriptsDest = path.join(tmp, ".trellis", "scripts");

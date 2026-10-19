@@ -1,3 +1,4 @@
+import { resolveSupportedPython } from "../../utils/python.js";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -816,10 +817,22 @@ function result(
       : {}),
   };
 }
-async function postvalidate(plan: PreparedMaintenancePlan): Promise<void> {
+async function selectToolsPython(
+  plan: PreparedMaintenancePlan,
+): Promise<string | undefined> {
+  if (plan.kind !== "tools_install") return undefined;
+  const command = resolveSupportedPython().command;
+  const module = await import("./tools.js");
+  await module.validateToolsSelection(plan, command);
+  return command;
+}
+async function postvalidate(
+  plan: PreparedMaintenancePlan,
+  pythonCommand?: string,
+): Promise<void> {
   if (plan.kind === "tools_install") {
     const module = await import("./tools.js");
-    await module.validateToolsInstallation(plan);
+    await module.validateToolsInstallation(plan, pythonCommand);
   }
 }
 export function previewPlan(plan: PreparedMaintenancePlan): MaintenanceResult {
@@ -837,9 +850,10 @@ export async function applyPlan(
       fail("operation_mismatch", ref);
     return resumeOperation(ref);
   }
+  const pythonCommand = await selectToolsPython(plan);
   pending(plan, "target");
   save(ref, { plan, phase: "applying" });
-  return resumeOperation(ref);
+  return resumeOperation(ref, pythonCommand);
 }
 export async function recoverPlan(
   plan: PreparedMaintenancePlan,
@@ -862,7 +876,10 @@ export async function recoverOperation(
   const rollback =
     stored.phase === "rolling_back" || stored.phase === "rolled_back";
   const remaining = pending(stored.plan, rollback ? "source" : "target");
-  if (!remaining.length && !rollback) await postvalidate(stored.plan);
+  if (!remaining.length && !rollback) {
+    const pythonCommand = await selectToolsPython(stored.plan);
+    await postvalidate(stored.plan, pythonCommand);
+  }
   return result(
     stored.plan,
     remaining.length ? "pending" : rollback ? "rolled_back" : "applied",
@@ -876,7 +893,10 @@ export async function resumePlan(
 ): Promise<MaintenanceResult> {
   return applyPlan(plan, stateDir);
 }
-export async function resumeOperation(ref: string): Promise<MaintenanceResult> {
+export async function resumeOperation(
+  ref: string,
+  selectedPython?: string,
+): Promise<MaintenanceResult> {
   const stored = readStored(ref);
   validatePlan(stored.plan);
   if (stored.phase === "rolled_back" || stored.phase === "rolling_back")
@@ -884,6 +904,8 @@ export async function resumeOperation(ref: string): Promise<MaintenanceResult> {
       "operation_rolled_back",
       "Use rollback recovery; do not reapply a restored operation",
     );
+  const pythonCommand =
+    selectedPython ?? (await selectToolsPython(stored.plan));
   const remaining = pending(stored.plan, "target");
   for (const action of remaining) {
     if (
@@ -900,7 +922,7 @@ export async function resumeOperation(ref: string): Promise<MaintenanceResult> {
       archiveBarrier(stored.plan);
     write(action, "target");
   }
-  await postvalidate(stored.plan);
+  await postvalidate(stored.plan, pythonCommand);
   save(ref, { ...stored, phase: "applied" });
   return result(stored.plan, "applied", [], ref);
 }

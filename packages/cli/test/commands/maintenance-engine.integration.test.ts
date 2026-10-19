@@ -18,6 +18,7 @@ import {
   type MaintenanceAction,
 } from "../../src/commands/maintenance/shared.js";
 vi.mock("../../src/commands/maintenance/tools.js", () => ({
+  validateToolsSelection: vi.fn(),
   validateToolsInstallation: vi.fn(),
 }));
 

@@ -51,6 +51,16 @@
 - **Node.js** >= 18
 - **Python** >= 3.9
 
+Python selection is shared by `init`, same-version `update`, tools maintenance,
+and workflow preview/application. Windows tries `python`, `python3`, then
+`py -3`; macOS/Linux try `python3`, then `python`. Each new CLI operation selects
+from its current environment. Set `TRELLIS_PYTHON_CMD` to choose a command
+explicitly (for example, `$env:TRELLIS_PYTHON_CMD = 'py -3'` in PowerShell).
+`TRELLIS_SKIP_PYTHON_CHECK=1` skips automatic detection and uses the platform
+default; it does not make a missing interpreter executable or bypass actual
+native contract validation. Update reapplies only the installed CLI's version;
+use the documented maintenance plan for tools installation.
+
 ## Quick Start
 
 ```bash

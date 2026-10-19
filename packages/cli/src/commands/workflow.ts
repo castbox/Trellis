@@ -1,3 +1,4 @@
+import { resolveSupportedPython } from "../utils/python.js";
 /**
  * `trellis workflow` command — list and switch the active `.trellis/workflow.md`.
  *
@@ -147,6 +148,7 @@ async function writeWorkflow(
   template: ResolvedWorkflowTemplate,
   options: WorkflowCommandOptions,
 ): Promise<void> {
+  resolveSupportedPython();
   const filePath = workflowFilePath(cwd);
   if (!options.createNew) preflightDeliveryWorkflow(cwd, template.content);
   const dest = path.dirname(filePath);

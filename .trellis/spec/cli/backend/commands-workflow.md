@@ -298,3 +298,8 @@ bundled IDs track the selected content, and user-managed IDs remove the workflow
 hash while retaining unrelated entries. The command saves that projection only
 after its content write; explicit migration uses the same projection inside its
 reviewed, frozen receipt write set without live receipt rereads.
+
+
+## Python operation boundary
+
+Workflow preview and force application use the [shared Python selection contract](./configurator-shared.md#scenario-python-selection-across-process-boundaries-issue-53). Resolve before rendering and native preflight. Preview still skips the installed native preflight; `.new`, local edits and hash ownership keep their existing semantics.

@@ -338,11 +338,11 @@ describe("configurePlatform", () => {
     }
   });
 
-  it("configurePlatform and collectTemplates agree under Windows python rendering", async () => {
+  it.each(["python", "py -3"])("configurePlatform and collectTemplates agree under Windows %s rendering", async (command) => {
     // `collectPlatformTemplates` rewrites python3 → python for the whole map in
     // one place; `configure` has to reach the same bytes. A site that writes
     // raw content is invisible on macOS/Linux, where the rewrite is a no-op.
-    setResolvedPythonCommand("python");
+    setResolvedPythonCommand(command);
     try {
       for (const id of PLATFORM_IDS) {
         const platformDir = fs.mkdtempSync(
