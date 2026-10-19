@@ -115,4 +115,4 @@ Do not introduce ._pth isolation that changes sys.path to manufacture a failure.
 Record the hash of actual sys.executable separately from the original setup
 binary when a launcher selects another registered version. Canonicalize temporary
 checkout roots from Git before exact-root maintenance entry calls (Windows TEMP
-may otherwise use an8.3alias). Fixture errors never count as baseline reproduction.
+may otherwise use an 8.3 alias). Fixture errors never count as baseline reproduction.
