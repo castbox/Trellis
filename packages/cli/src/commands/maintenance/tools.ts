@@ -1,3 +1,4 @@
+import { replacePythonCommandLiterals } from "../../configurators/shared.js";
 import fs from "node:fs";
 import { z } from "zod";
 import { compareVersions } from "../../utils/compare-versions.js";
@@ -5,7 +6,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { VERSION } from "../../constants/version.js";
 import { getConfiguredPlatforms } from "../../configurators/index.js";
-import { getPythonCommandForPlatform } from "../../configurators/shared.js";
+import {
+  pythonInvocation,
+  resolveSupportedPython,
+} from "../../utils/python.js";
 import { computeHash, loadHashes } from "../../utils/template-hash.js";
 import { readDeliveryWorkflowContract } from "../../utils/delivery-workflow.js";
 import {
@@ -230,7 +234,7 @@ export async function prepareToolsInstallation(
         "custom ownership requires its actual provider",
       );
     readDeliveryWorkflowContract(decision.content);
-    files.set(workflowPath, decision.content);
+    files.set(workflowPath, replacePythonCommandLiterals(decision.content));
   } else if (input.workflow.action !== "preserve" || !originalWorkflow)
     failure("invalid_workflow", "preserve requires an existing workflow");
   const decisions = new Map<string, ToolsFileDecision>();
@@ -403,16 +407,69 @@ export async function prepareToolsInstallation(
   });
 }
 
+/** Frozen replacement bytes must still match the current operation's rendering.
+ * Preserved files and custom workflow text keep their reviewed dispositions.
+ */
+export async function validateToolsSelection(
+  plan: PreparedMaintenancePlan,
+  command: string,
+): Promise<void> {
+  if (plan.kind !== "tools_install") return;
+  const files = await collectProspectiveTemplateFiles(plan.target_root, {
+    registrySpecs: false,
+    applySkipPaths: false,
+    pythonCommand: command,
+  });
+  files.delete(workflowPath);
+  if (
+    plan.guard.workflow.action === "install" &&
+    plan.guard.workflow.ownership === "bundled"
+  ) {
+    const workflow = await resolveWorkflowTemplate(
+      plan.guard.workflow.template_id,
+    );
+    files.set(workflowPath, replacePythonCommandLiterals(workflow.content));
+  }
+  for (const action of plan.actions) {
+    if (action.kind === "directory" || !action.target) continue;
+    const name = action.path.endsWith(".new")
+      ? action.path.slice(0, -4)
+      : action.path;
+    const candidate = files.get(name);
+    if (candidate === undefined) continue;
+    // Equal source/target outside required replacements is a preserve decision.
+    if (
+      same(action.source, action.target) &&
+      !plan.guard.required_paths.includes(action.path)
+    )
+      continue;
+    if (text(action.target) !== candidate)
+      failure(
+        "stale_source",
+        `${action.path}: rendered candidate changed; prepare a new tools installation`,
+      );
+  }
+}
+
 /** Actual installed native capability, invoked by the common apply/resume engine. */
-export function validateToolsInstallation(plan: PreparedMaintenancePlan): void {
+export function validateToolsInstallation(
+  plan: PreparedMaintenancePlan,
+  command = resolveSupportedPython().command,
+): void {
   if (plan.kind !== "tools_install")
     failure("invalid_plan", "expected tools_install");
+  const python = pythonInvocation(command);
   const root = plan.target_root;
   if (fs.readFileSync(path.join(root, versionPath), "utf8").trim() !== VERSION)
     failure("incomplete_operation", "target version was not installed");
   const result = spawnSync(
-    getPythonCommandForPlatform(),
-    [path.join(root, ".trellis/scripts/delivery.py"), "contract", "--json"],
+    python.executable,
+    [
+      ...python.args,
+      path.join(root, ".trellis/scripts/delivery.py"),
+      "contract",
+      "--json",
+    ],
     {
       cwd: root,
       encoding: "utf8",
@@ -439,8 +496,9 @@ export function validateToolsInstallation(plan: PreparedMaintenancePlan): void {
     fs.readFileSync(path.join(root, workflowPath), "utf8"),
   );
   const context = spawnSync(
-    getPythonCommandForPlatform(),
+    python.executable,
     [
+      ...python.args,
       path.join(root, ".trellis/scripts/get_context.py"),
       ...(declared ? ["--mode", "runtime-contract"] : []),
       "--json",

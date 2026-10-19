@@ -22,11 +22,11 @@ export interface PlatformConfigureOptions {
 }
 
 /**
- * Module-level resolved Python command, set by the init flow after probing.
+ * Module-level rendering context, refreshed by each Python-consuming operation.
  *
  * Windows commonly has Python under one of: `python`, `python3`, `py -3` —
  * which one works varies by installer (python.org / Microsoft Store / py
- * launcher). `init.ts` detects which is available, then calls
+ * launcher). The shared resolver detects which is available, then calls
  * `setResolvedPythonCommand` so all subsequent template / configurator writes
  * use the resolved value instead of the platform default.
  *

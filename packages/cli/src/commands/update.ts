@@ -1,3 +1,4 @@
+import { resolveSupportedPython } from "../utils/python.js";
 import {
   readDeliveryWorkflowContract,
   preflightDeliveryWorkflow,
@@ -44,7 +45,10 @@ import {
   getConfiguredPlatforms,
   collectPlatformTemplates,
 } from "../configurators/index.js";
-import { replacePythonCommandLiterals } from "../configurators/shared.js";
+import {
+  setResolvedPythonCommand,
+  replacePythonCommandLiterals,
+} from "../configurators/shared.js";
 import { preserveCodexAgentModelKeys } from "../configurators/codex.js";
 import { printZcodeSetupHint } from "../configurators/zcode.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
@@ -462,6 +466,7 @@ export async function collectTemplateFiles(
   cwd: string,
   options: { registrySpecs?: boolean } = {},
 ): Promise<Map<string, string>> {
+  resolveSupportedPython();
   const active = path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE);
   assertProjectPath(active, cwd);
   if (fs.existsSync(active)) {
@@ -469,13 +474,26 @@ export async function collectTemplateFiles(
     if (readDeliveryWorkflowContract(content))
       preflightDeliveryWorkflow(cwd, content);
   }
-  return collectProspectiveTemplateFiles(cwd, options);
+  return renderProspectiveTemplateFiles(cwd, options);
 }
 
 /** Shared rendering only: no installed dispatcher, version mutation or preflight. */
 export async function collectProspectiveTemplateFiles(
   cwd: string,
-  options: { registrySpecs?: boolean; applySkipPaths?: boolean } = {},
+  options: {
+    registrySpecs?: boolean;
+    applySkipPaths?: boolean;
+    pythonCommand?: string;
+  } = {},
+): Promise<Map<string, string>> {
+  if (options.pythonCommand) setResolvedPythonCommand(options.pythonCommand);
+  else resolveSupportedPython();
+  return renderProspectiveTemplateFiles(cwd, options);
+}
+
+async function renderProspectiveTemplateFiles(
+  cwd: string,
+  options: { registrySpecs?: boolean; applySkipPaths?: boolean },
 ): Promise<Map<string, string>> {
   const files = new Map<string, string>();
   const platforms = getConfiguredPlatforms(cwd);

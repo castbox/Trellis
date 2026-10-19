@@ -86,3 +86,24 @@ After writing tests:
 ---
 
 **Language**: All documentation should be written in **English**.
+
+
+## Native Python lifecycle regression
+
+Issue 53 adds `scripts/native-python-regression.mjs` as an implementation-independent
+built public-CLI driver. CI runs `windows-2022` with real isolated `python3` and
+`py -3`, and targeted `ubuntu-24.04` / `macos-14` python3 scenarios. Windows
+compares independently built affected baseline and candidate with fresh projects;
+Unix runs the complete candidate chain and explicitly records baseline comparison
+as not applicable. Preserve raw subprocess exits and exact assertion failures,
+keep matrix fail-fast disabled, and distinguish environment failure from the
+expected Windows baseline selection defect. See the driver README for dispatch,
+identity and evidence commands. A local Git marketplace fixture exercises actual
+provider parsing/cloning; it does not certify external GitHub transport or Agent
+automatic loading.
+
+Temporary Git fixtures that delete `.git` immediately after subprocesses finish
+must disable `maintenance.auto` and `gc.auto` in that fixture's local config.
+A completed foreground Git command may leave maintenance writing objects in the
+background; cleanup then fails with ENOTEMPTY. Do not change global/production
+Git configuration or add arbitrary sleeps/retries to conceal the race.

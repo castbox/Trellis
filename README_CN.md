@@ -51,6 +51,14 @@
 - **Node.js** >= 18
 - **Python** >= 3.9
 
+`init`、同版本 `update`、工具维护和 workflow 预览/应用共用 Python 选择规则。
+Windows 依次尝试 `python`、`python3`、`py -3`；macOS/Linux 依次尝试
+`python3`、`python`。每次新的 CLI 操作都根据当前环境选择。可设置
+`TRELLIS_PYTHON_CMD` 显式选择命令，例如在 PowerShell 中执行
+`$env:TRELLIS_PYTHON_CMD = 'py -3'`。`TRELLIS_SKIP_PYTHON_CHECK=1`
+跳过自动探测并使用平台默认值，不会使缺失的解释器变得可执行，也不会跳过实际原生合同校验。
+`update` 只重应用当前 CLI 的同版本模板；工具安装请使用已有维护计划流程。
+
 ## 快速开始
 
 ```bash

@@ -42,3 +42,8 @@ Run the platform registry tests so generated assets remain synchronized.
 [Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
 selected-task CLI/SDK boundary. It does not relax this document's ordinary
 operation, current writer, or complete migration contracts.
+
+
+## Python operation boundary
+
+Resolve Python before installed-runtime preflight and template collection; use the same selection for comparison, writes and hashes. See [Python selection contract](./configurator-shared.md#scenario-python-selection-across-process-boundaries-issue-53).

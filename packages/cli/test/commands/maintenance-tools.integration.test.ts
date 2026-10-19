@@ -1,3 +1,4 @@
+import * as pythonRuntime from "../../src/utils/python.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +15,8 @@ import {
   readSnapshot,
   rollbackPlan,
   recoverPlan,
+  recoverOperation,
+  resumeOperation,
 } from "../../src/commands/maintenance/shared.js";
 import { deliveryWorkflowMdTemplate } from "../../src/templates/trellis/index.js";
 import { computeHash, loadHashes } from "../../src/utils/template-hash.js";
@@ -119,12 +122,60 @@ function input(root: string): ToolsInstallationInput {
 }
 const python = process.platform === "win32" ? "python" : "python3";
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   for (const root of temporary.splice(0))
     fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe("independent single-checkout tools installation", () => {
+  it("fails Python selection before tools apply writes or creates recovery state", async () => {
+    const root = temp();
+    seed(root);
+    const plan = await prepareToolsInstallation(input(root));
+    const before = scan(root);
+    const state = path.join(temp(), "state");
+    vi.spyOn(pythonRuntime, "resolveSupportedPython").mockImplementation(() => {
+      throw new Error("No supported Python command found");
+    });
+    await expect(applyPlan(plan, state)).rejects.toThrow(
+      "No supported Python command found",
+    );
+    expect(scan(root)).toEqual(before);
+    expect(fs.existsSync(state)).toBe(false);
+  });
+
+  it("requires reprepare when the current interpreter changes rendered replacement bytes", async () => {
+    const root = temp();
+    seed(root);
+    vi.stubEnv("TRELLIS_PYTHON_CMD", "python3");
+    const plan = await prepareToolsInstallation(input(root));
+    const before = scan(root);
+    const state = path.join(temp(), "state");
+    vi.stubEnv("TRELLIS_PYTHON_CMD", "py -3");
+    await expect(applyPlan(plan, state)).rejects.toThrow(
+      "rendered candidate changed",
+    );
+    expect(scan(root)).toEqual(before);
+    expect(fs.existsSync(state)).toBe(false);
+  });
+
+  it("rejects interpreter drift when rereading or resuming the original successful recovery reference", async () => {
+    const root = temp();
+    seed(root);
+    vi.stubEnv("TRELLIS_PYTHON_CMD", python);
+    const plan = await prepareToolsInstallation(input(root));
+    const applied = await applyPlan(plan, path.join(temp(), "state"));
+    expect(applied.status).toBe("applied");
+    const recovery = applied.recovery_ref;
+    if (!recovery) throw new Error("missing recovery reference");
+    const before = scan(root);
+    vi.stubEnv("TRELLIS_PYTHON_CMD", "py -3.12");
+    await expect(recoverOperation(recovery)).rejects.toThrow("rendered candidate changed");
+    await expect(resumeOperation(recovery)).rejects.toThrow("rendered candidate changed");
+    expect(scan(root)).toEqual(before);
+  });
+
   it("cuts over only the selected real worktree, retains old data and controls, replays the same operation and creates new native Tasks", async () => {
     const base = temp();
     const target = path.join(base, "target"),

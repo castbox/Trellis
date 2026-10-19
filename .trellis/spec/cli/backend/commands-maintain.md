@@ -370,3 +370,8 @@ copy old gates to make continuation appear successful.
 Correct: caller explicitly reviews original path/history/next owner, public Core
 validates a same-generation projection, fixed-plan maintenance creates one active
 record, and target-native consumers establish actual continuation independently.
+
+
+## Python operation boundary
+
+Tools inspect/prepare/application and applied recovery/resume use the [shared Python selection contract](./configurator-shared.md#scenario-python-selection-across-process-boundaries-issue-53). Resolve automatic selection before tools mutation; postvalidation uses executable/argv, including the real Windows launcher. Preserve other maintenance kinds and existing operation identity/staleness contracts.

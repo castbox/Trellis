@@ -1,3 +1,4 @@
+import { pythonInvocation } from "./python.js";
 import { spawnSync } from "node:child_process";
 import { getPythonCommandForPlatform } from "../configurators/shared.js";
 import fs from "node:fs";
@@ -78,9 +79,10 @@ export function preflightDeliveryWorkflow(
   if (contract && fs.existsSync(workflowRoot) && !options.installingRuntime) {
     const script = path.join(workflowRoot, "scripts", "delivery.py");
     assertProjectPath(script, cwd);
+    const python = pythonInvocation(getPythonCommandForPlatform());
     const probe = spawnSync(
-      getPythonCommandForPlatform(),
-      [script, "contract", "--json"],
+      python.executable,
+      [...python.args, script, "contract", "--json"],
       {
         cwd,
         encoding: "utf8",
