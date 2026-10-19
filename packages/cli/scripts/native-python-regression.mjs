@@ -19,7 +19,12 @@ if (!["python3", "py"].includes(scenario) || !["pass", "baseline-defect"].includ
   throw new Error("Use --scenario=python3|py --expect=pass|baseline-defect");
 const output = path.resolve(options.output ?? `native-python-evidence/${scenario}`);
 fs.mkdirSync(output, { recursive: true });
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-native-python-"));
+// Hosted Windows TEMP may use an 8.3 alias (RUNNER~1), whereas Git reports the
+// long checkout path. Prefer the runner's dedicated temp root and retain its
+// canonical spelling for exact-root maintenance contracts.
+const tempRoot = process.env.RUNNER_TEMP && fs.existsSync(process.env.RUNNER_TEMP)
+  ? process.env.RUNNER_TEMP : os.tmpdir();
+const work = fs.realpathSync(fs.mkdtempSync(path.join(tempRoot, "trellis-native-python-")));
 const cli = path.join(target, "packages/cli/bin/trellis.js");
 const windows = process.platform === "win32";
 const selected = scenario === "py" ? "py -3" : "python3";
@@ -162,9 +167,11 @@ function hashesMatch(root) {
   assert(hashes[hookPath] === hash(read(root, hookPath).replace(/\r\n/g, "\n")), "hash_matches", "hook hash matches rendered bytes");
 }
 function initialize(name, env, workflow = "native") {
-  const root = path.join(work, name);
+  let root = path.join(work, name);
   fs.mkdirSync(root);
   success(run("git", ["init", "-q"], root, env), "git init");
+  const gitRoot = success(run("git", ["rev-parse", "--show-toplevel"], root, env), "canonical checkout root").stdout.trim();
+  root = fs.realpathSync(gitRoot);
   success(command(["init", "--codex", "--yes", "--no-monorepo", "--workflow", workflow], root, env), "public init");
   selectedHook(root);
   return root;
