@@ -83,6 +83,7 @@ function isolatedEnvironment() {
   success(run(realPython, ["-c", "import sys; assert sys.version_info >= (3,9); print(sys.executable); print(sys.version)"]), "real Python identity");
   const bin = path.join(work, "bin");
   fs.mkdirSync(bin);
+  let interpreterDirectory = bin;
   if (windows && scenario === "python3") {
     // A renamed genuine CPython executable needs its original DLLs/stdlib.
     const runtime = path.join(work, "python-runtime");
@@ -90,12 +91,10 @@ function isolatedEnvironment() {
     fs.copyFileSync(path.join(runtime, path.basename(realPython)), path.join(runtime, "python3.exe"));
     fs.rmSync(path.join(runtime, "python.exe"), { force: true });
     fs.rmSync(path.join(runtime, "pythonw.exe"), { force: true });
-    // The runtime itself is private; no Scripts directory is put on PATH.
-    fs.copyFileSync(path.join(runtime, "python3.exe"), path.join(bin, "python3.exe"));
-    // Use a ._pth file pointing at the copied *real* runtime, not a wrapper.
-    fs.writeFileSync(path.join(bin, "python3._pth"), `${runtime}\n${path.join(runtime, "Lib")}\n${path.join(runtime, "DLLs")}\nimport site\n`);
-    for (const file of fs.readdirSync(runtime).filter((name) => /\.dll$/i.test(name)))
-      fs.copyFileSync(path.join(runtime, file), path.join(bin, file));
+    // Expose the intact runtime directly. A ._pth file would enable isolated
+    // mode and incorrectly remove the executed script's directory from sys.path.
+    // The runtime's Scripts subdirectory is deliberately not added to PATH.
+    interpreterDirectory = runtime;
   } else if (windows) {
     const launcher = options.launcher ?? resolveExecutable("py");
     assert(launcher && fs.existsSync(launcher), "real_launcher_available", "A genuine registered Windows Python launcher is required");
@@ -129,14 +128,20 @@ function isolatedEnvironment() {
   for (const key of Object.keys(env)) {
     if (key.toLowerCase() === "path" || key.startsWith("TRELLIS_") || key.endsWith("_PROJECT_DIR") || key === "CLAUDE_ENV_FILE") delete env[key];
   }
-  Object.assign(env, { PATH: [bin, ...retained].join(path.delimiter), PYTHONDONTWRITEBYTECODE: "1", PYTHONUTF8: "1", NO_COLOR: "1", CI: "1" });
+  Object.assign(env, { PATH: [...new Set([bin, interpreterDirectory, ...retained])].join(path.delimiter), PYTHONDONTWRITEBYTECODE: "1", PYTHONUTF8: "1", NO_COLOR: "1", CI: "1" });
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
   summary.identity.path = env.PATH;
-  summary.identity.pythonSha256 = hash(fs.readFileSync(realPython));
+  summary.identity.sourcePythonSha256 = hash(fs.readFileSync(realPython));
   const probe = "import sys,json; print(json.dumps({'executable':sys.executable,'version':sys.version})); assert sys.version_info >= (3,9)";
   const identity = success(python(["-c", probe], env), "isolated actual interpreter");
   summary.identity.python = JSON.parse(identity.stdout);
+  summary.identity.pythonSha256 = hash(fs.readFileSync(summary.identity.python.executable));
+  const importProbe = path.join(work, "script-import-probe");
+  fs.mkdirSync(importProbe);
+  fs.writeFileSync(path.join(importProbe, "sibling_module.py"), "VALUE = 'normal-script-import'\n");
+  fs.writeFileSync(path.join(importProbe, "probe.py"), "import sibling_module\nassert sibling_module.VALUE == 'normal-script-import'\nprint(sibling_module.VALUE)\n");
+  success(python([path.join(importProbe, "probe.py")], env), "real interpreter preserves script-directory imports");
   for (const name of ["python", "python3", "py"]) {
     const visibility = run(name, [...(name === "py" ? ["-3"] : []), "-c", "print('real-python-probe')"], work, env);
     assert(name === scenario ? visibility.exit === 0 : visibility.exit !== 0,

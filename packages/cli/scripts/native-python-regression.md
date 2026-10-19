@@ -21,6 +21,10 @@ Node 20, Git, and Bash are supplied by the pinned CI runner setup.
 
 The Python 3 scenario copies a genuine Windows CPython runtime and exposes the
 real executable as `python3.exe`; its DLLs and standard library remain real.
+The copied runtime directory is exposed directly, with `python.exe` and
+`pythonw.exe` removed and no `._pth` isolation file. An infrastructure self-check
+executes a real script importing a sibling module before any candidate cases,
+ensuring ordinary script-directory import behavior remains intact.
 The launcher scenario exposes a copied genuine `py.exe` that discovers its
 registered runtime. Original PATH entries containing interpreter aliases are
 removed. Unix system tools from filtered directories are projected as symlinks
