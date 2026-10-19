@@ -107,3 +107,12 @@ must disable `maintenance.auto` and `gc.auto` in that fixture's local config.
 A completed foreground Git command may leave maintenance writing objects in the
 background; cleanup then fails with ENOTEMPTY. Do not change global/production
 Git configuration or add arbitrary sleeps/retries to conceal the race.
+
+Native interpreter isolation must preserve normal Python script import behavior:
+copy/expose the genuine runtime, audit alternate aliases cannot execute, and run
+a real script importing a sibling module before entering candidate assertions.
+Do not introduce ._pth isolation that changes sys.path to manufacture a failure.
+Record the hash of actual sys.executable separately from the original setup
+binary when a launcher selects another registered version. Canonicalize temporary
+checkout roots from Git before exact-root maintenance entry calls (Windows TEMP
+may otherwise use an8.3alias). Fixture errors never count as baseline reproduction.

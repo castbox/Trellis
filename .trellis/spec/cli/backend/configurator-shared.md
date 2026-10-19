@@ -296,7 +296,7 @@ Configurators must respect these. They are not enforced by types; tests in `test
 - **Mutate the registry.** `types/ai-tools.ts:AI_TOOLS` is read-only from this file. Adding a platform updates the registry first, then the configurator file consumes it.
 - **Decide capability flags.** `agentCapable` / `hasHooks` come from the `TemplateContext` constructed in `configurators/index.ts`; shared helpers only read them.
 - **Touch project spec/task content outside the operation contract.** See [Task Lifecycle](./task-lifecycle.md).
-- **Cache anything other than the resolved Python command.** The single piece of module state (`resolvedPythonCommand`) exists because init runs once and configurators are called repeatedly afterward. Anything else with cross-call lifetime belongs at the `commands/init.ts` call site, not here.
+- **Cache anything other than the resolved Python command.** The single piece of module state (`resolvedPythonCommand`) coordinates repeated configurator rendering within one selected CLI operation. Public operation boundaries resolve the current environment again. Anything else with cross-call lifetime belongs at the `commands/init.ts` call site, not here.
 
 ---
 
@@ -444,7 +444,7 @@ const pythonCmd = getPythonCommandForPlatform();
 
 Wrong: adding a second module-level `let` in `shared.ts` to memoize anything other than the resolved Python command.
 
-Correct: configurators are called from `configurators/index.ts:configurePlatform` and `configurators/index.ts:collectPlatformTemplates`. Pass derived values through arguments. The only module state in this file is `resolvedPythonCommand`, and that exists because init runs in a separate process boundary from the configurator-driven test runs that exercise rendering without init.
+Correct: configurators are called from `configurators/index.ts:configurePlatform` and `configurators/index.ts:collectPlatformTemplates`. Pass derived values through arguments. The only module state in this file is `resolvedPythonCommand`, and that coordinates rendering within one operation; a new process or SDK operation must resolve the current environment before its consumers run.
 
 ---
 

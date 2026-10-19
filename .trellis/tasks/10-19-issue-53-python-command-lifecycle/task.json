@@ -16,11 +16,11 @@
   "completedAt": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "7f050fa11ddd8569e5db4f728ea1b745b7500a98",
+  "pr_url": "https://github.com/castbox/Trellis/pull/54",
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Issue53 delivered via PR54 and castbox-v0.7.0-castbox.5. Exactmain CI, native comparison, paired package and published download verification passed; see release-evidence.json. No npm/Guru/business deployment.",
   "meta": {}
 }

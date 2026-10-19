@@ -1,11 +1,11 @@
 # Implementation plan and progress
 
-- [ ] Extract/reuse Python resolution and shell-free invocation across all Issue consumers; add meaningful regression tests.
-- [ ] Add standalone public CLI native driver and explicit Windows/Unix CI matrix plus baseline/candidate comparison and evidence artifacts.
-- [ ] Update entry docs and relevant specs; independent full-scope Trellis check.
-- [ ] Run build, lint, TS/Python checks and full tests, packed paired install smoke.
-- [ ] Commit, PR, inspect all native CI (including exact baseline/candidate assertions), fix any failures, merge only on green.
-- [ ] Bump paired Castbox version, validate immutable assets at exact main, tag/release, download verification; record evidence, close Issue and archive Task.
+- [x] Extract/reuse Python resolution and shell-free invocation across all Issue consumers; add meaningful regression tests.
+- [x] Add standalone public CLI native driver and explicit Windows/Unix CI matrix plus baseline/candidate comparison and evidence artifacts.
+- [x] Update entry docs and relevant specs; independent full-scope Trellis check.
+- [x] Run build, lint, TS/Python checks and full tests, packed paired install smoke.
+- [x] Commit, PR, inspect all native CI (including exact baseline/candidate assertions), fix any failures, merge only on green.
+- [x] Bump paired Castbox version, validate immutable assets at exact main, tag/release, download verification; record evidence, close Issue and archive Task.
 
 Authorization: user explicitly authorizes all repository/Issue operations through release and accepts preferred options. Planning reviewed against complete live issue; no user-owned decisions remain. Existing workflow is native legacy (missing_runtime_contract); continuation loaded from live workflow.
 
@@ -30,3 +30,14 @@ Authorization: user explicitly authorizes all repository/Issue operations throug
 - PR54 first run https://github.com/castbox/Trellis/actions/runs/39213452341: full Ubuntu build/lint/typecheck/tests passed (Core 484 + CLI 2381, one Core skip); Linux/macOS native chains passed. Both Windows baselines precisely reproduced selection_lost, candidates passed init/update/hook/conflicts then exact-root fixture failed because hosted TEMP used RUNNER~1. Driver f14019fb canonicalizes actual Git root, leaving production root validation intact.
 - Local four-worker full CLI run had 2380 pass/one Pi timeout while duplicate precommit test ran; isolated Pi recheck 65/65 passed. Duplicate precommit run was cancelled; initial commit used HUSKY=0 after explicit lint-staged/static/manual checks, with actual full CI success retained separately. No test assertions/timeouts weakened.
 - Second run https://github.com/castbox/Trellis/actions/runs/39213907652 passed Linux/macOS. Windows candidate's real py -3 native apply passed but recover correctly exposed target-mode drift (source Windows0666 vs requested0755;39 script paths pending). Add bounded platform target-mode projection before rerunning; no false applied/recovery claim.
+
+
+## Final outcome (2026-10-19)
+
+All accepted R1-R7 and Issue acceptance items are complete. PR54 merged to main7f050fa11ddd8569e5db4f728ea1b745b7500a98. Final PR39215243132 and exact main39215935088 CI passed all5jobs; Core484pass1skip,CLI2383pass. Four candidate native chains passed (257 public subprocess/probe commands,503assertions); both Windows baselines precisely reproduced selection_lost. Independent checker audited each raw command record, source/build/driver identities and actual recovery/workflow results.
+
+Third CI39214685556 proved full py -3 chain; its python3 fixture exposed self-authored ._pth isolation. Final driver uses the complete copied real runtime with no altered import policy, audits script-directory sibling imports before candidate execution and records actual executed interpreter hash separately from setup binary. Fourth PR and main reruns proved both Windows variants. Earlier failed results remain historical and are included in the release diagnostic archive.
+
+Castbox paired0.7.0-castbox.5 release is published at the immutable source above. Assets include both tarballs, release record, checksums and durable native evidence. Remote annotated tag target verified. Exact main rebuild was byte-identical to candidate package pair. Release-download checksums and isolated reinstall independently passed; all1018file bytes/executable modes and10publicCLIcalls matched. npm release job39216562837 was skipped as intended; no npm publication or downstream business modification occurred.
+
+See release-evidence.json for source, run and asset checksums. All Issue checkboxes were completed and closure requested after download proof. Current Task archive is bookkeeping only; release tag/source remain fixed.
