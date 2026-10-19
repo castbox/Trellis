@@ -23,3 +23,10 @@ Authorization: user explicitly authorizes all repository/Issue operations throug
 
 - Frozen full rerun cleared archive race; 2379 passed and two 10s timeouts remained (platform registry projection / existing cross-worktree session test). Retrying complete CLI suite with maxWorkers=4, preserving original timeout and all assertions. Normal CI keeps its original runner/testing strategy.
 - Isolated paired local installation passed: exact .5 core resolution and 10 real public init/update/maintenance/workflow/recover/resume calls.
+
+
+## Native CI iterations
+
+- PR54 first run https://github.com/castbox/Trellis/actions/runs/39213452341: full Ubuntu build/lint/typecheck/tests passed (Core 484 + CLI 2381, one Core skip); Linux/macOS native chains passed. Both Windows baselines precisely reproduced selection_lost, candidates passed init/update/hook/conflicts then exact-root fixture failed because hosted TEMP used RUNNER~1. Driver f14019fb canonicalizes actual Git root, leaving production root validation intact.
+- Local four-worker full CLI run had 2380 pass/one Pi timeout while duplicate precommit test ran; isolated Pi recheck 65/65 passed. Duplicate precommit run was cancelled; initial commit used HUSKY=0 after explicit lint-staged/static/manual checks, with actual full CI success retained separately. No test assertions/timeouts weakened.
+- Second run https://github.com/castbox/Trellis/actions/runs/39213907652 passed Linux/macOS. Windows candidate's real py -3 native apply passed but recover correctly exposed target-mode drift (source Windows0666 vs requested0755;39 script paths pending). Add bounded platform target-mode projection before rerunning; no false applied/recovery claim.

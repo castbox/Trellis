@@ -124,11 +124,81 @@ const python = process.platform === "win32" ? "python" : "python3";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   for (const root of temporary.splice(0))
     fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe("independent single-checkout tools installation", () => {
+  it("freezes Windows-observable tools modes without changing exact raw source snapshots", async () => {
+    const root = temp();
+    seed(root);
+    const script = ".trellis/scripts/task.py";
+    fs.chmodSync(path.join(root, script), 0o666);
+    write(root, ".trellis/config.yaml", "# local configuration\n", 0o444);
+    const source = readSnapshot(root, script);
+    const receipt = readSnapshot(root, ".trellis/.template-hashes.json");
+    const before = scan(root);
+    vi.stubEnv("TRELLIS_PYTHON_CMD", python);
+    vi.stubGlobal("process", new Proxy(process, {
+      get(target, property) {
+        return property === "platform" ? "win32" : Reflect.get(target, property);
+      },
+    }));
+    const request = input(root);
+    request.file_decisions.push({
+      path: ".trellis/config.yaml",
+      source: readSnapshot(root, ".trellis/config.yaml"),
+      action: "create-new",
+    });
+    const plan = await prepareToolsInstallation(request);
+    expect(plan.actions.find((action) => action.path === ".trellis/config.yaml.new")).toMatchObject({
+      source: null,
+      target: { mode: 0o666 },
+    });
+    expect(plan.actions.find((action) => action.path === script)).toMatchObject({
+      source,
+      target: { mode: 0o666 },
+    });
+    expect(plan.actions.find((action) => action.path === ".trellis/scripts/delivery.py")).toMatchObject({
+      source: null,
+      target: { mode: 0o666 },
+    });
+    expect(plan.actions.find((action) => action.path === ".trellis/agents/implement.md")).toMatchObject({
+      source: null,
+      target: { mode: 0o666 },
+    });
+    expect(plan.actions.find((action) => action.path === ".trellis/.template-hashes.json")).toMatchObject({
+      source: receipt,
+      target: { mode: receipt?.mode },
+    });
+    expect(scan(root)).toEqual(before);
+    const untracked = temp();
+    write(untracked, ".trellis/.version", "0.6.15");
+    write(untracked, ".trellis/workflow.md", "# existing workflow");
+    const fresh = await prepareToolsInstallation(input(untracked));
+    expect(fresh.actions.find((action) => action.path === ".trellis/.template-hashes.json")).toMatchObject({
+      source: null,
+      target: { mode: 0o666 },
+    });
+  });
+
+  it("keeps Unix script targets executable while preserving ordinary existing file modes", async () => {
+    const root = temp();
+    seed(root);
+    vi.stubEnv("TRELLIS_PYTHON_CMD", python);
+    vi.stubGlobal("process", new Proxy(process, {
+      get(target, property) {
+        return property === "platform" ? "linux" : Reflect.get(target, property);
+      },
+    }));
+    const plan = await prepareToolsInstallation(input(root));
+    for (const name of [".trellis/scripts/task.py", ".trellis/scripts/delivery.py"])
+      expect(plan.actions.find((action) => action.path === name)).toMatchObject({ target: { mode: 0o755 } });
+    expect(plan.actions.find((action) => action.path === ".trellis/agents/implement.md")).toMatchObject({ target: { mode: 0o644 } });
+    expect(plan.actions.find((action) => action.path === ".trellis/.version")).toMatchObject({ target: { mode: 0o640 } });
+  });
+
   it("fails Python selection before tools apply writes or creates recovery state", async () => {
     const root = temp();
     seed(root);

@@ -375,3 +375,16 @@ record, and target-native consumers establish actual continuation independently.
 ## Python operation boundary
 
 Tools inspect/prepare/application and applied recovery/resume use the [shared Python selection contract](./configurator-shared.md#scenario-python-selection-across-process-boundaries-issue-53). Resolve automatic selection before tools mutation; postvalidation uses executable/argv, including the real Windows launcher. Preserve other maintenance kinds and existing operation identity/staleness contracts.
+
+
+## Native Windows tools file modes
+
+When preparing tools-install target snapshots, preserve the actual existing file
+mode on Windows and use Windows writable mode (0666) for new files. POSIX hosts
+continue requesting 0755 for executable scripts and preserving other source
+modes (0644 for new text files). Receipt defaults use the same host semantics.
+Do not demand POSIX execute bits that Windows chmod/stat cannot round-trip.
+Raw snapshots and equality still retain exact supported modes: do not strip
+mode evidence globally or waive target comparison. Native apply followed by
+fresh-process recover and resume must remain applied with no phantom pending
+paths; Linux/macOS script modes must remain executable.

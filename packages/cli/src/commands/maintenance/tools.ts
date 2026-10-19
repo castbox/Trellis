@@ -117,6 +117,13 @@ function supportedVersion(root: string): string {
     );
   return installed;
 }
+/** Windows stat does not expose POSIX execute bits. Freeze modes the target
+ * filesystem can actually report so exact recovery snapshots remain meaningful.
+ */
+function toolsTargetMode(name: string, source: RawSnapshot): number {
+  if (process.platform === "win32") return source?.mode ?? 0o666;
+  return /\.(py|sh)$/.test(name) ? 0o755 : (source?.mode ?? 0o644);
+}
 function required(name: string): boolean {
   return (
     name.startsWith(".trellis/scripts/") ||
@@ -260,10 +267,7 @@ export async function prepareToolsInstallation(
   const conflicts: string[] = [];
   for (const [name, content] of files) {
     const source = readSnapshot(root, name);
-    const target = snapshot(
-      content,
-      /\.(py|sh)$/.test(name) ? 0o755 : (source?.mode ?? 0o644),
-    );
+    const target = snapshot(content, toolsTargetMode(name, source));
     const decision = decisions.get(name);
     const isRequired = required(name) || name === workflowPath;
     const skip = skipped(root, name);
@@ -324,7 +328,13 @@ export async function prepareToolsInstallation(
         root,
         path: `${name}.new`,
         source: readSnapshot(root, `${name}.new`),
-        target,
+        target:
+          process.platform === "win32"
+            ? snapshot(
+                content,
+                toolsTargetMode(name, readSnapshot(root, `${name}.new`)),
+              )
+            : target,
       });
       continue;
     }
@@ -349,14 +359,17 @@ export async function prepareToolsInstallation(
     source: readSnapshot(root, receiptPath),
     target: snapshot(
       JSON.stringify({ __version: 2, hashes }, null, 2),
-      readSnapshot(root, receiptPath)?.mode ?? 0o644,
+      toolsTargetMode(receiptPath, readSnapshot(root, receiptPath)),
     ),
   });
   actions.push({
     root,
     path: versionPath,
     source: readSnapshot(root, versionPath),
-    target: snapshot(VERSION, readSnapshot(root, versionPath)?.mode ?? 0o644),
+    target: snapshot(
+      VERSION,
+      toolsTargetMode(versionPath, readSnapshot(root, versionPath)),
+    ),
   });
   // A declaration or filename alone does not prove the source reader capability.
   // Unknown/local-edited readers may be replaced, but cannot be blindly restored.
