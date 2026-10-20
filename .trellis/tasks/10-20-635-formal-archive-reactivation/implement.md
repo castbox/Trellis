@@ -67,7 +67,26 @@ During final Check, also execute Core package lint/typecheck and affected packag
 
 After upstream delivery, pass exact source/build/capability/CI facts to the original Guru source owner. Guru resumes the existing #635 Task/D1 after provider adoption and original planning gates. This Task cannot close #635 or certify its private lifecycle.
 
-## Actual validation outcome
+## Shared-snapshot correction after PR #55
+
+Guru #635 integration reproduced a normal R4/AC3 gap in the merged provider: registered siblings containing the same active Task snapshot caused `inspectFormalArchiveReactivation` to report `ambiguous_authority`, even when the selected root contained the valid successor. Continue the original Task and accepted requirements; the earlier validation below does not cover this correction.
+
+1. In `packages/cli/src/commands/maintenance/tasks.ts`, resolve and validate the selected root successor before sibling checks. Reuse `successorAt` for sibling provenance, retained-source and intermediate-Completion checks. Permit verified snapshots of the same formal predecessor at an equal or earlier generation. Preserve absent-root, newer-sibling, mismatched-source and local-multiple-candidate conflicts. Keep public inputs/outputs, conversion writers and fixed-operation recovery unchanged.
+2. Extend `packages/cli/test/commands/maintenance-formal-reactivation.integration.test.ts` with real registered Git checkouts. Cover the same shared snapshot, normal same-generation business progress, a later root generation with an earlier sibling snapshot, receiptless lookup without another conversion, and retained genuine conflict behavior. Observe root and sibling bytes around read-only inspection. Do not add a Guru C4 dependency, content-merging algorithm or extra failure matrix.
+3. Run the affected formal/archive-resume/task/engine maintenance integration tests, repository lint/typecheck and matching Core/CLI build. Reuse unaffected prior evidence only for its original coverage. The independent Check owner reviews the complete correction and affected consumers. Report candidate-package behavior separately from merged source adoption and downstream Guru V1–V8.
+
+These steps modify the two named CLI source/test files, this Task's design/implementation bodies and the existing `.trellis/spec/cli/backend/commands-maintain.md` contract. The code-spec records the shared-snapshot rule in its current inspection/error/test sections. Build output is ignored package `dist`. These steps do not publish, install, change Task/session state or update the downstream source lock.
+
+### Correction validation outcome
+
+The independent Check passed for the complete five-file correction and the affected inspect, prepare, recovery and Guru successor-location consumers. No findings remain. The review identified one spec wording error: predecessor mismatches retain `successor_mismatch` or their original specific diagnostic. The spec now states this correctly.
+
+- All 65 targeted integration tests passed: 19 formal-reactivation tests and 46 existing resume, task and engine tests. Repository lint, typecheck, matching Core/CLI build and `git diff --check` passed.
+- Two independent Guru fixture scenarios passed against the actual built `local_candidate` SDK: a main checkout sharing the successor snapshot, and an old root retaining only the archive while the linked checkout held the successor. After both Guru and public maintenance receipts were removed, the original owner located the canonical linked checkout with one real inspect call. Neither scenario prepared or acquired another checkout. Generation stayed at 1; Task data, binding, resource ledger and both roots' `.trellis` bytes/modes remained unchanged. The receipts were not recreated.
+
+These results cover the current source correction and local candidate integration. They do not establish remote delivery, formal source-lock adoption, an actual Guru session/Bind run, downstream V1–V8 acceptance or the full installation/platform matrix. Unchanged native-reader and installation evidence below retains its original coverage only.
+
+## Prior validation outcome at 86de668
 
 Full-scope quality Check passed for R1–R7 and AC1–AC7, including all changed and new files, public contracts and affected native consumers. No residual product findings remain. Check required no source, test or spec fixes.
 

@@ -450,6 +450,22 @@ the real intermediate Completion history required by ordinary reopen. The
 initial schema1 conversion never manufactures an old Completion. Inspection
 does not claim that inaccessible unpublished state in another clone is absent.
 
+The returned successor belongs to the explicitly selected root. Validate its
+unique candidate before inspecting registered siblings. A sibling is a shared
+or earlier snapshot only after the same public provenance, retained-source and
+intermediate-Completion checks establish the same formal predecessor and its
+generation is no greater than the root successor's. Normal business progress
+does not require identical Task records. Return the root key/locator without
+merging records or selecting environment ownership. No Guru-private C4 or
+receipt is an inspection prerequisite.
+
+If the root has no successor but a sibling owns one, stop instead of returning a
+foreign locator or preparing another conversion. A newer sibling remains
+ambiguous; a mismatching predecessor retains the original successor diagnostic.
+Multiple local candidates retain
+the existing conflicting result; a shared snapshot never permits fresh prepare
+when the root already has a verified successor.
+
 ### 4. Validation and error matrix
 
 | Condition | Required behavior |
@@ -459,6 +475,9 @@ does not claim that inaccessible unpublished state in another clone is absent.
 | Archive commit not reachable from selected target or archive tree mismatch | `invalid_git_fact` or `stale_source`; preserve target. |
 | Original active path still present in the archive result | `original_active_present`; preserve target. |
 | Destination occupied or successor relation ambiguous/mismatching | `conflict`, conflicting facts or `successor_mismatch`; never create a replacement Task or increment twice. |
+| Verified root successor and registered sibling from the same formal predecessor at an equal or earlier generation | Return the root successor read-only; differing business progress is not a second incarnation. |
+| Sibling successor without a root successor or newer sibling | `ambiguous_authority`; do not infer ownership or prepare another conversion. |
+| Sibling provenance, retained source or intermediate history does not match | Preserve `successor_mismatch` or the original concrete read/validation diagnostic; do not prepare another conversion. |
 | Selected target advances while archive commit and frozen target head remain reachable | Frozen operation remains eligible; no latest-SHA chase. |
 | Source, candidate or owned preimage changes normally | Existing stale/candidate/later-work diagnostic and same-operation recovery rules. |
 | New-generation Task/artifact, Delivery, session or binding work before rollback | `later_work_conflict`; preserve new work and all old resources. |
@@ -486,6 +505,11 @@ references, zero-write inspect/prepare/preview, bounded apply, old-resource
 preservation, fixed-operation retry/partial recovery, receiptless successor
 inspection, target advancement and rollback after genuine later native work.
 Retain existing conversion/manual-resume/closeout/tools/current-reopen coverage.
+Registered-checkout regressions also cover an identical shared active snapshot,
+same-generation business progress and a later root generation with an earlier
+sibling snapshot. Assert read-only root/sibling bytes, actual root identity,
+receiptless lookup and refusal to create a second conversion. Retain genuine
+conflict cases; do not replace them with whole-record equality gates.
 
 One matching packed CLI/Core installation must use the public bin, target-native
 Task selection/current/continuation and a real `accept_scope` with an actual

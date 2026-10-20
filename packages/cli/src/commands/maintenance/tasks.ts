@@ -1364,24 +1364,6 @@ export function inspectFormalArchiveReactivation(
     );
   const input = parsed.data;
   const old = verifyFormalArchive(input);
-  for (const workspace of observeRepository(old.root).worktrees) {
-    if (workspace === old.root) continue;
-    for (const ref of publicTaskRoots(workspace)) {
-      const raw = readSnapshot(workspace, `${ref}/task.json`);
-      if (!raw) continue;
-      const value = rawJson(raw) as Record<string, unknown>;
-      if (
-        value.id === input.key.task_id &&
-        value.schema_version === "2.0" &&
-        classifyMaintenanceTask(value).generation >
-          input.key.lifecycle_generation
-      )
-        throw new MaintenanceError(
-          "ambiguous_authority",
-          `Accessible successor belongs to registered sibling checkout: ${workspace}:${ref}`,
-        );
-    }
-  }
   const candidates: string[] = [];
   for (const ref of publicTaskRoots(old.root)) {
     const raw = readSnapshot(old.root, `${ref}/task.json`);
@@ -1394,7 +1376,43 @@ export function inspectFormalArchiveReactivation(
     )
       candidates.push(ref);
   }
-  if (!candidates.length) {
+  if (candidates.length > 1)
+    return {
+      key: input.key,
+      task_ref: input.task_ref,
+      successor: { kind: "conflicting", task_refs: candidates },
+    };
+  const successor = candidates.length
+    ? successorAt(old.root, candidates[0], input, old)
+    : null;
+  for (const workspace of observeRepository(old.root).worktrees) {
+    if (workspace === old.root) continue;
+    for (const ref of publicTaskRoots(workspace)) {
+      const raw = readSnapshot(workspace, `${ref}/task.json`);
+      if (!raw) continue;
+      const value = rawJson(raw) as Record<string, unknown>;
+      if (
+        value.id !== input.key.task_id ||
+        value.schema_version !== "2.0" ||
+        classifyMaintenanceTask(value).generation <=
+          input.key.lifecycle_generation
+      )
+        continue;
+      // The result describes this root, not an environment owner. A verified
+      // sibling can retain an earlier snapshot after normal scope/reopen work.
+      if (
+        successor &&
+        successorAt(workspace, ref, input, old).key.lifecycle_generation <=
+          successor.key.lifecycle_generation
+      )
+        continue;
+      throw new MaintenanceError(
+        "ambiguous_authority",
+        `Accessible successor belongs to registered sibling checkout: ${workspace}:${ref}`,
+      );
+    }
+  }
+  if (!successor) {
     if (fs.existsSync(taskPath(old.root, input.original_task_ref)))
       throw new MaintenanceError(
         "original_active_present",
@@ -1406,18 +1424,12 @@ export function inspectFormalArchiveReactivation(
       successor: { kind: "absent" },
     };
   }
-  if (candidates.length > 1)
-    return {
-      key: input.key,
-      task_ref: input.task_ref,
-      successor: { kind: "conflicting", task_refs: candidates },
-    };
   return {
     key: input.key,
     task_ref: input.task_ref,
     successor: {
       kind: "verified",
-      task: successorAt(old.root, candidates[0], input, old),
+      task: successor,
     },
   };
 }
