@@ -67,6 +67,14 @@ export interface TaskGuard {
   original_task_ref?: string;
   target_branch: string | null;
 }
+export interface FormalArchiveGuard extends TaskGuard {
+  output_generation: number;
+  archive_commit: string;
+  target_ref: string;
+  target_head: string;
+  archive_ref: string;
+  original_task_ref: string;
+}
 interface PlanBase {
   schema_version: "1.0";
   operation_id: string;
@@ -78,6 +86,7 @@ interface PlanBase {
 export type PreparedMaintenancePlan = PlanBase &
   (
     | { kind: "tools_install"; guard: ToolsGuard }
+    | { kind: "formal_archive_reactivation"; guard: FormalArchiveGuard }
     | {
         kind: "task_conversion" | "legacy_closeout" | "task_resume";
         guard: TaskGuard;
@@ -90,13 +99,16 @@ export type PreparePlanInput = Omit<
   (
     | { kind: "tools_install"; guard: ToolsGuard }
     | {
+        kind: "formal_archive_reactivation";
+        guard: Omit<FormalArchiveGuard, "target_branch">;
+      }
+    | {
         kind: "task_conversion" | "legacy_closeout" | "task_resume";
         guard: Omit<TaskGuard, "target_branch">;
       }
   );
-export interface MaintenanceResult {
+interface MaintenanceResultBase {
   operation_id: string;
-  kind: PreparedMaintenancePlan["kind"];
   status: "prepared" | "pending" | "applied" | "rolled_back";
   pending_paths: string[];
   recovery_ref: string | null;
@@ -105,6 +117,31 @@ export interface MaintenanceResult {
     task_ref: string;
   };
 }
+export type FormalArchiveReactivationResult = MaintenanceResultBase & {
+  kind: "formal_archive_reactivation";
+} & (
+    | {
+        status: "applied";
+        reactivated_task: {
+          key: { task_id: string; lifecycle_generation: number };
+          task_ref: string;
+        };
+      }
+    | {
+        status: "prepared" | "pending" | "rolled_back";
+        reactivated_task?: never;
+      }
+  );
+export type MaintenanceResult =
+  | FormalArchiveReactivationResult
+  | (MaintenanceResultBase & {
+      kind: Exclude<
+        PreparedMaintenancePlan["kind"],
+        "formal_archive_reactivation"
+      >;
+      reactivated_task?: never;
+    });
+
 interface StoredOperation {
   plan: PreparedMaintenancePlan;
   phase: "applying" | "applied" | "rolling_back" | "rolled_back";
@@ -336,6 +373,7 @@ function validatePlan(plan: PreparedMaintenancePlan, candidate = true): void {
       "task_conversion",
       "legacy_closeout",
       "task_resume",
+      "formal_archive_reactivation",
     ].includes(plan.kind) ||
     !/^[a-f0-9-]{36}$/.test(plan.operation_id)
   )
@@ -384,7 +422,40 @@ function validatePlan(plan: PreparedMaintenancePlan, candidate = true): void {
       "candidate_mismatch",
       "Prepared CLI/Core content no longer matches executing candidate",
     );
-  if (plan.kind === "task_resume") {
+  if (plan.kind === "formal_archive_reactivation") {
+    if (
+      plan.guard.output_generation !== plan.guard.generation + 1 ||
+      !Number.isSafeInteger(plan.guard.output_generation)
+    )
+      fail("invalid_plan", "Formal archive generation guard mismatch");
+    for (const oid of [plan.guard.archive_commit, plan.guard.target_head]) {
+      try {
+        if (
+          git(plan.target_root, [
+            "rev-parse",
+            "--verify",
+            `${oid}^{commit}`,
+          ]) !== oid
+        )
+          fail("invalid_git_fact", "Frozen archive commit mismatch");
+        git(plan.target_root, [
+          "merge-base",
+          "--is-ancestor",
+          oid,
+          plan.guard.target_ref,
+        ]);
+      } catch {
+        fail(
+          "stale_source",
+          "Frozen archive/target commits are no longer reachable",
+        );
+      }
+    }
+  }
+  if (
+    plan.kind === "task_resume" ||
+    plan.kind === "formal_archive_reactivation"
+  ) {
     if (
       !/^\.trellis\/tasks\/[^/]+$/.test(plan.guard.task_ref) ||
       plan.guard.task_ref === ".trellis/tasks/archive" ||
@@ -636,7 +707,11 @@ function validateSelectedCarriers(plan: PreparedMaintenancePlan): void {
   }
 }
 function validateResumeTrees(plan: PreparedMaintenancePlan): void {
-  if (plan.kind !== "task_resume") return;
+  if (
+    plan.kind !== "task_resume" &&
+    plan.kind !== "formal_archive_reactivation"
+  )
+    return;
   if (
     plan.guard.original_task_ref &&
     plan.guard.original_task_ref !== plan.guard.task_ref &&
@@ -664,6 +739,28 @@ function validateResumeTrees(plan: PreparedMaintenancePlan): void {
         for (const name of fs.readdirSync(full)) walk(`${current}/${name}`);
     };
     walk(ref);
+  }
+  if (plan.kind === "formal_archive_reactivation") {
+    for (const workspace of observeRepository(plan.target_root).worktrees) {
+      if (workspace === plan.target_root) continue;
+      for (const ref of publicTaskRoots(workspace)) {
+        const raw = readSnapshot(workspace, `${ref}/task.json`);
+        if (!raw) continue;
+        const value = JSON.parse(
+          Buffer.from(raw.content_base64, "base64").toString("utf8"),
+        ) as Record<string, unknown>;
+        if (
+          value.id === plan.guard.task_id &&
+          value.schema_version === "2.0" &&
+          classifyMaintenanceTask(value).generation >=
+            plan.guard.output_generation
+        )
+          fail(
+            "later_work_conflict",
+            `Accessible successor appeared in registered sibling checkout: ${workspace}:${ref}`,
+          );
+      }
+    }
   }
   const tasks = contained(plan.target_root, ".trellis/tasks");
   for (const name of fs.readdirSync(tasks)) {
@@ -699,6 +796,8 @@ function pending(
   direction: "target" | "source",
 ): MaintenanceAction[] {
   validateResumeTrees(plan);
+  if (direction === "source" && plan.kind === "formal_archive_reactivation")
+    validateFormalLaterCarriers(plan);
   const result: MaintenanceAction[] = [];
   for (const action of plan.actions) {
     const state = live(action);
@@ -798,12 +897,23 @@ function result(
   actions: MaintenanceAction[],
   ref: string | null,
 ): MaintenanceResult {
-  return {
+  const value = {
     operation_id: plan.operation_id,
     kind: plan.kind,
     status,
     pending_paths: actions.map((a) => `${a.root}:${a.path}`),
     recovery_ref: ref,
+    ...(plan.kind === "formal_archive_reactivation" && status === "applied"
+      ? {
+          reactivated_task: {
+            key: {
+              task_id: plan.guard.task_id,
+              lifecycle_generation: plan.guard.output_generation,
+            },
+            task_ref: plan.guard.task_ref,
+          },
+        }
+      : {}),
     ...(plan.kind === "task_resume"
       ? {
           resumed_task: {
@@ -816,6 +926,8 @@ function result(
         }
       : {}),
   };
+  // The discriminant and applied-only identity are built together above.
+  return value as MaintenanceResult;
 }
 async function selectToolsPython(
   plan: PreparedMaintenancePlan,
@@ -873,6 +985,15 @@ export async function recoverOperation(
 ): Promise<MaintenanceResult> {
   const stored = readStored(ref);
   validatePlan(stored.plan);
+  if (
+    stored.phase === "applied" &&
+    stored.plan.kind === "formal_archive_reactivation"
+  ) {
+    validateFormalSource(stored.plan);
+    const tasks = await import("./tasks.js");
+    tasks.validateAppliedFormalArchive(stored.plan);
+    return result(stored.plan, "applied", [], ref);
+  }
   const rollback =
     stored.phase === "rolling_back" || stored.phase === "rolled_back";
   const remaining = pending(stored.plan, rollback ? "source" : "target");
@@ -904,6 +1025,15 @@ export async function resumeOperation(
       "operation_rolled_back",
       "Use rollback recovery; do not reapply a restored operation",
     );
+  if (
+    stored.phase === "applied" &&
+    stored.plan.kind === "formal_archive_reactivation"
+  ) {
+    validateFormalSource(stored.plan);
+    const tasks = await import("./tasks.js");
+    tasks.validateAppliedFormalArchive(stored.plan);
+    return result(stored.plan, "applied", [], ref);
+  }
   const pythonCommand =
     selectedPython ?? (await selectToolsPython(stored.plan));
   const remaining = pending(stored.plan, "target");
@@ -1024,4 +1154,109 @@ export async function rollbackOperation(
   for (const action of [...remaining].reverse()) write(action, "source");
   save(ref, { ...stored, phase: "rolled_back" });
   return result(plan, "rolled_back", [], ref);
+}
+
+function validateFormalSource(plan: PreparedMaintenancePlan): void {
+  if (plan.kind !== "formal_archive_reactivation") return;
+  const walk = (ref: string): void => {
+    const full = contained(plan.target_root, ref);
+    if (!fs.existsSync(full))
+      fail("stale_source", `Original archive disappeared: ${ref}`);
+    if (
+      !plan.actions.some(
+        (action) => action.root === plan.target_root && action.path === ref,
+      )
+    )
+      fail("stale_source", `Original archive gained an entry: ${ref}`);
+    if (fs.statSync(full).isDirectory())
+      for (const name of fs.readdirSync(full)) walk(`${ref}/${name}`);
+  };
+  walk(plan.guard.archive_ref);
+  for (const action of plan.actions) {
+    if (
+      action.root === plan.target_root &&
+      (action.path === plan.guard.archive_ref ||
+        action.path.startsWith(`${plan.guard.archive_ref}/`)) &&
+      !isDeepStrictEqual(live(action), action.source)
+    )
+      fail("stale_source", `Original archive changed: ${action.path}`);
+  }
+}
+function validateFormalLaterCarriers(
+  plan: Extract<
+    PreparedMaintenancePlan,
+    { kind: "formal_archive_reactivation" }
+  >,
+): void {
+  const repo = observeRepository(plan.target_root);
+  const locations = [
+    ...repo.worktrees.map((root) => ({
+      root,
+      ref: ".trellis/.runtime/sessions",
+    })),
+    ...(repo.common_dir
+      ? [{ root: repo.common_dir, ref: "trellis/sessions" }]
+      : []),
+  ];
+  for (const location of locations) {
+    const directory = contained(location.root, location.ref);
+    if (!fs.existsSync(directory)) continue;
+    for (const name of fs
+      .readdirSync(directory)
+      .filter((name) => name.endsWith(".json"))) {
+      const value: unknown = JSON.parse(
+        fs.readFileSync(
+          contained(location.root, `${location.ref}/${name}`),
+          "utf8",
+        ),
+      );
+      if (
+        classifySessionCarrier(value, {
+          task_id: plan.guard.task_id,
+          generation: plan.guard.output_generation,
+          task_path: contained(plan.target_root, plan.guard.task_ref),
+          carrier_workspace: location.root,
+          common_dir: repo.common_dir,
+        }).matches
+      )
+        fail(
+          "later_work_conflict",
+          `New generation has a session selection: ${location.ref}/${name}`,
+        );
+    }
+  }
+  if (
+    repo.common_dir &&
+    readSnapshot(
+      repo.common_dir,
+      `trellis/task-branches/${plan.guard.task_id}/${plan.guard.output_generation}.json`,
+    )
+  )
+    fail("later_work_conflict", "New generation has a branch binding");
+}
+
+/** Bounded accessible public Task roots, including retained monthly history. */
+export function publicTaskRoots(root: string): string[] {
+  const refs: string[] = [];
+  const collect = (parent: string): void => {
+    const directory = contained(root, parent);
+    if (!fs.existsSync(directory)) return;
+    for (const name of fs.readdirSync(directory).sort()) {
+      if (name === "archive") continue;
+      const ref = `${parent}/${name}`;
+      if (
+        fs.statSync(contained(root, ref)).isDirectory() &&
+        readSnapshot(root, `${ref}/task.json`)
+      )
+        refs.push(ref);
+    }
+  };
+  collect(".trellis/tasks");
+  const archive = contained(root, ".trellis/tasks/archive");
+  if (fs.existsSync(archive))
+    for (const month of fs
+      .readdirSync(archive)
+      .filter((name) => /^\d{4}-\d{2}$/.test(name)))
+      collect(`.trellis/tasks/archive/${month}`);
+  return refs;
 }

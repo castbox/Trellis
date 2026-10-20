@@ -57,6 +57,16 @@ and missing/invalid ids block identity scanning with a concrete locator.
 Unrelated directories without task.json retain evidence-only handling; archive
 missing-data and conservative visible-name collision behavior remain unchanged.
 
+Relocation of an actual Task v2 produced by
+[formal predecessor conversion](./commands-maintain.md#formal-predecessor-archive-reactivation)
+may exclude only its positively matched read-only schema1 predecessor from that
+relocation's collision scan. Verify the current Task's public conversion
+provenance and exact retained source snapshot against that archive. This is not
+a general same-TaskId exception: create retains all historical reservations,
+unrelated records still conflict, and the old archive remains immutable. Native
+rename/archive/reopen regressions must use a real public conversion before
+exercising this boundary.
+
 Registered Git worktrees determine membership. Resolution requires one exact
 TaskId and generation match. Missing, ambiguous, corrupt, or unsupported
 bindings are stale and require an explicit `task.py start`; reads do not rewrite

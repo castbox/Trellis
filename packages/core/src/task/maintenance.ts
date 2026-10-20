@@ -1,5 +1,6 @@
 /** Explicit maintenance boundary; never used by current lifecycle writers. */
 import path from "node:path";
+import { validateProjectionIdentity } from "./migration-projection.js";
 import { isDeepStrictEqual } from "node:util";
 import { isKnownLegacyTaskRecord } from "./migration.js";
 import { isPlainObject, taskRecordSchema } from "./schema.js";
@@ -36,6 +37,10 @@ export function validateSelectedTaskProjection(source: unknown, projection: unkn
   if (classification.kind === "schema2") throw new MaintenanceError("already_current", "Task conversion requires a predecessor");
   const old = source as Record<string, unknown>;
   const record = validateTaskV2Projection(source, projection);
+  validateLegacyFacts(old, record, facts);
+  return record;
+}
+function validateLegacyFacts(old: Record<string, unknown>, record: TaskRecordV2, facts: readonly LegacyFactDisposition[]): void {
   const fields = ["commit", "pr_url", "completedAt"].filter(field => old[field] !== undefined && old[field] !== null && old[field] !== "");
   if (!isDeepStrictEqual(fields.sort(), facts.map(f => f.field).sort())) throw new MaintenanceError("legacy_fact_attribution_required", "Unresolved legacy fact attribution: every retained fact needs exactly one disposition");
   for (const fact of facts) {
@@ -49,7 +54,6 @@ export function validateSelectedTaskProjection(source: unknown, projection: unkn
       : outcome.profile === "pull_request" ? `https://github.com/${outcome.repo_ref}/pull/${outcome.pr_number}` : null;
     if (actual !== old[fact.field]) throw new MaintenanceError("legacy_result_mismatch", fact.field);
   }
-  return record;
 }
 /** Caller-owned semantic review; the executor never interprets the next action. */
 export interface ArchivedTaskResumeIntent {
@@ -158,4 +162,34 @@ export function classifySessionCarrier(value: unknown, selected: CarrierSelectio
 export function classifyBranchBinding(value: unknown, selected: MaintenanceTaskIdentity): { matches: boolean; branch_name: string; binding_revision: number } {
   if (!isPlainObject(value) || !exact(value, ["schema_version", "task_id", "lifecycle_generation", "binding_revision", "branch_name"]) || value.schema_version !== "1.0" || !taskId(value.task_id) || !generation(value.lifecycle_generation) || !generation(value.binding_revision) || typeof value.branch_name !== "string" || !value.branch_name) throw new MaintenanceError("unsupported_binding", "Expected a canonical schema1 branch binding");
   return { matches: value.task_id === selected.task_id && value.lifecycle_generation === selected.generation, branch_name: value.branch_name, binding_revision: Number(value.binding_revision) };
+}
+
+/** Convert a caller-selected formal schema1 archive without creating old gates. */
+export function validateFormalArchiveReactivationProjection(
+  source: unknown,
+  projection: unknown,
+  facts: readonly LegacyFactDisposition[] = [],
+): TaskRecordV2 {
+  const classification = classifyMaintenanceTask(source);
+  if (classification.kind !== "schema1" || !isPlainObject(source) || source.status !== "completed")
+    throw new MaintenanceError("unsupported_source", "Formal reactivation requires a canonical completed schema1 predecessor");
+  const record = parseTaskRecordV2(projection);
+  validateProjectionIdentity(source, record);
+  if (!Number.isSafeInteger(classification.generation + 1) || record.lifecycle_generation !== classification.generation + 1)
+    throw new MaintenanceError("target_key_mismatch", "Formal reactivation must increment lifecycle_generation exactly once");
+  validateLegacyFacts(source, record, facts);
+  validateArchiveHistory(record, classification.generation);
+  return record;
+}
+function validateArchiveHistory(record: TaskRecordV2, predecessorGeneration: number): void {
+  if (!record.accepted_scope)
+    throw new MaintenanceError("accepted_scope_required", "Reactivated Task requires actual accepted scope evidence");
+  if (record.completion_results.length || record.closure_results.length)
+    throw new MaintenanceError("formal_lifecycle_conflict", "Predecessor conversion cannot manufacture Completion/Closure");
+  for (const delivery of record.deliveries) {
+    if (Object.values(delivery.results).some(result => result !== null))
+      throw new MaintenanceError("inherited_gate_conflict", "Predecessor conversion cannot import gate authority");
+    if (delivery.lifecycle_generation !== predecessorGeneration || delivery.phase !== "delivered" || !delivery.delivery_result || delivery.stop_result || !delivery.delivery_result.evidence.length)
+      throw new MaintenanceError("historical_outcome_required", "Only genuine predecessor-generation delivered outcomes may be retained");
+  }
 }

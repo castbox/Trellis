@@ -74,6 +74,17 @@ exports changing shape. The v2 store owns immutable result/preimage enforcement,
 Task-local relocation and `resolveTaskArtifactLocator`; consumers must use its
 origin-aware resolver rather than copying path rebasing into each reader.
 
+For an already validated maintenance projection whose active tree does not yet
+exist, `/task/v2` also exports the existing pure
+`authorityLocator(ref: AuthorityRef, context?: TaskArtifactContext): string`.
+Context contains `task_id`, selected/planned `task_root` and preserved
+`artifact_origin`. This helper only maps SHA-bound origin locators; fixed Git
+locators stay unchanged. It does not load/select a Task, validate caller context,
+verify content or grant authority. Preparation derives context from its validated
+projection and explicit destination, then verifies actual/planned content.
+Ordinary `resolveTaskArtifactLocator` and context-aware `verifyAuthority` retain
+their live selected-Task validation. Reuse the same mapping implementation.
+
 `/task/v2` also exports the read-only `verifyHistoricalCommit(root, fact)` for
 normal local delivery and explicit migration. It validates a closed DeliveryFact
 at the public boundary and accepts only `local_commit`; manual/PR results need
@@ -234,3 +245,18 @@ task readers. See [Task Lifecycle](./task-lifecycle.md).
 [Independent maintenance](./commands-maintain.md) adds an explicit tools-only and
 selected-task CLI/SDK boundary. It does not relax this document's ordinary
 operation, current writer, or complete migration contracts.
+
+`/task/maintenance` also owns the pure
+`validateFormalArchiveReactivationProjection(source, projection, facts)` boundary
+for one explicitly selected completed schema1 archive. It validates an exact
+generation increment and preserved identity/history; CLI owns archive/target Git
+facts, retained-file verification and the fixed-operation writer. Keep ordinary
+`validateTaskV2Projection` generation-preserving. Shared identity/tree/history
+logic may be private Core code with explicit generation rules; never alter source
+generation merely to pass the ordinary validator. Do not expose that private
+helper as another public migration API or duplicate conversion in Python.
+
+The [formal predecessor archive contract](./commands-maintain.md#formal-predecessor-archive-reactivation)
+owns the separate request/result, provenance and successor-inspection rules.
+These do not change current Task v2 reopen or make Core responsible for workflow
+completion judgment, GitHub disposition or environment resource ownership.

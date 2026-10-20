@@ -16,7 +16,8 @@ unknown, beta/RC and newer source versions are explicit errors.
 
 Selected Task operations take `{task_id,lifecycle_generation}` and a direct active
 `.trellis/tasks/<directory>` locator. Explicit inspection and archived resume also
-accept `.trellis/tasks/archive/YYYY-MM/<directory>`; ordinary conversion and
+accept `.trellis/tasks/archive/YYYY-MM/<directory>`; the separate formal
+predecessor operation also consumes an exact archive. Ordinary conversion and
 history closeout remain active-only. Known preidentity legacy and strict schema1
 are predecessors; schema1 has no literal schema_version field. Schema2 is preserved
 by tools installation and rejected as a fresh conversion predecessor. Unknown
@@ -63,7 +64,7 @@ writer and is not reexported through legacy `/task` or Core root.
 ## Closed inputs
 
 CLI prepare takes `{kind,input}`; kind is `tools_install`, `task_conversion`,
-`legacy_closeout` or `task_resume`. SDK has separate typed preparation functions. Exact exported
+`legacy_closeout`, `task_resume` or `formal_archive_reactivation`. SDK has separate typed preparation functions. Exact exported
 TypeScript types and closed parsers live in
 `packages/cli/src/commands/maintenance/{tools,tasks}.ts`; they are exported through
 the public namespace. A raw snapshot is
@@ -370,6 +371,137 @@ copy old gates to make continuation appear successful.
 Correct: caller explicitly reviews original path/history/next owner, public Core
 validates a same-generation projection, fixed-plan maintenance creates one active
 record, and target-native consumers establish actual continuation independently.
+
+## Formal predecessor archive reactivation
+
+### 1. Scope / trigger
+
+Use `formal_archive_reactivation` for one explicitly selected formally completed
+canonical schema1 archive. The workflow owner reviews completion/history and
+pending old transactions. Completed status is only a necessary state condition;
+Core/CLI do not interpret Guru Finish summaries, Issue disposition or semantic
+approval. No authorization is recorded. Known preidentity legacy is outside this
+operation. Manual archive resume preserves generation; current Task v2 archives
+continue through ordinary reopen with matching current Completion.
+
+### 2. Signatures
+
+```sh
+trellis maintain inspect-formal-archive --input /private/inspect.json --json
+trellis maintain prepare --input /private/formal-input.json --json
+```
+
+```ts
+import { maintenance } from "@mindfoldhq/trellis";
+const observed = maintenance.inspectFormalArchiveReactivation(inspectInput);
+const plan = maintenance.prepareFormalArchiveReactivation(input);
+const result = await maintenance.applyMaintenance(plan, {state_dir});
+```
+
+Preparation uses `{kind:"formal_archive_reactivation",input}`. Core
+`/task/maintenance` exposes
+`validateFormalArchiveReactivationProjection(source,projection,facts)` as a pure
+validator. Existing preview/apply/recover/resume/rollback consume the new plan
+kind. Do not add another converter or alternate Python lifecycle writer.
+
+The additive API-1.0 capability is
+`formal_archive_reactivation:{task_families:["schema1"],generation:"increment_once",original_archive:"read_only"}`.
+Require this capability and actual matching source/build identity. Keep all
+existing operation kinds and `archive_resume` semantics.
+
+### 3. Request, result and provenance
+
+Use a separate closed input with `root`, predecessor `key`, archive `task_ref`,
+explicit `original_task_ref`, absent destination `active_ref`, `archive`, complete
+Task v2 `projection`, existing retained `artifacts` and `legacy_facts`.
+`archive` contains exact `commit`, selected `target_ref`, observed `target_head`
+and repository-file AuthorityRef `evidence`. Do not infer the original active
+locator from the archive name. Use the existing exact Git OID contracts.
+
+Projection preserves TaskId/source/metadata/tree and `artifact_origin`, advances
+generation exactly once and has actual accepted-scope authority. Genuine
+historical Deliveries remain at the predecessor generation. No old
+Completion/Closure, inherited gate authority or current empty Delivery is
+created. Verify all planning/scope/evidence references through existing public
+authority/origin resolution against retained sources or actual planned files.
+
+There are no session, branch-binding or resource-retirement actions in this
+input. New-generation owners establish their environment responsibility later.
+The archive and old-generation local records remain unchanged, whether those
+records exist in the target environment or not.
+
+The new active tree retains original bytes in `migration/source-task.json` and
+minimal `migration/formal-archive-reactivation.json` provenance: predecessor key,
+archive ref/commit and original active ref. Provenance is not a semantic pass,
+resource ledger or authorization. It permits receiptless successor inspection.
+
+The new kind's applied result exposes `reactivated_task:{key,task_ref}` alongside
+existing operation/status/recovery fields. Other statuses do not claim an active
+successor. Repeat apply/recover/resume preserves the original operation and
+output generation. Later native lifecycle advancement does not rewrite that
+result. Existing kinds, including manual `resumed_task`, retain their contract.
+
+Inspection requires only root, predecessor key, exact archive/original locator
+and archive facts. Its result is `{key,task_ref,successor}`. The successor is
+`{kind:"absent"}`, `{kind:"verified",task:{key,task_ref}}` or
+`{kind:"conflicting",task_refs:string[]}`. Verify provenance against actual source and public history;
+same TaskId and a higher generation alone are insufficient. Later successors use
+the real intermediate Completion history required by ordinary reopen. The
+initial schema1 conversion never manufactures an old Completion. Inspection
+does not claim that inaccessible unpublished state in another clone is absent.
+
+### 4. Validation and error matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Unsupported source family/state, key mismatch or invalid closed input | `unsupported_source`, `target_key_mismatch` or `invalid_input` before target writes. |
+| Missing accepted scope, invalid history attribution or imported current authority | Reject projection before plan construction. |
+| Archive commit not reachable from selected target or archive tree mismatch | `invalid_git_fact` or `stale_source`; preserve target. |
+| Original active path still present in the archive result | `original_active_present`; preserve target. |
+| Destination occupied or successor relation ambiguous/mismatching | `conflict`, conflicting facts or `successor_mismatch`; never create a replacement Task or increment twice. |
+| Selected target advances while archive commit and frozen target head remain reachable | Frozen operation remains eligible; no latest-SHA chase. |
+| Source, candidate or owned preimage changes normally | Existing stale/candidate/later-work diagnostic and same-operation recovery rules. |
+| New-generation Task/artifact, Delivery, session or binding work before rollback | `later_work_conflict`; preserve new work and all old resources. |
+| Native/SDK relocation cannot match the converted Task's retained predecessor relation | `formal_archive_provenance_mismatch`; do not exclude an unrelated identity reservation. |
+
+The fixed guard distinguishes predecessor and output generations. Ordinary
+partial replay uses original preimages and accepts existing source/target states.
+Rollback removes only the new tree when no later work exists. Read-only successor
+inspection is separate from receipt recovery and never expands a frozen plan.
+
+### 5. Good / base / bad cases
+
+Good: reactivate a verified completed schema1 archive in another clone, bind the
+new generation through native owners and accept a real supplement without a
+dummy Delivery. Base: no old local sessions/bindings exist; conversion does not
+need to create or retire them. Bad: use manual resume to simulate formal reopen,
+manufacture old Completion, rewrite source generation before validation or claim
+semantic completion from executor status.
+
+### 6. Required tests and evidence
+
+Core owns pure increment/identity/history validation and preserve-generation
+regression. Real-Git CLI tests cover exact archive/target facts, complete retained
+references, zero-write inspect/prepare/preview, bounded apply, old-resource
+preservation, fixed-operation retry/partial recovery, receiptless successor
+inspection, target advancement and rollback after genuine later native work.
+Retain existing conversion/manual-resume/closeout/tools/current-reopen coverage.
+
+One matching packed CLI/Core installation must use the public bin, target-native
+Task selection/current/continuation and a real `accept_scope` with an actual
+supplement file and declared owner. Preserve no-current-Delivery state. Change
+native readers only for a demonstrated gap, with shipped/dogfood parity and
+Python 3.9 support. This provider evidence does not certify Guru adoption,
+source-lock update, whole-task completion or the full release/platform matrix.
+
+### 7. Wrong vs correct
+
+Wrong: import old gates to make a new Task appear ready, infer the original path,
+or rewrite the original operation result to a later generation.
+
+Correct: caller reviews formal history; public Core/CLI validates one exact
+conversion to `g+1`; provenance enables read-only successor facts; original native
+owners independently establish binding and continue current work.
 
 
 ## Python operation boundary
