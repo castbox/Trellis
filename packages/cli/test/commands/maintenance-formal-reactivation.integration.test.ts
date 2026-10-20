@@ -38,6 +38,13 @@ function git(...args: string[]): string {
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
+function addLinkedCheckout(): string {
+  git("add", ".trellis/scripts", ".trellis/workflow.md");
+  git("commit", "-m", "retain native tools for linked checkout");
+  const linked = path.join(base, "linked");
+  git("worktree", "add", "-b", "successor", linked);
+  return linked;
+}
 function bytes(full: string): unknown {
   if (!fs.existsSync(full)) return null;
   const stat = fs.statSync(full);
@@ -264,6 +271,124 @@ describe("formal predecessor public maintenance", () => {
       api.inspectFormalArchiveReactivation(inspection()).successor,
     ).toEqual({ kind: "verified", task: { key: nextKey, task_ref: active } });
     expect(() => prepare()).toThrow("already has a successor");
+  });
+  it.each([true, false])(
+    "inspects a shared active snapshot in the selected linked root with receipt present=%s",
+    async (receiptPresent) => {
+      const main = root;
+      root = addLinkedCheckout();
+      const plan = prepare();
+      const applied = await apply(plan);
+      git("add", active);
+      git("commit", "-m", "publish converted successor");
+      execFileSync("git", ["-C", main, "merge", "--ff-only", "successor"]);
+      const recovery = {
+        recovery_ref: path.join(base, "state", `${plan.operation_id}.json`),
+      };
+      expect(await api.recoverMaintenance(recovery)).toEqual(applied);
+      if (!receiptPresent) fs.unlinkSync(recovery.recovery_ref);
+      const linkedBefore = bytes(path.join(root, ".trellis"));
+      const mainBefore = bytes(path.join(main, ".trellis"));
+      const resourcesBefore = bytes(path.join(common, "trellis"));
+      expect(
+        api.inspectFormalArchiveReactivation(inspection()).successor,
+      ).toEqual({ kind: "verified", task: { key: nextKey, task_ref: active } });
+      expect(() => prepare()).toThrow("already has a successor");
+      expect(record().lifecycle_generation).toBe(1);
+      expect(fs.readdirSync(path.join(base, "state"))).toEqual(
+        receiptPresent ? [`${plan.operation_id}.json`] : [],
+      );
+      expect(bytes(path.join(root, ".trellis"))).toEqual(linkedBefore);
+      expect(bytes(path.join(main, ".trellis"))).toEqual(mainBefore);
+      expect(bytes(path.join(common, "trellis"))).toEqual(resourcesBefore);
+    },
+  );
+  it("keeps root scope progress and a later native generation usable with an earlier sibling snapshot", async () => {
+    const main = root;
+    root = addLinkedCheckout();
+    const plan = prepare();
+    const applied = await apply(plan);
+    git("add", active);
+    git("commit", "-m", "publish converted successor");
+    execFileSync("git", ["-C", main, "merge", "--ff-only", "successor"]);
+    write(`${active}/supplement.md`, "Current root scope progress\n");
+    const authority = ref(`${active}/supplement.md`);
+    applyNative({
+      api_version: "1.0",
+      operation: "accept_scope",
+      key: nextKey,
+      owner_role: "task_scope",
+      owner_id: "trellis-start",
+      authority,
+    });
+    const assertLookup = (generation: number): void => {
+      const linkedBefore = bytes(path.join(root, ".trellis"));
+      const mainBefore = bytes(path.join(main, ".trellis"));
+      const resourcesBefore = bytes(path.join(common, "trellis"));
+      expect(
+        api.inspectFormalArchiveReactivation(inspection()).successor,
+      ).toEqual({
+        kind: "verified",
+        task: {
+          key: { ...key, lifecycle_generation: generation },
+          task_ref: active,
+        },
+      });
+      expect(() => prepare()).toThrow("already has a successor");
+      expect(bytes(path.join(root, ".trellis"))).toEqual(linkedBefore);
+      expect(bytes(path.join(main, ".trellis"))).toEqual(mainBefore);
+      expect(bytes(path.join(common, "trellis"))).toEqual(resourcesBefore);
+    };
+    assertLookup(1);
+    applyNative({
+      api_version: "1.0",
+      operation: "complete_task",
+      key: nextKey,
+      owner_role: "completion",
+      owner_id: "trellis-complete-task",
+      result: {
+        result_id: "linked-completion-one",
+        owner_id: "trellis-complete-task",
+        evidence: [authority],
+        lifecycle_generation: 1,
+        accepted_scope: authority,
+        delivery_result_ids: [],
+        outcome: "completed",
+      },
+    });
+    applyNative({
+      api_version: "1.0",
+      operation: "reopen_task",
+      key: nextKey,
+      owner_role: "task_scope",
+      owner_id: "trellis-start",
+      authority,
+    });
+    const recovery = {
+      recovery_ref: path.join(base, "state", `${plan.operation_id}.json`),
+    };
+    expect(await api.recoverMaintenance(recovery)).toEqual(applied);
+    expect(await api.resumeMaintenance(recovery)).toEqual(applied);
+    fs.unlinkSync(recovery.recovery_ref);
+    assertLookup(2);
+    expect(record().lifecycle_generation).toBe(2);
+    expect(fs.readdirSync(path.join(base, "state"))).toEqual([]);
+    const linkedBefore = bytes(path.join(root, ".trellis"));
+    const mainBefore = bytes(path.join(main, ".trellis"));
+    expect(() =>
+      api.inspectFormalArchiveReactivation({
+        ...inspection(),
+        root: main,
+      }),
+    ).toThrow("ambiguous_authority");
+    expect(bytes(path.join(root, ".trellis"))).toEqual(linkedBefore);
+    expect(bytes(path.join(main, ".trellis"))).toEqual(mainBefore);
+    expect(
+      JSON.parse(fs.readFileSync(path.join(main, active, "task.json"), "utf8")),
+    ).toMatchObject({
+      lifecycle_generation: 1,
+      accepted_scope: { locator: `${active}/prd.md` },
+    });
   });
   it("keeps original result fixed after actual native scope, Completion and reopen at a renamed locator", async () => {
     const plan = prepare(),
@@ -611,20 +736,17 @@ describe("formal predecessor public maintenance", () => {
   );
   it("stops duplicate conversion when a registered sibling owns a successor", async () => {
     const plan = prepare();
-    const sibling = path.join(base, "sibling");
-    git("worktree", "add", "-b", "sibling", sibling);
-    fs.mkdirSync(path.join(sibling, ".trellis/tasks/existing"), {
-      recursive: true,
-    });
-    fs.writeFileSync(
-      path.join(sibling, ".trellis/tasks/existing/task.json"),
-      JSON.stringify(
-        emptyTaskRecordV2({ id: key.task_id, lifecycle_generation: 1 }),
-      ),
-    );
+    const main = root;
+    root = addLinkedCheckout();
+    await apply();
+    const linkedBefore = bytes(path.join(root, ".trellis"));
+    root = main;
+    const mainBefore = bytes(path.join(root, ".trellis"));
     expect(() => prepare()).toThrow("ambiguous_authority");
     await expect(apply(plan)).rejects.toThrow("later_work_conflict");
     expect(fs.existsSync(path.join(root, active))).toBe(false);
+    expect(bytes(path.join(root, ".trellis"))).toEqual(mainBefore);
+    expect(bytes(path.join(base, "linked", ".trellis"))).toEqual(linkedBefore);
   });
   it("uses the public command envelope and preserves additive API capability", async () => {
     const request = path.join(base, "input.json");

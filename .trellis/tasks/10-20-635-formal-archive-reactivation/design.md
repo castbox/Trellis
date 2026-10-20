@@ -60,6 +60,14 @@ When private receipt is unavailable, inspection verifies public provenance again
 
 For later `g+2` and higher successors, verify conversion provenance plus real public history required by each ordinary reopen transition. Use the existing matching Completion rule for intermediate generations; do not invent initial old Completion or add a Closure prerequisite. Missing history produces a concrete mismatch. The original operation result remains about `g+1`, while inspection reports current accessible identity.
 
+### Registered shared successor snapshots
+
+Inspection reports the successor in the explicitly selected `root`. It does not select environment ownership or reconcile business state between checkouts. Resolve the root's candidates first and validate its unique successor with the existing `successorAt` provenance, retained-source and intermediate-Completion checks.
+
+Read registered sibling candidates through that same public parser and validation. A sibling that belongs to the same formal predecessor and has a generation no greater than the verified root successor is a shared or earlier snapshot. It does not make the root identity ambiguous. Normal Delivery, scope or lifecycle progress can make the records differ; do not require whole-record equality or merge their contents. Return only the root successor's actual key and locator.
+
+A newer sibling, a different predecessor/provenance relationship or an invalid successor remains a concrete conflict. If the root has no successor but a sibling owns one, do not return the sibling locator as if it belonged to the root and do not prepare another conversion. Multiple candidates in the root retain the existing conflicting result. Inspection stays read-only and has no dependency on Guru-private branch bindings or receipts. Fresh preparation still requires an absent successor, so these shared-snapshot reads cannot create another generation.
+
 ## 6. Rollback and environment ownership
 
 Check original actions/preimages and real output-generation Task/artifact changes, Deliveries, session selection and branch binding before rollback. Later work returns `later_work_conflict` and remains intact. Otherwise rollback removes only the tree created by this operation. Old-generation records, seals and resources remain untouched.
