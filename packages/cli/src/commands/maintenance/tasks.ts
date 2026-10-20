@@ -3,18 +3,22 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { z } from "zod";
+import { isDeepStrictEqual } from "node:util";
 import {
   MaintenanceError,
   classifyMaintenanceTask,
   classifyBranchBinding,
   validateSelectedTaskProjection,
   validateArchivedTaskResumeProjection,
+  validateFormalArchiveReactivationProjection,
 } from "@mindfoldhq/trellis-core/task/maintenance";
 import {
   verifyAuthority,
+  authorityLocator,
   verifyHistoricalCommit,
   type AuthorityRef,
   type TaskRecordV2,
+  parseTaskRecordV2,
 } from "@mindfoldhq/trellis-core/task/v2";
 import { rawSnapshotSchema } from "../migration2-schema.js";
 import {
@@ -27,6 +31,7 @@ import {
 } from "./bindings.js";
 import {
   observeRepository,
+  publicTaskRoots,
   readSnapshot,
   readDirectorySnapshot,
   snapshot,
@@ -292,6 +297,7 @@ function isArchiveRef(ref: string): boolean {
 function inspectTaskTargetDetails(
   input: InspectTaskTargetInput,
   activeRef?: string,
+  detachedHistory = false,
 ): InspectedTaskTarget {
   const parsed = inspectTaskInputSchema.safeParse(input);
   if (!parsed.success)
@@ -326,13 +332,20 @@ function inspectTaskTargetDetails(
     throw maintenanceError(
       "target_key_mismatch: selected task identity/generation",
     );
-  const binding = inspectBindings(
-    repo.root,
-    key,
-    input.task_ref,
-    input.original_task_ref,
-    activeRef,
-  );
+  const binding = detachedHistory
+    ? {
+        carriers: [],
+        branch_binding: null,
+        inherited_copies: [],
+        authority: "local" as const,
+      }
+    : inspectBindings(
+        repo.root,
+        key,
+        input.task_ref,
+        input.original_task_ref,
+        activeRef,
+      );
   return {
     root: repo.root,
     common_dir: repo.common_dir,
@@ -398,6 +411,7 @@ function verifyReferences(
   actions: MaintenanceAction[],
   facts: TaskConversionInput["legacy_facts"],
   additionalRefs: AuthorityRef[] = [],
+  projectedTaskRoot?: string,
 ): void {
   const refs: (AuthorityRef | null)[] = [
     record.accepted_scope,
@@ -508,7 +522,18 @@ function verifyReferences(
         "stale_source: prospective active candidate content mismatch",
       );
   }
-  for (const ref of refs) {
+  for (const originalRef of refs) {
+    const ref =
+      originalRef && projectedTaskRoot
+        ? {
+            ...originalRef,
+            locator: authorityLocator(originalRef, {
+              task_id: record.id,
+              task_root: projectedTaskRoot,
+              artifact_origin: record.artifact_origin ?? null,
+            }),
+          }
+        : originalRef;
     if (!ref || /^[a-z][a-z0-9+.-]*:\/\//i.test(ref.locator)) continue;
     const prepared = actions.find(
       (action) =>
@@ -568,8 +593,12 @@ export function prepareArchivedTaskResume(
   return prepareSelectedTask(input, input);
 }
 function prepareSelectedTask(
-  input: TaskConversionInput | ArchivedTaskResumeInput,
-  resume?: ArchivedTaskResumeInput,
+  input:
+    | TaskConversionInput
+    | ArchivedTaskResumeInput
+    | FormalArchiveReactivationInput,
+  resume?: ArchivedTaskResumeInput | FormalArchiveReactivationInput,
+  formal?: FormalArchiveReactivationInput,
 ): PreparedMaintenancePlan {
   const inspected = inspectTaskTargetDetails(
     {
@@ -579,22 +608,32 @@ function prepareSelectedTask(
       ...(resume ? { original_task_ref: resume.original_task_ref } : {}),
     },
     resume?.active_ref,
+    Boolean(formal),
   );
   const root = inspected.root,
     repo = observeRepository(root);
-  assertPredecessor(inspected.classification.kind, input.source_kind);
-  const projection = resume
-    ? validateArchivedTaskResumeProjection(
+  assertPredecessor(
+    inspected.classification.kind,
+    "source_kind" in input ? input.source_kind : "schema1",
+  );
+  const projection = formal
+    ? validateFormalArchiveReactivationProjection(
         rawJson(inspected.source),
         input.projection,
         input.legacy_facts,
-        resume.resume_intent,
       )
-    : validateSelectedTaskProjection(
-        rawJson(inspected.source),
-        input.projection,
-        input.legacy_facts,
-      );
+    : resume && "resume_intent" in resume
+      ? validateArchivedTaskResumeProjection(
+          rawJson(inspected.source),
+          input.projection,
+          input.legacy_facts,
+          resume.resume_intent,
+        )
+      : validateSelectedTaskProjection(
+          rawJson(inspected.source),
+          input.projection,
+          input.legacy_facts,
+        );
   const targetRef = resume?.active_ref ?? input.task_ref;
   const destination = (ref: string): string =>
     targetRef + ref.slice(input.task_ref.length);
@@ -685,9 +724,11 @@ function prepareSelectedTask(
   });
   matchedCarriers(
     inspected.carriers,
-    input.sessions.map((session) => session.carrier),
+    ("sessions" in input ? input.sessions : []).map(
+      (session) => session.carrier,
+    ),
   );
-  for (const session of input.sessions) {
+  for (const session of "sessions" in input ? input.sessions : []) {
     if (session.action === "retire") {
       if (!resume || session.delivery_id !== null)
         throw maintenanceError("conflict: retirement cannot select a Delivery");
@@ -760,7 +801,7 @@ function prepareSelectedTask(
         target: null,
       });
   }
-  if (resume) {
+  if (resume && "resume_intent" in resume) {
     actions.push({
       root,
       path: `${targetRef}/migration/archive-resume.json`,
@@ -780,54 +821,77 @@ function prepareSelectedTask(
     });
   }
   const binding = inspected.branch_binding;
-  if (input.branch_binding.action === "preserve") {
-    if (!binding && repo.common_dir)
-      throw maintenanceError(
-        "ambiguous_authority: explicit original-owner branch binding establishment required",
-      );
-    if (binding) {
-      expectSnapshot(binding.root, binding.path, input.branch_binding.source);
-      actions.push({
-        root: binding.root,
-        path: binding.path,
-        source: binding.source,
-        target: binding.source,
+  if ("branch_binding" in input) {
+    if (input.branch_binding.action === "preserve") {
+      if (!binding && repo.common_dir)
+        throw maintenanceError(
+          "ambiguous_authority: explicit original-owner branch binding establishment required",
+        );
+      if (binding) {
+        expectSnapshot(binding.root, binding.path, input.branch_binding.source);
+        actions.push({
+          root: binding.root,
+          path: binding.path,
+          source: binding.source,
+          target: binding.source,
+        });
+      } else if (input.branch_binding.source !== null)
+        throw maintenanceError("target_key_mismatch: no Git binding exists");
+    } else {
+      if (
+        !repo.common_dir ||
+        binding ||
+        input.branch_binding.record.branch_name !== repo.branch
+      )
+        throw maintenanceError(
+          "ambiguous_authority: establish requires absent binding and actual target branch",
+        );
+      const classified = classifyBranchBinding(input.branch_binding.record, {
+        task_id: input.key.task_id,
+        generation: input.key.lifecycle_generation,
       });
-    } else if (input.branch_binding.source !== null)
-      throw maintenanceError("target_key_mismatch: no Git binding exists");
-  } else {
-    if (
-      !repo.common_dir ||
-      binding ||
-      input.branch_binding.record.branch_name !== repo.branch
-    )
-      throw maintenanceError(
-        "ambiguous_authority: establish requires absent binding and actual target branch",
-      );
-    const classified = classifyBranchBinding(input.branch_binding.record, {
-      task_id: input.key.task_id,
-      generation: input.key.lifecycle_generation,
-    });
-    if (!classified.matches)
-      throw maintenanceError("target_key_mismatch: proposed branch binding");
-    actions.push({
-      root: repo.common_dir,
-      path: `trellis/task-branches/${input.key.task_id}/${input.key.lifecycle_generation}.json`,
-      source: null,
-      target: snapshot(
-        JSON.stringify(input.branch_binding.record, null, 2) + "\n",
-      ),
-    });
+      if (!classified.matches)
+        throw maintenanceError("target_key_mismatch: proposed branch binding");
+      actions.push({
+        root: repo.common_dir,
+        path: `trellis/task-branches/${input.key.task_id}/${input.key.lifecycle_generation}.json`,
+        source: null,
+        target: snapshot(
+          JSON.stringify(input.branch_binding.record, null, 2) + "\n",
+        ),
+      });
+    }
   }
   verifyReferences(
     root,
     projection,
     actions,
     input.legacy_facts,
-    resume
-      ? [resume.resume_intent.reason, resume.resume_intent.archive_review]
-      : [],
+    formal
+      ? formal.archive.evidence
+      : resume && "resume_intent" in resume
+        ? [resume.resume_intent.reason, resume.resume_intent.archive_review]
+        : [],
+    formal ? targetRef : undefined,
   );
+  if (formal)
+    actions.push({
+      root,
+      path: `${targetRef}/migration/formal-archive-reactivation.json`,
+      source: null,
+      target: snapshot(
+        JSON.stringify(
+          {
+            key: formal.key,
+            archive_ref: formal.task_ref,
+            archive_commit: formal.archive.commit,
+            original_task_ref: formal.original_task_ref,
+          },
+          null,
+          2,
+        ) + "\n",
+      ),
+    });
   // Freeze parent-directory preimages, including existing empty directory modes.
   const directories = new Set(
     inspected.artifacts
@@ -857,15 +921,35 @@ function prepareSelectedTask(
           ) ?? { mode: 0o755 })
         : (readDirectorySnapshot(root, ref) ?? { mode: 0o755 }),
     }));
-  return preparePlan({
-    kind: resume ? "task_resume" : "task_conversion",
+  const common = {
     target_root: root,
     common_dir: repo.common_dir,
     actions: [...dirActions, ...uniqueActions(actions)],
+  };
+  const guard = {
+    task_id: input.key.task_id,
+    generation: input.key.lifecycle_generation,
+    task_ref: targetRef,
+  };
+  if (formal)
+    return preparePlan({
+      ...common,
+      kind: "formal_archive_reactivation",
+      guard: {
+        ...guard,
+        output_generation: projection.lifecycle_generation,
+        archive_commit: formal.archive.commit,
+        target_ref: formal.archive.target_ref,
+        target_head: formal.archive.target_head,
+        archive_ref: formal.task_ref,
+        original_task_ref: formal.original_task_ref,
+      },
+    });
+  return preparePlan({
+    ...common,
+    kind: resume ? "task_resume" : "task_conversion",
     guard: {
-      task_id: input.key.task_id,
-      generation: input.key.lifecycle_generation,
-      task_ref: targetRef,
+      ...guard,
       ...(resume
         ? {
             archive_ref: input.task_ref,
@@ -1003,4 +1087,419 @@ export function prepareLegacyCloseout(
       archive_ref: input.archive_ref,
     },
   });
+}
+
+const archiveFactsSchema = z
+  .object({
+    commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
+    target_ref: z.string().min(1),
+    target_head: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
+    evidence: z.array(reasonSchema).min(1),
+  })
+  .strict();
+const formalInspectionSchema = z
+  .object({
+    root: z.string().min(1),
+    key: keySchema,
+    task_ref: z.string().min(1),
+    original_task_ref: z.string().min(1),
+    archive: archiveFactsSchema,
+  })
+  .strict();
+export const formalArchiveReactivationInputSchema = formalInspectionSchema
+  .extend({
+    active_ref: z.string().min(1),
+    projection: taskConversionInputSchema.shape.projection,
+    artifacts: taskConversionInputSchema.shape.artifacts,
+    legacy_facts: taskConversionInputSchema.shape.legacy_facts,
+  })
+  .strict();
+export type FormalArchiveReactivationInput = z.infer<
+  typeof formalArchiveReactivationInputSchema
+>;
+export type InspectFormalArchiveReactivationInput = z.infer<
+  typeof formalInspectionSchema
+>;
+export interface FormalArchiveSuccessor {
+  key: MaintenanceTaskKey;
+  task_ref: string;
+}
+export interface FormalArchiveReactivationInspection {
+  key: MaintenanceTaskKey;
+  task_ref: string;
+  successor:
+    | { kind: "absent" }
+    | { kind: "verified"; task: FormalArchiveSuccessor }
+    | { kind: "conflicting"; task_refs: string[] };
+}
+export function parseFormalArchiveReactivationInput(
+  input: unknown,
+): FormalArchiveReactivationInput {
+  const parsed = formalArchiveReactivationInputSchema.safeParse(input);
+  if (!parsed.success)
+    throw new MaintenanceError(
+      "invalid_input",
+      "Formal archive input does not match the public contract",
+    );
+  return parsed.data;
+}
+function formalGit(root: string, ...args: string[]): Buffer {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key)),
+  );
+  try {
+    return execFileSync("git", ["-C", root, ...args], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    throw new MaintenanceError(
+      "invalid_git_fact",
+      `Cannot verify archive Git fact: ${args[0]}`,
+    );
+  }
+}
+function verifyFormalArchive(
+  input: InspectFormalArchiveReactivationInput,
+): InspectedTaskTarget {
+  if (
+    !isArchiveRef(input.task_ref) ||
+    !/^\.trellis\/tasks\/archive\/\d{4}-\d{2}\/[^/]+$/.test(input.task_ref) ||
+    !isActiveRef(input.original_task_ref)
+  )
+    throw new MaintenanceError(
+      "invalid_task_path",
+      "Formal reactivation requires a monthly archive and explicit original active path",
+    );
+  const repo = observeRepository(input.root);
+  if (!repo.common_dir)
+    throw new MaintenanceError(
+      "invalid_git_fact",
+      "Formal archive requires exact Git history",
+    );
+  const observed = inspectTaskTargetDetails(
+    {
+      root: repo.root,
+      key: input.key,
+      task_ref: input.task_ref,
+      original_task_ref: input.original_task_ref,
+    },
+    undefined,
+    true,
+  );
+  const source = rawJson(observed.source) as Record<string, unknown>;
+  if (
+    observed.classification.kind !== "schema1" ||
+    source.status !== "completed"
+  )
+    throw new MaintenanceError(
+      "unsupported_source",
+      "Formal reactivation requires a completed canonical schema1 archive",
+    );
+  const commit = input.archive.commit;
+  for (const oid of [commit, input.archive.target_head]) {
+    if (
+      formalGit(repo.root, "rev-parse", "--verify", `${oid}^{commit}`)
+        .toString()
+        .trim() !== oid
+    )
+      throw new MaintenanceError(
+        "invalid_git_fact",
+        "Archive facts require exact complete commit OIDs",
+      );
+    formalGit(
+      repo.root,
+      "merge-base",
+      "--is-ancestor",
+      oid,
+      input.archive.target_ref,
+    );
+  }
+  if (
+    formalGit(repo.root, "ls-tree", commit, "--", input.original_task_ref)
+      .length
+  )
+    throw new MaintenanceError(
+      "original_active_present",
+      "Archive commit still contains the original active Task path",
+    );
+  const committed = formalGit(
+    repo.root,
+    "ls-tree",
+    "-r",
+    "-z",
+    commit,
+    "--",
+    input.task_ref,
+  )
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
+  const files = observed.artifacts.filter((entry) => entry.kind === "file");
+  if (committed.length !== files.length)
+    throw new MaintenanceError(
+      "stale_source",
+      "Archive file set differs from its selected commit",
+    );
+  for (const entry of committed) {
+    const match = /^(100644|100755) blob [a-f0-9]+\t([\s\S]+)$/.exec(entry);
+    if (!match)
+      throw new MaintenanceError(
+        "unsupported_source",
+        "Archive history must contain regular files",
+      );
+    const actual = files.find((file) => file.path === match[2]);
+    if (
+      !actual?.source ||
+      actual.kind !== "file" ||
+      (actual.source.mode & 0o100 ? "100755" : "100644") !== match[1] ||
+      snapshot(formalGit(repo.root, "show", `${commit}:${match[2]}`)).sha256 !==
+        actual.source.sha256
+    )
+      throw new MaintenanceError(
+        "stale_source",
+        `Archive differs from its selected commit: ${match[2]}`,
+      );
+  }
+  if (
+    input.archive.evidence.some((ref) =>
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(ref.locator),
+    )
+  )
+    throw new MaintenanceError(
+      "invalid_input",
+      "Archive facts require repository-file evidence",
+    );
+  for (const ref of input.archive.evidence) verifyAuthority(repo.root, ref);
+  return observed;
+}
+function successorAt(
+  root: string,
+  ref: string,
+  input: InspectFormalArchiveReactivationInput,
+  old: Pick<InspectedTaskTarget, "source">,
+): FormalArchiveSuccessor {
+  const raw = readSnapshot(root, `${ref}/task.json`);
+  if (!raw)
+    throw new MaintenanceError(
+      "successor_mismatch",
+      `Missing successor record: ${ref}`,
+    );
+  const record = parseTaskRecordV2(rawJson(raw));
+  const provenance = readSnapshot(
+    root,
+    `${ref}/migration/formal-archive-reactivation.json`,
+  );
+  const retained = readSnapshot(root, `${ref}/migration/source-task.json`);
+  const expected = {
+    key: input.key,
+    archive_ref: input.task_ref,
+    archive_commit: input.archive.commit,
+    original_task_ref: input.original_task_ref,
+  };
+  if (
+    !provenance ||
+    !isDeepStrictEqual(rawJson(provenance), expected) ||
+    retained?.sha256 !== old.source.sha256 ||
+    record.id !== input.key.task_id ||
+    record.lifecycle_generation <= input.key.lifecycle_generation
+  )
+    throw new MaintenanceError(
+      "successor_mismatch",
+      `Successor provenance does not match selected predecessor: ${ref}`,
+    );
+  // Ordinary reopen retains the actual matching Completion for each completed
+  // intermediate generation. The initial predecessor has no v2 Completion.
+  for (
+    let generation = input.key.lifecycle_generation + 1;
+    generation < record.lifecycle_generation;
+    generation++
+  ) {
+    const completions = record.completion_results.filter(
+      (result) => result.lifecycle_generation === generation,
+    );
+    if (!completions.length)
+      throw new MaintenanceError(
+        "successor_mismatch",
+        `Missing intermediate Completion for generation ${generation}: ${ref}`,
+      );
+    for (const completion of completions) {
+      verifyAuthority(root, completion.accepted_scope, {
+        task_id: record.id,
+        task_root: ref,
+        artifact_origin: record.artifact_origin ?? null,
+      });
+      if (
+        completion.delivery_result_ids.some(
+          (id) =>
+            !record.deliveries.some(
+              (delivery) =>
+                delivery.lifecycle_generation === generation &&
+                delivery.delivery_result?.result_id === id,
+            ),
+        )
+      )
+        throw new MaintenanceError(
+          "successor_mismatch",
+          `Intermediate Completion history mismatch: ${ref}`,
+        );
+    }
+  }
+  return {
+    key: {
+      task_id: record.id,
+      lifecycle_generation: record.lifecycle_generation,
+    },
+    task_ref: ref,
+  };
+}
+export function inspectFormalArchiveReactivation(
+  rawInput: InspectFormalArchiveReactivationInput,
+): FormalArchiveReactivationInspection {
+  const parsed = formalInspectionSchema.safeParse(rawInput);
+  if (!parsed.success)
+    throw new MaintenanceError(
+      "invalid_input",
+      "Formal archive inspection input does not match the public contract",
+    );
+  const input = parsed.data;
+  const old = verifyFormalArchive(input);
+  for (const workspace of observeRepository(old.root).worktrees) {
+    if (workspace === old.root) continue;
+    for (const ref of publicTaskRoots(workspace)) {
+      const raw = readSnapshot(workspace, `${ref}/task.json`);
+      if (!raw) continue;
+      const value = rawJson(raw) as Record<string, unknown>;
+      if (
+        value.id === input.key.task_id &&
+        value.schema_version === "2.0" &&
+        classifyMaintenanceTask(value).generation >
+          input.key.lifecycle_generation
+      )
+        throw new MaintenanceError(
+          "ambiguous_authority",
+          `Accessible successor belongs to registered sibling checkout: ${workspace}:${ref}`,
+        );
+    }
+  }
+  const candidates: string[] = [];
+  for (const ref of publicTaskRoots(old.root)) {
+    const raw = readSnapshot(old.root, `${ref}/task.json`);
+    if (!raw) continue;
+    const value = rawJson(raw) as Record<string, unknown>;
+    if (
+      typeof value.id === "string" &&
+      value.id.toLowerCase() === input.key.task_id.toLowerCase() &&
+      (!isArchiveRef(ref) || value.schema_version === "2.0")
+    )
+      candidates.push(ref);
+  }
+  if (!candidates.length) {
+    if (fs.existsSync(taskPath(old.root, input.original_task_ref)))
+      throw new MaintenanceError(
+        "original_active_present",
+        "Original active path is occupied",
+      );
+    return {
+      key: input.key,
+      task_ref: input.task_ref,
+      successor: { kind: "absent" },
+    };
+  }
+  if (candidates.length > 1)
+    return {
+      key: input.key,
+      task_ref: input.task_ref,
+      successor: { kind: "conflicting", task_refs: candidates },
+    };
+  return {
+    key: input.key,
+    task_ref: input.task_ref,
+    successor: {
+      kind: "verified",
+      task: successorAt(old.root, candidates[0], input, old),
+    },
+  };
+}
+export function prepareFormalArchiveReactivation(
+  rawInput: FormalArchiveReactivationInput,
+): PreparedMaintenancePlan {
+  const input = parseFormalArchiveReactivationInput(rawInput);
+  if (!isActiveRef(input.active_ref))
+    throw new MaintenanceError(
+      "invalid_task_path",
+      "New Task must be a direct active destination",
+    );
+  const {
+    projection: _projection,
+    artifacts: _artifacts,
+    legacy_facts: _facts,
+    active_ref: _active,
+    ...inspectionInput
+  } = input;
+  const inspection = inspectFormalArchiveReactivation(inspectionInput);
+  if (inspection.successor.kind !== "absent")
+    throw new MaintenanceError(
+      "conflict",
+      "Selected predecessor already has a successor; inspect or recover it",
+    );
+  if (fs.existsSync(taskPath(input.root, input.active_ref)))
+    throw new MaintenanceError("conflict", "Active destination is occupied");
+  if (
+    formalGit(
+      input.root,
+      "rev-parse",
+      "--verify",
+      `${input.archive.target_ref}^{commit}`,
+    )
+      .toString()
+      .trim() !== input.archive.target_head
+  )
+    throw new MaintenanceError(
+      "stale_source",
+      "Observed target head changed before preparation",
+    );
+  return prepareSelectedTask(input, input, input);
+}
+
+/** Receipt recovery verifies public successor history, but returns the original key. */
+export function validateAppliedFormalArchive(
+  plan: Extract<
+    PreparedMaintenancePlan,
+    { kind: "formal_archive_reactivation" }
+  >,
+): void {
+  const source = readSnapshot(
+    plan.target_root,
+    `${plan.guard.archive_ref}/task.json`,
+  );
+  if (!source)
+    throw new MaintenanceError("stale_source", "Original archive disappeared");
+  const input = {
+    root: plan.target_root,
+    key: {
+      task_id: plan.guard.task_id,
+      lifecycle_generation: plan.guard.generation,
+    },
+    task_ref: plan.guard.archive_ref,
+    original_task_ref: plan.guard.original_task_ref,
+    archive: {
+      commit: plan.guard.archive_commit,
+      target_ref: plan.guard.target_ref,
+      target_head: plan.guard.target_head,
+      evidence: [],
+    },
+  };
+  const refs = publicTaskRoots(plan.target_root).filter((ref) => {
+    const raw = readSnapshot(plan.target_root, `${ref}/task.json`);
+    if (!raw) return false;
+    const record = rawJson(raw) as Record<string, unknown>;
+    return record.id === plan.guard.task_id && record.schema_version === "2.0";
+  });
+  if (refs.length !== 1)
+    throw new MaintenanceError(
+      "later_work_conflict",
+      "Original conversion must have one accessible public successor",
+    );
+  successorAt(plan.target_root, refs[0], input, { source });
 }

@@ -13,6 +13,7 @@ const envelope = z
       "task_conversion",
       "legacy_closeout",
       "task_resume",
+      "formal_archive_reactivation",
     ]),
     input: z.unknown(),
   })
@@ -31,6 +32,10 @@ async function prepare(file: string): Promise<PreparedMaintenancePlan> {
     case "task_resume":
       return api.prepareArchivedTaskResume(
         api.parseArchivedTaskResumeInput(value.input),
+      );
+    case "formal_archive_reactivation":
+      return api.prepareFormalArchiveReactivation(
+        api.parseFormalArchiveReactivationInput(value.input),
       );
     case "legacy_closeout":
       return api.prepareLegacyCloseout(
@@ -117,6 +122,17 @@ export function registerMaintenanceCommand(program: Command): void {
             : {}),
         });
       }),
+  );
+  json(
+    group
+      .command("inspect-formal-archive")
+      .requiredOption("--input <file>", "Selected formal archive facts"),
+  ).action((options: { input: string }) =>
+    run(() =>
+      api.inspectFormalArchiveReactivation(
+        read(options.input) as api.InspectFormalArchiveReactivationInput,
+      ),
+    ),
   );
   json(
     group

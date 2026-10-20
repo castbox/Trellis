@@ -145,6 +145,16 @@ Use controlled temporary installations; do not migrate dogfood or business
 Task records merely to satisfy tests. Template and dogfood script twins stay
 synchronized while the repository itself may remain on its legacy workflow.
 
+For one formally completed schema1 archive, use the separate public
+[formal predecessor maintenance operation](./commands-maintain.md#formal-predecessor-archive-reactivation).
+It converts the selected predecessor directly to Task v2 generation `g+1` with
+raw history retained. It creates no old Completion/Closure or current empty
+Delivery and changes no old-generation environment resources. This finite
+conversion does not relax current Task v2 reopen's matching Completion rule.
+Manual archive resume still preserves generation. Existing target-native v2
+owners consume the converted identity and establish new-generation binding;
+provider conversion alone does not prove their semantic continuation.
+
 Candidate hashing excludes lifecycle/session/private-result files; writing a
 result must not invalidate the content it describes. Owner-selected business
 docs and tests remain part of the intended candidate. Runtime validates

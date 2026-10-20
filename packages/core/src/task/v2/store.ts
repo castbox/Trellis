@@ -1,3 +1,4 @@
+import { taskRecordSchema } from "../schema.js";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -86,10 +87,26 @@ export function writeTaskRecordV2(options: WriteTaskV2Options): void {
 }
 /** Identity reservation is intentionally a narrow read, not acceptance of old lifecycle metadata. */
 function reserveIdentity(options: TaskStoreOptions, id: string): void { reserveIdentityExcept(options, id); }
+function formalPredecessorForRelocation(options: TaskStoreOptions, id: string, excluded?: string): string | null {
+  if (!excluded) return null;
+  const provenanceFile = path.join(excluded, "migration/formal-archive-reactivation.json");
+  if (!fs.existsSync(provenanceFile)) return null;
+  const provenance: unknown = JSON.parse(fs.readFileSync(provenanceFile, "utf8"));
+  const record = parseTaskRecordV2(JSON.parse(fs.readFileSync(path.join(excluded, "task.json"), "utf8")));
+  if (typeof provenance !== "object" || provenance === null || !("key" in provenance) || !("archive_ref" in provenance) || !("archive_commit" in provenance) || !("original_task_ref" in provenance) || !same(Object.keys(provenance).sort(), ["key", "archive_ref", "archive_commit", "original_task_ref"].sort())) fail("formal_archive_provenance_mismatch", "public predecessor relation");
+  const key = provenance.key;
+  if (typeof key !== "object" || key === null || !("task_id" in key) || !("lifecycle_generation" in key) || !same(Object.keys(key).sort(), ["task_id", "lifecycle_generation"].sort()) || key.task_id !== id || !Number.isSafeInteger(key.lifecycle_generation) || Number(key.lifecycle_generation) < 0 || record.id !== id || record.lifecycle_generation <= Number(key.lifecycle_generation) || typeof provenance.archive_ref !== "string" || !/^\.trellis\/tasks\/archive\/\d{4}-\d{2}\/[^/]+$/.test(provenance.archive_ref) || typeof provenance.original_task_ref !== "string" || !/^\.trellis\/tasks\/(?!archive$)[^/]+$/.test(provenance.original_task_ref) || typeof provenance.archive_commit !== "string" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(provenance.archive_commit)) fail("formal_archive_provenance_mismatch", "predecessor identity");
+  const predecessor = contained(options.root, provenance.archive_ref, false, true);
+  const file = contained(options.root, `${provenance.archive_ref}/task.json`, false, true);
+  const source = taskRecordSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
+  if (source.id !== id || source.lifecycle_generation !== key.lifecycle_generation || source.status !== "completed" || !same(source.source, record.source) || !fs.readFileSync(file).equals(fs.readFileSync(path.join(excluded, "migration/source-task.json")))) fail("formal_archive_provenance_mismatch", "retained predecessor source");
+  return fs.realpathSync(predecessor);
+}
 function reserveIdentityExcept(options: TaskStoreOptions, id: string, excluded?: string): void {
+  const predecessor = formalPredecessorForRelocation(options, id, excluded);
   const tasks = contained(options.root, ".trellis/tasks", true, true); if (!fs.existsSync(tasks)) return;
   const inspect = (dir: string, historical = false): void => {
-    if (excluded && fs.realpathSync(dir) === fs.realpathSync(excluded)) return;
+    if ((excluded && fs.realpathSync(dir) === fs.realpathSync(excluded)) || fs.realpathSync(dir) === predecessor) return;
     contained(options.root, path.relative(fs.realpathSync(options.root), dir).split(path.sep).join("/"), false, true);
     const visibleCollision = (): void => {
       const name = path.basename(dir); const candidates = [name, name.replace(/^\d+-\d+-/, "")];

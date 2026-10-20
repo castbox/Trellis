@@ -14,6 +14,9 @@ import * as tools from "./tools.js";
 import * as tasks from "./tasks.js";
 import type { ToolsInstallationInput, ToolsTargetInspection } from "./tools.js";
 import type {
+  FormalArchiveReactivationInput,
+  InspectFormalArchiveReactivationInput,
+  FormalArchiveReactivationInspection,
   ArchivedTaskResumeInput,
   TaskConversionInput,
   LegacyCloseoutInput,
@@ -23,6 +26,7 @@ import type {
 export type {
   PreparedMaintenancePlan,
   MaintenanceResult,
+  FormalArchiveReactivationResult,
   CandidateIdentity,
   RawSnapshot,
 } from "./shared.js";
@@ -37,8 +41,12 @@ export {
   parseTaskConversionInput,
   parseLegacyCloseoutInput,
   parseArchivedTaskResumeInput,
+  parseFormalArchiveReactivationInput,
 } from "./tasks.js";
 export type {
+  FormalArchiveReactivationInput,
+  InspectFormalArchiveReactivationInput,
+  FormalArchiveReactivationInspection,
   ArchivedTaskResumeInput,
   TaskConversionInput,
   LegacyCloseoutInput,
@@ -99,6 +107,16 @@ export function prepareArchivedTaskResume(
 ): PreparedMaintenancePlan {
   return perform(() => tasks.prepareArchivedTaskResume(input));
 }
+export function inspectFormalArchiveReactivation(
+  input: InspectFormalArchiveReactivationInput,
+): FormalArchiveReactivationInspection {
+  return perform(() => tasks.inspectFormalArchiveReactivation(input));
+}
+export function prepareFormalArchiveReactivation(
+  input: FormalArchiveReactivationInput,
+): PreparedMaintenancePlan {
+  return perform(() => tasks.prepareFormalArchiveReactivation(input));
+}
 export function prepareLegacyCloseout(
   input: LegacyCloseoutInput,
 ): PreparedMaintenancePlan {
@@ -113,10 +131,16 @@ export interface MaintenanceContract {
     "task_conversion",
     "legacy_closeout",
     "task_resume",
+    "formal_archive_reactivation",
   ];
   source_versions: string[];
   task_families: string[];
   session_families: string[];
+  formal_archive_reactivation: {
+    task_families: ["schema1"];
+    generation: "increment_once";
+    original_archive: "read_only";
+  };
   archive_resume: {
     task_families: string[];
     generation: "preserve";
@@ -134,12 +158,18 @@ export function getMaintenanceContract(): MaintenanceContract {
       "task_conversion",
       "legacy_closeout",
       "task_resume",
+      "formal_archive_reactivation",
     ] as const,
     source_versions: [
       "stable 0.6.x",
       "0.7.0-castbox.N, N >= 1, no newer than candidate",
     ],
     task_families: ["known_legacy", "schema1", "schema2_preserve_only"],
+    formal_archive_reactivation: {
+      task_families: ["schema1"],
+      generation: "increment_once",
+      original_archive: "read_only",
+    },
     archive_resume: {
       task_families: ["known_legacy", "schema1"],
       generation: "preserve",
