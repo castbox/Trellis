@@ -42,11 +42,18 @@ export type ToolsWorkflowDecision =
       content: string;
       ownership: "bundled" | "custom";
     };
-export interface ToolsFileDecision {
-  path: string;
-  source: RawSnapshot;
-  action: "replace" | "preserve" | "create-new" | "remove";
-}
+export type ToolsFileDecision =
+  | {
+      path: string;
+      source: RawSnapshot;
+      action: "replace" | "preserve" | "create-new" | "remove";
+    }
+  | {
+      path: "AGENTS.md";
+      source: RawSnapshot;
+      action: "custom";
+      content: string;
+    };
 export interface ToolsInstallationInput {
   root: string;
   workflow: ToolsWorkflowDecision;
@@ -72,11 +79,19 @@ const toolsInstallationSchema = z.strictObject({
     }),
   ]),
   file_decisions: z.array(
-    z.strictObject({
-      path: z.string().min(1),
-      source: rawSnapshotSchema,
-      action: z.enum(["replace", "preserve", "create-new", "remove"]),
-    }),
+    z.union([
+      z.strictObject({
+        path: z.string().min(1),
+        source: rawSnapshotSchema,
+        action: z.enum(["replace", "preserve", "create-new", "remove"]),
+      }),
+      z.strictObject({
+        path: z.literal("AGENTS.md"),
+        source: rawSnapshotSchema,
+        action: z.literal("custom"),
+        content: z.string(),
+      }),
+    ]),
   ),
 });
 export function parseToolsInstallationInput(
@@ -267,8 +282,11 @@ export async function prepareToolsInstallation(
   const conflicts: string[] = [];
   for (const [name, content] of files) {
     const source = readSnapshot(root, name);
-    const target = snapshot(content, toolsTargetMode(name, source));
     const decision = decisions.get(name);
+    const target = snapshot(
+      decision?.action === "custom" ? decision.content : content,
+      toolsTargetMode(name, source),
+    );
     const isRequired = required(name) || name === workflowPath;
     const skip = skipped(root, name);
     let action = decision?.action;
@@ -396,6 +414,7 @@ export async function prepareToolsInstallation(
         ? "delivery"
         : "unknown"
       : "legacy";
+  const agentsDecision = decisions.get("AGENTS.md");
   return preparePlan({
     kind: "tools_install",
     target_root: root,
@@ -407,6 +426,9 @@ export async function prepareToolsInstallation(
       target_version: VERSION,
       configured_platforms: [...getConfiguredPlatforms(root)],
       required_paths,
+      ...(agentsDecision?.action === "custom"
+        ? { custom_agents_content: agentsDecision.content }
+        : {}),
       workflow:
         input.workflow.action === "preserve"
           ? { action: "preserve" }
@@ -448,7 +470,10 @@ export async function validateToolsSelection(
     const name = action.path.endsWith(".new")
       ? action.path.slice(0, -4)
       : action.path;
-    const candidate = files.get(name);
+    const candidate =
+      name === "AGENTS.md" && plan.guard.custom_agents_content !== undefined
+        ? plan.guard.custom_agents_content
+        : files.get(name);
     if (candidate === undefined) continue;
     // Equal source/target outside required replacements is a preserve decision.
     if (

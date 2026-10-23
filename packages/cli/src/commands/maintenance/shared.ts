@@ -50,6 +50,7 @@ export interface ToolsGuard {
   target_version: string;
   configured_platforms: string[];
   required_paths: string[];
+  custom_agents_content?: string;
   workflow:
     | { action: "preserve" }
     | {
