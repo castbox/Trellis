@@ -133,6 +133,7 @@ export interface MaintenanceContract {
     "task_resume",
     "formal_archive_reactivation",
   ];
+  tools_custom_instruction: { path: "AGENTS.md"; action: "custom" };
   source_versions: string[];
   task_families: string[];
   session_families: string[];
@@ -160,6 +161,7 @@ export function getMaintenanceContract(): MaintenanceContract {
       "task_resume",
       "formal_archive_reactivation",
     ] as const,
+    tools_custom_instruction: { path: "AGENTS.md", action: "custom" },
     source_versions: [
       "stable 0.6.x",
       "0.7.0-castbox.N, N >= 1, no newer than candidate",

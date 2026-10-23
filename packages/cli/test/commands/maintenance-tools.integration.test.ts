@@ -9,6 +9,7 @@ import {
   prepareToolsInstallation,
   inspectToolsTarget,
   type ToolsInstallationInput,
+  parseToolsInstallationInput,
 } from "../../src/commands/maintenance/tools.js";
 import {
   applyPlan,
@@ -130,6 +131,134 @@ afterEach(() => {
 });
 
 describe("independent single-checkout tools installation", () => {
+  it("freezes custom AGENTS before preparation and preserves Core receipts through replay and rollback", async () => {
+    const root = temp();
+    seed(root);
+    const original = "# Project heading\r\nProject tail\r\n";
+    const content = `${original}<!-- team -->\nNew team instructions\n`;
+    write(root, "AGENTS.md", original, 0o600);
+    const before = scan(root);
+    const baseline = await prepareToolsInstallation({
+      ...input(root),
+      file_decisions: [
+        {
+          path: "AGENTS.md",
+          source: readSnapshot(root, "AGENTS.md"),
+          action: "replace",
+        },
+      ],
+    });
+    const request: ToolsInstallationInput = {
+      ...input(root),
+      file_decisions: [
+        {
+          path: "AGENTS.md",
+          source: readSnapshot(root, "AGENTS.md"),
+          action: "custom",
+          content,
+        },
+      ],
+    };
+    const plan = await prepareToolsInstallation(request);
+    expect(scan(root)).toEqual(before);
+    expect(
+      plan.actions.find(
+        (action) => action.path === ".trellis/.template-hashes.json",
+      ),
+    ).toEqual(
+      baseline.actions.find(
+        (action) => action.path === ".trellis/.template-hashes.json",
+      ),
+    );
+    const state = temp();
+    const applied = await applyPlan(plan, state);
+    if (!applied.recovery_ref) throw new Error("missing recovery reference");
+    expect(applied.status).toBe("applied");
+    expect(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8")).toBe(content);
+    expect(readSnapshot(root, "AGENTS.md")?.mode).toBe(
+      plan.actions.find((action) => action.path === "AGENTS.md")?.source?.mode,
+    );
+    expect((await recoverOperation(applied.recovery_ref)).status).toBe(
+      "applied",
+    );
+    expect((await resumeOperation(applied.recovery_ref)).status).toBe(
+      "applied",
+    );
+    const reapply = await prepareToolsInstallation({
+      root,
+      workflow: { action: "preserve" },
+      file_decisions: [
+        {
+          path: "AGENTS.md",
+          source: readSnapshot(root, "AGENTS.md"),
+          action: "custom",
+          content,
+        },
+      ],
+    });
+    expect((await applyPlan(reapply, state)).status).toBe("applied");
+    expect((await rollbackPlan(reapply, state)).status).toBe("rolled_back");
+    expect((await rollbackPlan(plan, state)).status).toBe("rolled_back");
+    expect(scan(root)).toEqual(before);
+  });
+
+  it("protects a normal project edit after custom AGENTS installation", async () => {
+    const root = temp();
+    seed(root);
+    write(root, "AGENTS.md", "# Project\n");
+    const plan = await prepareToolsInstallation({
+      ...input(root),
+      file_decisions: [
+        {
+          path: "AGENTS.md",
+          source: readSnapshot(root, "AGENTS.md"),
+          action: "custom",
+          content: "# Project\nTeam instructions\n",
+        },
+      ],
+    });
+    const state = temp();
+    const applied = await applyPlan(plan, state);
+    if (!applied.recovery_ref) throw new Error("missing recovery reference");
+    fs.appendFileSync(path.join(root, "AGENTS.md"), "Later project rule\n");
+    const edited = scan(root);
+    await expect(recoverOperation(applied.recovery_ref)).rejects.toThrow(
+      /later_work_conflict/,
+    );
+    await expect(resumeOperation(applied.recovery_ref)).rejects.toThrow(
+      /later_work_conflict/,
+    );
+    await expect(rollbackPlan(plan, state)).rejects.toThrow(
+      /later_work_conflict/,
+    );
+    expect(scan(root)).toEqual(edited);
+  });
+
+  it("limits custom input to AGENTS without changing existing disposition parsing", () => {
+    const request = input(temp());
+    expect(() =>
+      parseToolsInstallationInput({
+        ...request,
+        file_decisions: [
+          {
+            path: ".trellis/config.yaml",
+            source: null,
+            action: "custom",
+            content: "new",
+          },
+        ],
+      }),
+    ).toThrow(/invalid_input/);
+    for (const action of ["preserve", "replace", "create-new", "remove"]) {
+      expect(
+        parseToolsInstallationInput({
+          ...request,
+          file_decisions: [{ path: "AGENTS.md", source: null, action }],
+        }).file_decisions[0],
+      ).toEqual({ path: "AGENTS.md", source: null, action });
+    }
+  });
+
   it("freezes Windows-observable tools modes without changing exact raw source snapshots", async () => {
     const root = temp();
     seed(root);

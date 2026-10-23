@@ -73,7 +73,17 @@ null for absence. Hashes bind local bytes, not semantic authority.
 
 Tools input is `{root,workflow,file_decisions}`. Workflow is `{action:"preserve"}`
 or `{action:"install",template_id,provider,content,ownership:"bundled"|"custom"}`.
-Each file decision is `{path,source,action:"replace"|"preserve"|"create-new"|"remove"}`.
+Each existing file decision is `{path,source,action:"replace"|"preserve"|"create-new"|"remove"}`.
+For caller-composed project instructions, the additive decision is
+`{path:"AGENTS.md",source,action:"custom",content:string}`. Only AGENTS.md accepts
+this action. The caller supplies final content before prepare; preparation freezes
+it without a later target patch. The private guard retains that content for
+apply/recover/resume selection validation. Existing modes, preimage checks and
+later-work conflicts apply. The template receipt still records the prospective
+Core rendering, so custom caller bytes do not become a Core template baseline.
+A later ordinary update continues to use its existing local-edit dispositions.
+`maintain contract` exposes `tools_custom_instruction:{path:"AGENTS.md",action:"custom"}`
+for callers that need to select this capability before preparation.
 Configured platforms come from the target. Required runtime conflicts or skip rules
 block coherent installation; sidecars are not activation. Explicit bundled identity
 must match the real bundle; custom remains custom even with bundled-equal bytes.
