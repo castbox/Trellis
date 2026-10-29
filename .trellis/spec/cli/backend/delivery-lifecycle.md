@@ -98,6 +98,56 @@ before writes. Delivered/stopped history remains eligible for owner recovery.
 | Actual success with missing/obsolete gates | Original owner records historical success; no fabricated gates or repeated remote action. |
 | Archive without current Completion/Closure | Reject; archive must not create completed facts. |
 
+### Retained profiles and stop (#59)
+
+#### 1. Scope / trigger
+
+A Task can retain a schema-valid Delivery whose profile is no longer enabled
+by its current workflow. Keep its current-stage withdrawal path available.
+The public delivery contract owns the transition and owner semantics.
+
+#### 2. Signatures
+
+Use existing `applyTaskOperation` / `apply_operation` with `operation: "stop"`,
+the exact DeliveryKey, current declared owner, expected_phase and StopResult.
+There is no new payload, schema or operation.
+
+#### 3. Contract
+
+Exempt only stop from the retained-profile guard in both runtimes. Keep every
+other validation and the existing historical-success exceptions. Store-backed
+stop preserves historical facts; the Python store also releases the affected
+selection through its existing retry-capable path.
+
+#### 4. Validation / error matrix
+
+| Case | Required behavior |
+| --- | --- |
+| Legal stop of retained unsupported manual/local_commit | Record stopped and preserve the original profile. |
+| Identical original stop retry | Recover unchanged result; finish applicable selection release. |
+| Ordinary identity, phase, generation, owner or result mismatch | Retain the existing rejection; no new result. |
+| Unsupported-profile creation or forward execution | Retain unsupported_delivery_profile. |
+| Stop | Never synthesize delivery, Completion or Closure. |
+
+#### 5. Good / base / bad cases
+
+Good: Planning owner withdraws a retained manual slice under a PR-only workflow.
+Base: stop of a currently enabled profile keeps its existing behavior.
+Bad: enable an old profile globally or relabel its record merely to retire it.
+
+#### 6. Tests required
+
+Use the shared Core fixture corpus for TS/Python transition parity, plus the
+existing Core and shipped-Python Delivery integration suites for complete
+aggregate preservation, public store persistence, selection release and retry.
+Cover both retained profiles and existing legal nonterminal stage owners.
+
+#### 7. Wrong / correct
+
+Wrong: reject every operation on a retained profile before reaching stop.
+Correct: allow the existing stop path to validate and record withdrawal while
+keeping the profile guard on operations that still require current support.
+
 Task-local relocation uses an optional immutable `artifact_origin`, initialized
 only by the closed move helper. SHA AuthorityRefs normalize to that origin for
 new operations and resolve against the selected Task's current root; fixed Git
