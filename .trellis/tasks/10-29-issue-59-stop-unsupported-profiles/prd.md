@@ -64,6 +64,9 @@ a second defect. Full installer/platform matrices remain outside this scope.
 
 ## Current status
 
-Requirements are converged with no unresolved scope choice. Implementation,
-targeted validation and independent Check are complete for the local candidate.
-See `validation.md` for observed results and unverified adoption boundaries.
+Requirements are converged with no unresolved scope choice. The original repair
+and local Check are complete in `6416e11b` / Draft PR #60. Its CI found one
+existing Git-diagnostic assertion compatibility issue. Its bounded test-only
+follow-up passed local validation and independent Check; fresh CI is pending
+publication. See `implement.md` and `validation.md` for actual results and
+unverified adoption boundaries.

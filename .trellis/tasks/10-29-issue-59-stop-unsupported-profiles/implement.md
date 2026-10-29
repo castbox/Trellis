@@ -1,7 +1,9 @@
 # Execution plan
 
-Status: implementation, targeted validation and independent quality Check
-complete. The local candidate is uncommitted; Task remains in_progress.
+Status: the original repair is committed as `6416e11b` and published as Draft
+PR #60. CI exposed one existing Git-diagnostic assertion compatibility issue;
+its bounded test-only follow-up passed local validation and independent Check.
+The corrected candidate still requires publication and fresh CI. Task remains in_progress.
 Actual results and adoption boundaries are in `validation.md`.
 
 ## Ordered work
@@ -69,3 +71,23 @@ Task manifests validate. Targeted Core, shipped-Python and script-parity suites
 passed. Independent Check reviewed the complete final candidate with no finding,
 refreshed root lint/typecheck, and verified script/contract parity and diff
 cleanliness. No product files changed after that Check.
+
+## Plan change: Git 2.56 diagnostic compatibility
+
+CI Run `40870708254` passed all four Native Python jobs, Core tests, lint,
+type checks and build. The CLI suite failed only because an existing migration
+test matched `/not a git repository/`, whereas Git 2.56 reports
+`gitfile does not point to a valid repository` for the same invalid gitfile.
+The baseline test is identical; its earlier successful main run used Git 2.55.
+
+- [x] Adjust only that diagnostic assertion in
+  `packages/cli/test/commands/migrate2.integration.test.ts`, preserving the
+  rejection, complete no-write snapshot and original timeout.
+- [x] Run the affected actual-Git test/file and scoped lint/format checks.
+- [x] Have the original independent Check owner review this increment and its
+  effect on the complete candidate. Product/runtime tests can retain their
+  unchanged existing evidence.
+- [x] Prepare the separate follow-up commit/publication with actual results.
+
+No runtime, migration policy, CI workflow, timeout or test-skip change belongs
+to this follow-up. The goal remains delivery of R5's validated candidate.

@@ -1991,7 +1991,9 @@ describe("migration plan 2.0 controlled old-copy cutover", () => {
       await markPrunable(sibling);
       expect(listing()).toContain("\0prunable ");
       const before = worktreeSnapshot();
-      await expect(execute(true)).rejects.toThrow(/not a git repository/);
+      await expect(execute(true)).rejects.toThrow(
+        /not a git repository|gitfile does not point to a valid repository/,
+      );
       expect(worktreeSnapshot()).toEqual(before);
     });
 

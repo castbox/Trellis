@@ -50,6 +50,13 @@ slice is not delivered; all Task Completion obligations remain independent.
 | `packages/cli/src/templates/trellis/delivery-contract.md` and `.trellis/delivery-contract.md` | One matching clarification of stop's retained-profile behavior. |
 | `.trellis/spec/cli/backend/delivery-lifecycle.md` | Capture the compatibility rule without duplicating the public transition definition. |
 
+CI compatibility follow-up: the existing Git-preflight assertion in
+`packages/cli/test/commands/migrate2.integration.test.ts` must recognize both
+supported invalid-repository diagnostics. The Git 2.56 runner rejects the
+same retained corrupt gitfile with a different message from Git 2.55. Preserve
+the specific rejection and complete before/after snapshot assertion. This
+changes only test portability; migration and profile behavior remain unchanged.
+
 Reuse existing fixture runners, store helpers and release machinery. No new
 executor, schema, ledger, compatibility adapter or public input field is needed.
 
