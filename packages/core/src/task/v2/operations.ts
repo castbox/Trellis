@@ -86,7 +86,7 @@ export function applyTaskOperation(input: unknown, request: unknown, declaration
   const d = deliveryId === null ? undefined : record.deliveries.find((item) => item.id === deliveryId);
   if (d && d.lifecycle_generation !== op.key.lifecycle_generation) fail("delivery_identity_mismatch", d.id);
   const historical = (op.operation === "record_delivery" || op.operation === "record_publication") && op.historical_success === true;
-  if (d && !historical && !workflow.profiles.includes(d.profile)) fail("unsupported_delivery_profile", d.profile);
+  if (d && op.operation !== "stop" && !historical && !workflow.profiles.includes(d.profile)) fail("unsupported_delivery_profile", d.profile);
   const output = (changed: boolean, resultId: string | null = null): OperationOutput => ({ record: parseTaskRecordV2(record), key: op.key, phase: d?.phase ?? null, result_id: resultId, changed });
   // Only the same producer may recover its exact result, even after the Task reopened.
   if ("result" in op) {

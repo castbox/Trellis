@@ -34,6 +34,30 @@ function runFixture(fixture: Fixture, until = fixture.steps.length): TaskRecordV
   return record;
 }
 function op<T extends TaskOperation>(operation: T): T { return operation; }
+function retainedAtPhase(profile: "manual" | "local_commit", phase: string): TaskRecordV2 {
+  let record = native.initial;
+  for (const step of native.steps) {
+    if (step.expect_error) continue;
+    const operation = step.operation.operation === "create_delivery" ? { ...step.operation, profile } : step.operation;
+    record = applyTaskOperation(record, operation, native.workflow).record;
+    if (record.deliveries[0]?.phase === phase) {
+      // A separate normally delivered slice supplies retained gate and outcome history.
+      for (const peerStep of native.steps.slice(1, 10)) {
+        if (peerStep.expect_error) continue;
+        const peer = structuredClone(peerStep.operation);
+        if (!("delivery_id" in peer.key)) throw new Error("expected Delivery operation");
+        peer.key.delivery_id = "22222222-2222-4222-8222-222222222222";
+        if ("result" in peer) {
+          peer.result.result_id = `peer-${peer.result.result_id}`;
+          if ("predecessor_result_id" in peer.result && peer.result.predecessor_result_id !== null) peer.result.predecessor_result_id = `peer-${peer.result.predecessor_result_id}`;
+        }
+        record = applyTaskOperation(record, peer, native.workflow).record;
+      }
+      return record;
+    }
+  }
+  throw new Error(`fixture did not reach ${phase}`);
+}
 function makeStore(gitProject = false, objectFormat: "sha1" | "sha256" = "sha1"): { root: string; taskDir: string; authority: AuthorityRef; plan: AuthorityRef; candidate: CandidateRef } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-v2-")); directories.push(root);
   fs.writeFileSync(path.join(root, "requirements.md"), "R1: deliver an artifact\n"); fs.writeFileSync(path.join(root, "plan.md"), "Plan\n"); fs.writeFileSync(path.join(root, "artifact.txt"), "Accepted artifact\n"); fs.chmodSync(path.join(root, "artifact.txt"), 0o644);
@@ -147,6 +171,44 @@ describe("Task v2 closed lifecycle", () => {
     expect(recovered.record.deliveries[0]?.results.check).toBeNull();
     errorCode(() => applyTaskOperation(recovered.record, delivered, declaration), "unsupported_delivery_profile");
   });
+  const stopStages = [
+    ["planning", "planning"], ["implementing", "implementation"], ["checking", "check"],
+    ["reviewing", "full_review"], ["reviewing", "readiness"],
+    ["publishing", "publication"], ["publishing", "delivery"],
+  ] as const;
+  for (const profile of ["manual", "local_commit"] as const) {
+    it.each(stopStages)(`stops retained unsupported ${profile} in %s through %s without changing other facts`, (phase, role) => {
+      const record = retainedAtPhase(profile, phase);
+      const declaration: WorkflowContract = { ...native.workflow, profiles: ["pull_request"] };
+      const owner = declaration.owners[role];
+      const reason = { locator: "https://example.test/withdrawal", revision: "1" };
+      const request = op({ api_version: "1.0", operation: "stop", key, owner_role: role, owner_id: owner, expected_phase: phase, result: { result_id: "withdrawn", owner_id: owner, evidence: [reason], reason, scope_decision: reason } });
+      const before = structuredClone(record);
+      const result = applyTaskOperation(record, request, declaration);
+      const expected = structuredClone(before);
+      const withdrawn = expected.deliveries[0]; if (!withdrawn) throw new Error("missing Delivery");
+      withdrawn.phase = "stopped"; withdrawn.stop_result = request.result;
+      expect(result.record).toEqual(expected);
+      expect(result.changed).toBe(true);
+      expect(result.result_id).toBe(request.result.result_id);
+      expect(record).toEqual(before);
+      expect(applyTaskOperation(result.record, request, declaration)).toEqual({ ...result, changed: false });
+    });
+  }
+  it("retains ordinary stop mistakes and terminal guards for unsupported profiles", () => {
+    const record = retainedAtPhase("manual", "planning");
+    const declaration: WorkflowContract = { ...native.workflow, profiles: ["pull_request"] };
+    const reason = { locator: "https://example.test/withdrawal", revision: "1" };
+    const request = op({ api_version: "1.0", operation: "stop", key, owner_role: "planning", owner_id: declaration.owners.planning, expected_phase: "planning", result: { result_id: "withdrawn", owner_id: declaration.owners.planning, evidence: [reason], reason, scope_decision: reason } });
+    errorCode(() => applyTaskOperation(record, { ...request, owner_role: "implementation", owner_id: declaration.owners.implementation, result: { ...request.result, owner_id: declaration.owners.implementation } }, declaration), "owner_mismatch");
+    errorCode(() => applyTaskOperation(record, { ...request, expected_phase: "implementing" }, declaration), "stale_phase");
+    errorCode(() => applyTaskOperation(record, { ...request, key: { ...key, lifecycle_generation: 1 } }, declaration), "delivery_identity_mismatch");
+    const stopped = applyTaskOperation(record, request, declaration).record;
+    errorCode(() => applyTaskOperation(stopped, { ...request, result: { ...request.result, reason: { ...reason, revision: "2" } } }, declaration), "result_identity_conflict");
+    errorCode(() => applyTaskOperation(stopped, { ...request, expected_phase: "stopped", result: { ...request.result, result_id: "second-stop" } }, declaration), "terminal_delivery");
+    const delivered = runFixture(native, 10);
+    errorCode(() => applyTaskOperation(delivered, { ...request, expected_phase: "delivered" }, declaration), "terminal_delivery");
+  });
   it("rejects unknown fields, path escape, future results and fake terminal records", () => {
     const record = runFixture(native, 2);
     errorCode(() => parseTaskRecordV2({ ...record, status: "completed" }), "invalid_record");
@@ -170,6 +232,22 @@ describe("Task v2 closed lifecycle", () => {
 });
 
 describe("Task v2 objective atomic store", () => {
+  it.each(["manual", "local_commit"] as const)("persists only stop for a retained unsupported %s slice and preserves retry bytes", (profile) => {
+    const store = makeStore(); prepareStore(store, profile);
+    storeApply(store, op({ api_version: "1.0", operation: "create_delivery", key: { ...key, delivery_id: "22222222-2222-4222-8222-222222222222" }, owner_role: "creation", owner_id: native.workflow.owners.creation, scope_ref: { authority: store.authority, anchors: ["R2"] }, profile: "pull_request" }));
+    const workflow: WorkflowContract = { ...native.workflow, profiles: ["pull_request"] };
+    const request = op({ api_version: "1.0", operation: "stop", key, owner_role: "implementation", owner_id: workflow.owners.implementation, expected_phase: "implementing", result: { result_id: "stored-withdrawal", owner_id: workflow.owners.implementation, evidence: [store.authority], reason: store.authority, scope_decision: store.authority } });
+    const before = loadTaskRecordV2(store).record;
+    const result = applyTaskOperationToStore({ ...store, workflow, operation: request, expected_preimage: loadTaskRecordV2(store).preimage });
+    const expected = structuredClone(before);
+    const withdrawn = expected.deliveries[0]; if (!withdrawn) throw new Error("missing Delivery");
+    withdrawn.phase = "stopped"; withdrawn.stop_result = request.result;
+    expect(result.record).toEqual(expected);
+    expect(loadTaskRecordV2(store).record).toEqual(expected);
+    const after = loadTaskRecordV2(store).preimage;
+    expect(applyTaskOperationToStore({ ...store, workflow, operation: request, expected_preimage: after }).changed).toBe(false);
+    expect(loadTaskRecordV2(store).preimage).toBe(after);
+  });
   it("rejects mutable commit refs and annotated tag objects while recovering the exact immutable commit", () => {
     const store = makeStore(true); prepareStore(store, "local_commit");
     const head = store.candidate.head_ref; if (!head) throw new Error("missing exact commit");

@@ -134,6 +134,37 @@ describe.skipIf(!available)("Delivery v2 shipped Python (minimum interpreter)", 
     });
   }
 
+  it.each(["manual", "local_commit"])("stops a retained unsupported %s slice through installed apply/store and releases only its selection", (profile) => {
+    ok(root, "task", ["start", task]);
+    prepare(d1, profile); prepare(d2, "pull_request");
+    ok(root, "delivery", ["select", "--task", task, "--delivery", d1]);
+    ok(root, "task", ["start", task], "peer-selection");
+    ok(root, "delivery", ["select", "--task", task, "--delivery", d2], "peer-selection");
+    const before = record();
+    const workflow = { ...native.workflow, profiles: ["pull_request"] };
+    // Retained data under a restricted declaration; workflow-switch preflight is unchanged.
+    fs.writeFileSync(path.join(root, ".trellis/workflow.md"), `[trellis-runtime-contract]\n${JSON.stringify(workflow)}\n[/trellis-runtime-contract]\n`);
+    const result = { result_id: "retained-withdrawal", owner_id: native.workflow.owners.planning, evidence: [ref("requirements.md")], reason: ref("requirements.md"), scope_decision: ref("requirements.md") };
+    const request = operation("stop", "planning", { expected_phase: "planning", result }, d1);
+    const bytesBefore = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    const rejected = run(root, "delivery", ["apply", "--task", task, "--input", JSON.stringify({ ...request, result: { ...result, evidence: [] } })]);
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.stderr).toContain("result evidence required");
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(bytesBefore);
+    expect(apply(request).changed).toBe(true);
+    const expected = structuredClone(before);
+    const withdrawn = expected.deliveries[0]; if (!withdrawn) throw new Error("missing Delivery");
+    withdrawn.phase = "stopped"; withdrawn.stop_result = result;
+    expect(record()).toEqual(expected);
+    expect(JSON.parse(ok(root, "delivery", ["current", "--json"])).kind).toBe("no_current_delivery");
+    const peer = JSON.parse(ok(root, "delivery", ["current", "--json"], "peer-selection")) as { kind: string; key: { delivery_id: string } };
+    expect(peer.kind).toBe("current"); expect(peer.key.delivery_id).toBe(d2);
+    const bytesAfter = fs.readFileSync(path.join(root, task, "task.json"), "utf8");
+    expect(apply(request).changed).toBe(false);
+    expect(fs.readFileSync(path.join(root, task, "task.json"), "utf8")).toBe(bytesAfter);
+    expect(record().completion_results).toEqual([]); expect(record().closure_results).toEqual([]);
+  });
+
   it("manual two-slice execution retains plans, separates binding/activation/Completion/Closure/archive", () => {
     ok(root, "task", ["start", task]);
     prepare();
